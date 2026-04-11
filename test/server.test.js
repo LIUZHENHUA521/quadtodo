@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import request from 'supertest'
 import { EventEmitter } from 'node:events'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from '../src/server.js'
@@ -58,5 +58,21 @@ describe('server', () => {
     const addr = srv.httpServer.address()
     expect(addr.port).toBeGreaterThan(0)
     await srv.close()
+  })
+
+  it('serves web/dist/index.html at /', async () => {
+    const webDist = mkdtempSync(join(tmpdir(), 'quadtodo-dist-'))
+    writeFileSync(join(webDist, 'index.html'), '<!doctype html><title>test</title>')
+
+    const srv2 = createServer({
+      dbFile: ':memory:',
+      logDir: mkdtempSync(join(tmpdir(), 'quadtodo-log2-')),
+      pty: new FakePty(),
+      webDist,
+    })
+    const r = await request(srv2.app).get('/')
+    expect(r.status).toBe(200)
+    expect(r.text).toContain('<title>test</title>')
+    await srv2.close()
   })
 })

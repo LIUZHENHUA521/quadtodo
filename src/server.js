@@ -1,7 +1,7 @@
 import express from 'express'
 import { createServer as createHttpServer } from 'node:http'
 import { WebSocketServer } from 'ws'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { openDb } from './db.js'
@@ -26,9 +26,10 @@ function loadVersion() {
  * @param opts.logDir   directory for ai session logs
  * @param opts.tools    tools config { claude: { bin, args }, codex: { ... } }
  * @param opts.pty      (optional) injected PtyManager — for tests
+ * @param opts.webDist  (optional) directory with built frontend assets
  */
 export function createServer(opts = {}) {
-  const { dbFile = ':memory:', logDir, tools, pty: injectedPty } = opts
+  const { dbFile = ':memory:', logDir, tools, pty: injectedPty, webDist } = opts
 
   const db = openDb(dbFile)
   const pty = injectedPty || new PtyManager({ tools: tools || {} })
@@ -48,8 +49,14 @@ export function createServer(opts = {}) {
   app.use('/api/todos', createTodosRouter({ db }))
   app.use('/api/ai-terminal', ait.router)
 
-  // static assets — Task 15 adds the mount
-  // app.use(express.static(path.join(__dirname, '../web/dist')))
+  // ─── static frontend ───
+  if (webDist && existsSync(webDist)) {
+    app.use(express.static(webDist))
+    // SPA fallback: non-API GET falls through to index.html
+    app.get(/^\/(?!api|ws).*/, (_req, res) => {
+      res.sendFile(join(webDist, 'index.html'))
+    })
+  }
 
   const httpServer = createHttpServer(app)
   const wss = new WebSocketServer({ noServer: true })
