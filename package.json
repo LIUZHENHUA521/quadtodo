@@ -1,0 +1,30 @@
+{
+  "name": "quadtodo",
+  "version": "0.1.0",
+  "description": "Local four-quadrant todo CLI with embedded Claude Code / Codex terminal",
+  "type": "module",
+  "bin": {
+    "quadtodo": "./src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js start",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build:web": "cd web && npm run build"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "commander": "^12.1.0",
+    "express": "^4.21.0",
+    "node-pty": "^1.0.0",
+    "open": "^10.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0",
+    "vitest": "^2.1.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
