@@ -142,17 +142,10 @@ quadtodo/
         └── api.ts
 ```
 
-## 限制
-
-- MVP 不做多用户 / 权限 / 软删除 / 附件 / 评论 / 定时重复
-- Codex 的 `--resume` 能否捕获取决于其 CLI 行为；若不可用则每次新会话
-- 不做自动换端口：被占用时直接报错
-- 前台进程模型：后台跑请自行用 `nohup` / `tmux`
 
 ## 故障排除
 
 - **端口占用**：`quadtodo config set port <new>`
-- **公司内命令不是 `claude/codex`**：`quadtodo config set tools.claude.command claude-w`
 - **`claude` 找不到**：`quadtodo config set tools.claude.bin /full/path/to/claude`
 - **`node-pty` 安装报错**：通常是 node-gyp 找不到 C++ 工具链。macOS 装 Xcode Command Line Tools (`xcode-select --install`)
 - **终端显示 `session_not_found`**：会话已超时（30 分钟已结束的会话会被清理），重新点"启动 AI 终端"
