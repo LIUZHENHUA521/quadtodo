@@ -22,7 +22,7 @@
   },
   "type": "module",
   "bin": {
-    "quadtodo": "./src/cli.js"
+    "quadtodo": "src/cli.js"
   },
   "files": [
     "src",
