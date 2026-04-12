@@ -5,6 +5,21 @@ import { execSync } from 'node:child_process'
 
 export const DEFAULT_ROOT_DIR = join(homedir(), '.quadtodo')
 
+const TOOL_INSTALL_HINTS = {
+  claude: 'npm install -g @anthropic-ai/claude-code',
+  codex: 'npm install -g @openai/codex',
+}
+
+const DEFAULT_WEBHOOK_CONFIG = {
+  enabled: false,
+  provider: 'wecom',
+  url: '',
+  keywords: [],
+  cooldownMs: 180000,
+  notifyOnPendingConfirm: true,
+  notifyOnKeywordMatch: true,
+}
+
 function detectBinary(name) {
   try {
     const result = execSync(`command -v ${name}`, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' })
@@ -14,14 +29,111 @@ function detectBinary(name) {
   }
 }
 
+function defaultToolCommand(name) {
+  return name
+}
+
+function runtimeBinOverride(name) {
+  return process.env[`${name.toUpperCase()}_BIN`] || null
+}
+
+function getToolMetadata(name, tools = {}) {
+  const envBin = runtimeBinOverride(name)
+  const configuredCommand = tools?.[name]?.command || ''
+  const configuredBin = tools?.[name]?.bin || null
+  const effectiveCommand = configuredCommand || defaultToolCommand(name)
+  const detectedBin = detectBinary(effectiveCommand)
+  const source = envBin
+    ? 'env'
+    : configuredBin
+      ? 'config'
+      : configuredCommand
+        ? 'config'
+        : detectedBin !== effectiveCommand
+        ? 'auto-detected'
+        : 'missing'
+
+  return {
+    name,
+    configuredCommand: configuredCommand || null,
+    effectiveCommand,
+    configuredBin,
+    effectiveBin: envBin || configuredBin || detectedBin,
+    args: tools?.[name]?.args || [],
+    source,
+    installHint: TOOL_INSTALL_HINTS[name] || null,
+    missing: source === 'missing',
+  }
+}
+
+export function resolveToolsConfig(tools = {}) {
+  const claudeMeta = getToolMetadata('claude', tools)
+  const codexMeta = getToolMetadata('codex', tools)
+  return {
+    claude: {
+      ...(tools.claude || {}),
+      command: claudeMeta.effectiveCommand,
+      bin: claudeMeta.effectiveBin,
+      args: claudeMeta.args,
+    },
+    codex: {
+      ...(tools.codex || {}),
+      command: codexMeta.effectiveCommand,
+      bin: codexMeta.effectiveBin,
+      args: codexMeta.args,
+    },
+  }
+}
+
+export function inspectToolsConfig(tools = {}) {
+  const resolved = resolveToolsConfig(tools)
+  return {
+    claude: {
+      ...getToolMetadata('claude', tools),
+      command: resolved.claude.command,
+      bin: resolved.claude.bin,
+    },
+    codex: {
+      ...getToolMetadata('codex', tools),
+      command: resolved.codex.command,
+      bin: resolved.codex.bin,
+    },
+  }
+}
+
 function defaultConfig() {
   return {
     port: 5677,
     defaultTool: 'claude',
     defaultCwd: homedir(),
+    tools: resolveToolsConfig(),
+    webhook: { ...DEFAULT_WEBHOOK_CONFIG },
+  }
+}
+
+function normalizeConfig(cfg = {}) {
+  const defaults = defaultConfig()
+  return {
+    ...defaults,
+    ...cfg,
     tools: {
-      claude: { bin: detectBinary('claude'), args: [] },
-      codex: { bin: detectBinary('codex'), args: [] },
+      ...defaults.tools,
+      ...(cfg.tools || {}),
+      claude: {
+        ...defaults.tools.claude,
+        ...(cfg.tools?.claude || {}),
+      },
+      codex: {
+        ...defaults.tools.codex,
+        ...(cfg.tools?.codex || {}),
+      },
+    },
+    webhook: {
+      ...DEFAULT_WEBHOOK_CONFIG,
+      ...(cfg.webhook || {}),
+      keywords: Array.isArray(cfg.webhook?.keywords)
+        ? cfg.webhook.keywords.map(item => String(item).trim()).filter(Boolean)
+        : [...DEFAULT_WEBHOOK_CONFIG.keywords],
     },
   }
 }
@@ -36,16 +148,18 @@ export function loadConfig({ rootDir = DEFAULT_ROOT_DIR } = {}) {
   ensureRoot(rootDir)
   const file = join(rootDir, 'config.json')
   if (!existsSync(file)) {
-    const cfg = defaultConfig()
+    const cfg = normalizeConfig()
     writeFileSync(file, JSON.stringify(cfg, null, 2))
     return cfg
   }
   try {
-    return JSON.parse(readFileSync(file, 'utf8'))
+    const cfg = normalizeConfig(JSON.parse(readFileSync(file, 'utf8')))
+    writeFileSync(file, JSON.stringify(cfg, null, 2))
+    return cfg
   } catch {
     const backup = file + '.corrupt'
     renameSync(file, backup)
-    const cfg = defaultConfig()
+    const cfg = normalizeConfig()
     writeFileSync(file, JSON.stringify(cfg, null, 2))
     return cfg
   }

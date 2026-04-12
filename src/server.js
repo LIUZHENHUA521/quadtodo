@@ -1,11 +1,13 @@
 import express from 'express'
 import { createServer as createHttpServer } from 'node:http'
+import { execFile } from 'node:child_process'
 import { WebSocketServer } from 'ws'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { openDb } from './db.js'
 import { PtyManager } from './pty.js'
+import { loadConfig, saveConfig, resolveToolsConfig, inspectToolsConfig } from './config.js'
 import { createTodosRouter } from './routes/todos.js'
 import { createAiTerminal } from './routes/ai-terminal.js'
 
@@ -21,6 +23,54 @@ function loadVersion() {
   }
 }
 
+function pickDirectoryNative({ defaultPath, prompt = '选择目录' } = {}) {
+  if (process.platform !== 'darwin') {
+    const error = new Error('directory_picker_unsupported')
+    error.code = 'directory_picker_unsupported'
+    throw error
+  }
+
+  const safeDefaultPath = defaultPath && existsSync(defaultPath) && statSync(defaultPath).isDirectory()
+    ? defaultPath
+    : ''
+
+  const script = [
+    'on run argv',
+    'set promptText to item 1 of argv',
+    'set startPath to item 2 of argv',
+    'if startPath is not "" then',
+    '  try',
+    '    set pickedFolder to choose folder with prompt promptText default location (POSIX file startPath)',
+    '  on error',
+    '    set pickedFolder to choose folder with prompt promptText',
+    '  end try',
+    'else',
+    '  set pickedFolder to choose folder with prompt promptText',
+    'end if',
+    'return POSIX path of pickedFolder',
+    'end run',
+  ]
+
+  return new Promise((resolve, reject) => {
+    execFile(
+      'osascript',
+      [...script.flatMap(line => ['-e', line]), '--', prompt, safeDefaultPath],
+      (error, stdout, stderr) => {
+        if (error) {
+          const details = `${stderr || ''} ${error.message || ''}`
+          if (details.includes('User canceled') || details.includes('(-128)')) {
+            resolve({ path: null, cancelled: true })
+            return
+          }
+          reject(error)
+          return
+        }
+        resolve({ path: stdout.trim(), cancelled: false })
+      },
+    )
+  })
+}
+
 /**
  * @param opts.dbFile   SQLite file path (or ':memory:')
  * @param opts.logDir   directory for ai session logs
@@ -29,11 +79,24 @@ function loadVersion() {
  * @param opts.webDist  (optional) directory with built frontend assets
  */
 export function createServer(opts = {}) {
-  const { dbFile = ':memory:', logDir, tools, pty: injectedPty, webDist } = opts
+  const { dbFile = ':memory:', logDir, tools, defaultCwd, configRootDir, pty: injectedPty, webDist, pickDirectory = pickDirectoryNative } = opts
 
   const db = openDb(dbFile)
-  const pty = injectedPty || new PtyManager({ tools: tools || {} })
-  const ait = createAiTerminal({ db, pty, logDir })
+  const initialConfig = configRootDir ? loadConfig({ rootDir: configRootDir }) : null
+  const runtimeConfig = {
+    defaultCwd: defaultCwd || initialConfig?.defaultCwd || process.env.HOME || process.cwd(),
+    tools: tools || resolveToolsConfig(initialConfig?.tools),
+    defaultTool: initialConfig?.defaultTool || 'claude',
+    webhook: initialConfig?.webhook || null,
+  }
+  const pty = injectedPty || new PtyManager({ tools: runtimeConfig.tools || {} })
+  const ait = createAiTerminal({
+    db,
+    pty,
+    logDir,
+    getDefaultCwd: () => runtimeConfig.defaultCwd,
+    getWebhookConfig: () => runtimeConfig.webhook,
+  })
 
   const app = express()
   app.use(express.json({ limit: '2mb' }))
@@ -44,6 +107,107 @@ export function createServer(opts = {}) {
       version: loadVersion(),
       activeSessions: ait.sessions.size,
     })
+  })
+
+  app.get('/api/config', (_req, res) => {
+    try {
+      const cfg = loadConfig({ rootDir: configRootDir })
+      res.json({
+        ok: true,
+        config: {
+          ...cfg,
+          tools: resolveToolsConfig(cfg.tools),
+        },
+        toolDiagnostics: inspectToolsConfig(cfg.tools),
+      })
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
+  app.put('/api/config', (req, res) => {
+    try {
+      const current = loadConfig({ rootDir: configRootDir })
+      const next = {
+        ...current,
+        ...req.body,
+        tools: {
+          ...current.tools,
+          ...(req.body?.tools || {}),
+        },
+      }
+      saveConfig(next, { rootDir: configRootDir })
+
+      runtimeConfig.defaultCwd = next.defaultCwd || runtimeConfig.defaultCwd
+      runtimeConfig.defaultTool = next.defaultTool || runtimeConfig.defaultTool
+      runtimeConfig.tools = resolveToolsConfig(next.tools)
+      runtimeConfig.webhook = next.webhook || runtimeConfig.webhook
+      pty.tools = runtimeConfig.tools
+
+      res.json({
+        ok: true,
+        config: {
+          ...next,
+          tools: runtimeConfig.tools,
+        },
+        toolDiagnostics: inspectToolsConfig(next.tools),
+        runtimeApplied: {
+          defaultCwd: runtimeConfig.defaultCwd,
+          defaultTool: runtimeConfig.defaultTool,
+        },
+      })
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
+  app.get('/api/config/workdirs', (_req, res) => {
+    try {
+      const root = runtimeConfig.defaultCwd
+      if (!root || !existsSync(root)) {
+        res.status(400).json({ ok: false, error: 'default_cwd_not_found' })
+        return
+      }
+      const entries = readdirSync(root, { withFileTypes: true })
+        .filter(entry => entry.isDirectory())
+        .map(entry => {
+          const absPath = join(root, entry.name)
+          const st = statSync(absPath)
+          return {
+            label: entry.name,
+            value: absPath,
+            mtimeMs: st.mtimeMs || 0,
+          }
+        })
+        .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN'))
+      res.json({
+        ok: true,
+        root,
+        options: [
+          { label: `${basename(root) || root} (默认目录)`, value: root },
+          ...entries,
+        ],
+      })
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
+  app.post('/api/system/pick-directory', async (req, res) => {
+    try {
+      const result = await pickDirectory({
+        defaultPath: req.body?.defaultPath || runtimeConfig.defaultCwd,
+        prompt: req.body?.prompt || '选择目录',
+      })
+      res.json({
+        ok: true,
+        path: result?.path || null,
+        cancelled: Boolean(result?.cancelled),
+      })
+    } catch (e) {
+      const status = e?.code === 'directory_picker_unsupported' ? 400 : 500
+      res.status(status).json({ ok: false, error: e.message })
+    }
   })
 
   app.use('/api/todos', createTodosRouter({ db }))

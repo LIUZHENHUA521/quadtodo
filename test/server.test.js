@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import request from 'supertest'
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from '../src/server.js'
+import { loadConfig } from '../src/config.js'
 
 class FakePty extends EventEmitter {
-  constructor() { super(); this._has = new Set() }
-  start(opts) { this._has.add(opts.sessionId) }
+  constructor() { super(); this._has = new Set(); this.started = [] }
+  start(opts) { this._has.add(opts.sessionId); this.started.push(opts) }
   write() {}
   resize() {}
   stop(id) {
@@ -21,12 +22,27 @@ class FakePty extends EventEmitter {
 
 describe('server', () => {
   let srv
+  let configRootDir
+  let workRootDir
+  let pickDirectoryCalls
   beforeEach(() => {
     const logDir = mkdtempSync(join(tmpdir(), 'quadtodo-srv-'))
+    configRootDir = mkdtempSync(join(tmpdir(), 'quadtodo-cfg-'))
+    workRootDir = mkdtempSync(join(tmpdir(), 'quadtodo-work-'))
+    pickDirectoryCalls = []
+    mkdirSync(join(workRootDir, 'client'))
+    mkdirSync(join(workRootDir, 'server'))
+    loadConfig({ rootDir: configRootDir })
     srv = createServer({
       dbFile: ':memory:',
       logDir,
       pty: new FakePty(),
+      defaultCwd: workRootDir,
+      configRootDir,
+      pickDirectory: async (input) => {
+        pickDirectoryCalls.push(input)
+        return { path: join(workRootDir, 'client'), cancelled: false }
+      },
     })
   })
   afterEach(() => { srv.close() })
@@ -51,6 +67,58 @@ describe('server', () => {
       .post('/api/ai-terminal/exec')
       .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
     expect(r.status).toBe(200)
+  })
+
+  it('GET /api/config returns current config', async () => {
+    const r = await request(srv.app).get('/api/config')
+    expect(r.status).toBe(200)
+    expect(r.body.ok).toBe(true)
+    expect(r.body.config.defaultTool).toBe('claude')
+    expect(r.body.toolDiagnostics.claude.installHint).toContain('@anthropic-ai/claude-code')
+  })
+
+  it('PUT /api/config updates runtime config for future sessions', async () => {
+    const update = await request(srv.app).put('/api/config').send({
+      defaultCwd: '/Users/liuzhenhua/Desktop/code/crazyCombo',
+      tools: {
+        claude: { command: 'claude-w', bin: '/tmp/claude-custom', args: [] },
+      },
+    })
+    expect(update.status).toBe(200)
+
+    const todo = srv.db.createTodo({ title: 'T', quadrant: 1 })
+    await request(srv.app)
+      .post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+
+    expect(srv.pty.started[0].cwd).toBe('/Users/liuzhenhua/Desktop/code/crazyCombo')
+    expect(srv.pty.tools.claude.command).toBe('claude-w')
+    expect(srv.pty.tools.claude.bin).toBe('/tmp/claude-custom')
+    expect(update.body.toolDiagnostics.claude.source).toBe('config')
+  })
+
+  it('GET /api/config/workdirs returns default root and child directories', async () => {
+    const r = await request(srv.app).get('/api/config/workdirs')
+    expect(r.status).toBe(200)
+    expect(r.body.root).toBe(workRootDir)
+    expect(r.body.options[0].value).toBe(workRootDir)
+    expect(r.body.options.map(item => item.value)).toContain(join(workRootDir, 'client'))
+    expect(r.body.options.map(item => item.value)).toContain(join(workRootDir, 'server'))
+  })
+
+  it('POST /api/system/pick-directory proxies to native picker', async () => {
+    const r = await request(srv.app)
+      .post('/api/system/pick-directory')
+      .send({ defaultPath: join(workRootDir, 'server'), prompt: '选择默认启动目录' })
+
+    expect(r.status).toBe(200)
+    expect(r.body.ok).toBe(true)
+    expect(r.body.path).toBe(join(workRootDir, 'client'))
+    expect(r.body.cancelled).toBe(false)
+    expect(pickDirectoryCalls[0]).toEqual({
+      defaultPath: join(workRootDir, 'server'),
+      prompt: '选择默认启动目录',
+    })
   })
 
   it('listen + close resolves cleanly on random port', async () => {

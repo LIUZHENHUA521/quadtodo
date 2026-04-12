@@ -10,6 +10,7 @@ export interface AiSession {
   sessionId: string
   tool: AiTool
   nativeSessionId: string | null
+  cwd?: string | null
   status: AiStatus
   startedAt: number
   completedAt: number | null
@@ -23,10 +24,55 @@ export interface Todo {
   quadrant: Quadrant
   status: TodoStatus
   dueDate: number | null
+  workDir: string | null
   sortOrder: number
   aiSession: AiSession | null
+  aiSessions: AiSession[]
   createdAt: number
   updatedAt: number
+}
+
+export interface AppConfig {
+  port: number
+  defaultTool: AiTool
+  defaultCwd: string
+  tools: {
+    claude: { command: string; bin: string; args: string[] }
+    codex: { command: string; bin: string; args: string[] }
+  }
+  webhook: {
+    enabled: boolean
+    provider: 'wecom' | 'feishu'
+    url: string
+    keywords: string[]
+    cooldownMs: number
+    notifyOnPendingConfirm: boolean
+    notifyOnKeywordMatch: boolean
+  }
+}
+
+export interface ToolDiagnostic {
+  name: AiTool
+  configuredCommand: string | null
+  effectiveCommand: string
+  command: string
+  configuredBin: string | null
+  effectiveBin: string
+  bin: string
+  args: string[]
+  source: 'env' | 'config' | 'auto-detected' | 'missing'
+  installHint: string | null
+  missing: boolean
+}
+
+export interface WorkDirOption {
+  label: string
+  value: string
+}
+
+export interface PickDirectoryResult {
+  path: string | null
+  cancelled: boolean
 }
 
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -58,6 +104,7 @@ export async function createTodo(data: {
   description?: string
   quadrant: Quadrant
   dueDate?: number | null
+  workDir?: string | null
 }): Promise<Todo> {
   const body = await jsonFetch<{ ok: true; todo: Todo }>('/api/todos', {
     method: 'POST',
@@ -78,6 +125,13 @@ export async function deleteTodo(id: string): Promise<void> {
   await jsonFetch(`/api/todos/${id}`, { method: 'DELETE' })
 }
 
+export async function deleteTodoAiSession(todoId: string, sessionId: string): Promise<Todo> {
+  const body = await jsonFetch<{ ok: true; todo: Todo }>(`/api/todos/${todoId}/ai-sessions/${sessionId}`, {
+    method: 'DELETE',
+  })
+  return body.todo
+}
+
 export async function startAiExec(input: {
   todoId: string
   prompt: string
@@ -92,6 +146,14 @@ export async function startAiExec(input: {
   return { sessionId: body.sessionId }
 }
 
+export interface ResumeSessionInput {
+  todoId: string
+  tool: AiTool
+  prompt: string
+  cwd?: string
+  nativeSessionId: string
+}
+
 export async function stopAiExec(sessionId: string): Promise<void> {
   await jsonFetch('/api/ai-terminal/stop', {
     method: 'POST',
@@ -101,6 +163,35 @@ export async function stopAiExec(sessionId: string): Promise<void> {
 
 export async function getStatus(): Promise<{ version: string; activeSessions: number }> {
   return jsonFetch('/api/status')
+}
+
+export async function getConfig(): Promise<{ config: AppConfig; toolDiagnostics: Record<AiTool, ToolDiagnostic> }> {
+  const body = await jsonFetch<{ ok: true; config: AppConfig; toolDiagnostics: Record<AiTool, ToolDiagnostic> }>('/api/config')
+  return { config: body.config, toolDiagnostics: body.toolDiagnostics }
+}
+
+export async function updateConfig(patch: Partial<AppConfig>): Promise<{ config: AppConfig; toolDiagnostics: Record<AiTool, ToolDiagnostic>; runtimeApplied: { defaultCwd: string; defaultTool: AiTool } }> {
+  const body = await jsonFetch<{ ok: true; config: AppConfig; toolDiagnostics: Record<AiTool, ToolDiagnostic>; runtimeApplied: { defaultCwd: string; defaultTool: AiTool } }>('/api/config', {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  })
+  return { config: body.config, toolDiagnostics: body.toolDiagnostics, runtimeApplied: body.runtimeApplied }
+}
+
+export async function getWorkDirOptions(): Promise<{ root: string; options: WorkDirOption[] }> {
+  const body = await jsonFetch<{ ok: true; root: string; options: WorkDirOption[] }>('/api/config/workdirs')
+  return { root: body.root, options: body.options }
+}
+
+export async function pickDirectory(input: {
+  defaultPath?: string
+  prompt?: string
+} = {}): Promise<PickDirectoryResult> {
+  const body = await jsonFetch<{ ok: true; path: string | null; cancelled: boolean }>('/api/system/pick-directory', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return { path: body.path, cancelled: body.cancelled }
 }
 
 /** 浏览器 WS 地址：开发时走 vite proxy，生产同源 */

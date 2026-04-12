@@ -15,7 +15,7 @@ export function createTodosRouter({ db }) {
 
   router.post('/', (req, res) => {
     try {
-      const { title, description, quadrant, dueDate } = req.body || {}
+      const { title, description, quadrant, dueDate, workDir } = req.body || {}
       if (!title || typeof title !== 'string') {
         res.status(400).json({ ok: false, error: 'missing title' })
         return
@@ -30,6 +30,7 @@ export function createTodosRouter({ db }) {
         description: description || '',
         quadrant: q,
         dueDate: dueDate ?? null,
+        workDir: workDir || null,
       })
       res.json({ ok: true, todo })
     } catch (e) {
@@ -60,6 +61,27 @@ export function createTodosRouter({ db }) {
       }
       db.deleteTodo(req.params.id)
       res.json({ ok: true })
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
+  router.delete('/:id/ai-sessions/:sessionId', (req, res) => {
+    try {
+      const existing = db.getTodo(req.params.id)
+      if (!existing) {
+        res.status(404).json({ ok: false, error: 'not_found' })
+        return
+      }
+
+      const nextAiSessions = (existing.aiSessions || []).filter(item => item?.sessionId !== req.params.sessionId)
+      if (nextAiSessions.length === (existing.aiSessions || []).length) {
+        res.status(404).json({ ok: false, error: 'session_not_found' })
+        return
+      }
+
+      const todo = db.updateTodo(req.params.id, { aiSessions: nextAiSessions })
+      res.json({ ok: true, todo })
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message })
     }

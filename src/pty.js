@@ -1,11 +1,72 @@
 import { EventEmitter } from 'node:events'
 import { createRequire } from 'node:module'
+import { readdirSync, statSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { homedir } from 'node:os'
 
 const require = createRequire(import.meta.url)
 
 const CLAUDE_SESSION_RE = /claude\s+--resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
-const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g
+const CODEX_SESSION_RE = /codex\s+resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const MAX_LOG_BYTES = 512 * 1024
+const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude', 'projects')
+const CODEX_SESSIONS_DIR = join(homedir(), '.codex', 'sessions')
+
+function claudeProjectHash(absPath) {
+  return absPath.replace(/\//g, '-')
+}
+
+function detectClaudeSessionFromFs(workDir, afterMs) {
+  const projDir = join(CLAUDE_PROJECTS_DIR, claudeProjectHash(workDir))
+  if (!existsSync(projDir)) return null
+  try {
+    let newest = null
+    let newestTime = 0
+    for (const file of readdirSync(projDir)) {
+      if (!file.endsWith('.jsonl')) continue
+      const uuid = file.slice(0, -6)
+      if (!UUID_RE.test(uuid)) continue
+      const st = statSync(join(projDir, file))
+      const t = st.birthtimeMs || st.ctimeMs
+      if (t > afterMs && t > newestTime) {
+        newest = uuid
+        newestTime = t
+      }
+    }
+    return newest
+  } catch {
+    return null
+  }
+}
+
+function detectCodexSessionFromFs(afterMs) {
+  const now = new Date()
+  const yy = now.getFullYear().toString()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const dayDir = join(CODEX_SESSIONS_DIR, yy, mm, dd)
+  if (!existsSync(dayDir)) return null
+  try {
+    let newest = null
+    let newestTime = 0
+    for (const file of readdirSync(dayDir)) {
+      if (!file.startsWith('rollout-') || !file.endsWith('.jsonl')) continue
+      const st = statSync(join(dayDir, file))
+      const t = st.birthtimeMs || st.ctimeMs
+      if (t > afterMs && t > newestTime) {
+        const uuidMatch = file.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/)
+        if (uuidMatch) {
+          newest = uuidMatch[1]
+          newestTime = t
+        }
+      }
+    }
+    return newest
+  } catch {
+    return null
+  }
+}
 
 function defaultPtyFactory() {
   const pty = require('node-pty')
@@ -34,15 +95,33 @@ export class PtyManager extends EventEmitter {
     const toolCfg = this.tools[tool]
     if (!toolCfg) throw new Error(`unknown tool: ${tool}`)
     const baseArgs = toolCfg.args || []
-    const args = resumeNativeId ? [...baseArgs, '--resume', resumeNativeId] : [...baseArgs]
+    const args = resumeNativeId
+      ? tool === 'codex'
+        ? [...baseArgs, 'resume', resumeNativeId]
+        : [...baseArgs, '--resume', resumeNativeId]
+      : [...baseArgs]
+    const effectiveCwd = cwd || process.env.HOME || process.cwd()
 
-    const proc = this.ptyFactory(toolCfg.bin, args, {
-      name: 'xterm-256color',
-      cols: 80,
-      rows: 24,
-      cwd,
-      env: { ...process.env, TERM: 'xterm-256color', FORCE_COLOR: '1' },
-    })
+    console.log(`[pty] starting ${tool} bin=${toolCfg.bin} cwd=${effectiveCwd} args=${JSON.stringify(args)}`)
+
+    let proc
+    try {
+      proc = this.ptyFactory(toolCfg.bin, args, {
+        name: 'xterm-256color',
+        cols: 80,
+        rows: 24,
+        cwd: effectiveCwd,
+        env: {
+          ...process.env,
+          TERM: 'xterm-256color',
+          TZ: process.env.TZ || 'America/Los_Angeles',
+          FORCE_COLOR: '1',
+        },
+      })
+    } catch (error) {
+      error.message = `PTY spawn failed for ${tool} (bin=${toolCfg.bin}, cwd=${effectiveCwd}, args=${JSON.stringify(args)}): ${error.message}`
+      throw error
+    }
 
     const session = {
       proc,
@@ -55,8 +134,35 @@ export class PtyManager extends EventEmitter {
       promptTimer: null,
       nativeId: resumeNativeId || null,
       stopped: false,
+      detectTimer: null,
     }
     this.sessions.set(sessionId, session)
+
+    if (!resumeNativeId) {
+      const spawnTime = Date.now() - 1000
+      let detectAttempts = 0
+      session.detectTimer = setInterval(() => {
+        detectAttempts++
+        if (session.nativeId) {
+          clearInterval(session.detectTimer)
+          session.detectTimer = null
+          return
+        }
+        const id = tool === 'codex'
+          ? detectCodexSessionFromFs(spawnTime)
+          : detectClaudeSessionFromFs(effectiveCwd, spawnTime)
+        if (id) {
+          clearInterval(session.detectTimer)
+          session.detectTimer = null
+          session.nativeId = id
+          this.emit('native-session', { sessionId, nativeId: id })
+        } else if (detectAttempts >= 15) {
+          clearInterval(session.detectTimer)
+          session.detectTimer = null
+        }
+      }, 2000)
+      session.detectTimer.unref?.()
+    }
 
     proc.onData((data) => {
       session.fullLog.push(data)
@@ -65,10 +171,20 @@ export class PtyManager extends EventEmitter {
         const removed = session.fullLog.shift()
         session.logBytes -= removed.length
       }
-      const stripped = data.replace(ANSI_RE, '')
-      const m = stripped.match(CLAUDE_SESSION_RE)
+      const stripped = data
+        .replace(/\x1b\[[0-9;?]*[A-Za-z~]/g, '')
+        .replace(/\x1b\][^\x07]*\x07/g, '')
+        .replace(/\x1b[()#][A-Za-z0-9]/g, '')
+        .replace(/\x1b[>=<cDEHMNOPZ78]/g, '')
+        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+      const sessionRe = tool === 'codex' ? CODEX_SESSION_RE : CLAUDE_SESSION_RE
+      const m = stripped.match(sessionRe)
       if (m && session.nativeId !== m[1]) {
         session.nativeId = m[1]
+        if (session.detectTimer) {
+          clearInterval(session.detectTimer)
+          session.detectTimer = null
+        }
         this.emit('native-session', { sessionId, nativeId: m[1] })
       }
       this.emit('output', { sessionId, data })
@@ -85,6 +201,7 @@ export class PtyManager extends EventEmitter {
     }
 
     proc.onExit(({ exitCode }) => {
+      if (session.detectTimer) clearInterval(session.detectTimer)
       if (session.promptTimer) clearTimeout(session.promptTimer)
       const fullLog = session.fullLog.join('')
       this.sessions.delete(sessionId)

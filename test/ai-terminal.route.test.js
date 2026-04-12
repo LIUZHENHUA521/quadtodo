@@ -33,11 +33,18 @@ class FakePty extends EventEmitter {
   list() { return [...this._has] }
 }
 
-function makeApp() {
+function makeApp(opts = {}) {
   const db = openDb(':memory:')
   const pty = new FakePty()
   const logDir = mkdtempSync(join(tmpdir(), 'quadtodo-log-'))
-  const ait = createAiTerminal({ db, pty, logDir })
+  const ait = createAiTerminal({
+    db,
+    pty,
+    logDir,
+    defaultCwd: opts.defaultCwd,
+    getWebhookConfig: opts.getWebhookConfig,
+    notifier: opts.notifier,
+  })
   const app = express()
   app.use(express.json())
   app.use('/api/ai-terminal', ait.router)
@@ -75,6 +82,17 @@ describe('routes/ai-terminal', () => {
     expect(updated.status).toBe('ai_running')
     expect(updated.aiSession.tool).toBe('claude')
     expect(updated.aiSession.status).toBe('running')
+    expect(updated.aiSessions).toHaveLength(1)
+  })
+
+  it('POST /exec falls back to defaultCwd when request cwd is missing', async () => {
+    ctx = makeApp({ defaultCwd: '/Users/liuzhenhua/Desktop/code/crazyCombo' })
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const r = await request(ctx.app)
+      .post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hello', tool: 'claude' })
+    expect(r.status).toBe(200)
+    expect(ctx.pty.started[0].cwd).toBe('/Users/liuzhenhua/Desktop/code/crazyCombo')
   })
 
   it('POST /exec refuses concurrent session on same todo', async () => {
@@ -96,6 +114,140 @@ describe('routes/ai-terminal', () => {
     })
     const updated = ctx.db.getTodo(todo.id)
     expect(updated.aiSession.nativeSessionId).toBe('abcdef12-3456-7890-abcd-ef1234567890')
+  })
+
+  it('POST /exec with resumeNativeId replaces prior history entry for same native session', async () => {
+    const todo = ctx.db.createTodo({
+      title: 'T',
+      quadrant: 1,
+      aiSessions: [{
+        sessionId: 'old-session',
+        tool: 'claude',
+        nativeSessionId: 'old-native',
+        status: 'done',
+        startedAt: 1,
+        completedAt: 2,
+        prompt: 'old',
+      }],
+    })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({
+        todoId: todo.id,
+        prompt: 'resume me',
+        tool: 'claude',
+        resumeNativeId: 'old-native',
+      })
+    expect(body.ok).toBe(true)
+    const updated = ctx.db.getTodo(todo.id)
+    expect(updated.aiSessions).toHaveLength(1)
+    expect(updated.aiSessions[0].sessionId).toBe(body.sessionId)
+    expect(updated.aiSessions[0].nativeSessionId).toBe('old-native')
+  })
+
+  it('POST /exec with same native session reuses existing in-memory session', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const first = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+    ctx.pty.emit('native-session', {
+      sessionId: first.body.sessionId,
+      nativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+    })
+    const second = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({
+        todoId: todo.id,
+        prompt: 'hi again',
+        tool: 'claude',
+        resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+      })
+    expect(second.status).toBe(200)
+    expect(second.body.reused).toBe(true)
+    expect(second.body.sessionId).toBe(first.body.sessionId)
+    expect(ctx.pty.started).toHaveLength(1)
+  })
+
+  it('POST /exec reserves resumed native session immediately to avoid duplicate starts', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const first = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({
+        todoId: todo.id,
+        prompt: 'resume me',
+        tool: 'claude',
+        resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+      })
+    const second = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({
+        todoId: todo.id,
+        prompt: 'resume me again',
+        tool: 'claude',
+        resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+      })
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+    expect(second.body.reused).toBe(true)
+    expect(second.body.sessionId).toBe(first.body.sessionId)
+    expect(ctx.pty.started).toHaveLength(1)
+  })
+
+  it('auto-recovers restartable sessions on startup', () => {
+    const db = openDb(':memory:')
+    const todo = db.createTodo({
+      title: 'T',
+      quadrant: 1,
+      status: 'ai_running',
+      workDir: '/Users/liuzhenhua/Desktop/code',
+      aiSessions: [{
+        sessionId: 'old-session',
+        tool: 'claude',
+        nativeSessionId: 'abcdef12-3456-7890-abcd-ef1234567890',
+        cwd: '/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo',
+        status: 'running',
+        startedAt: 1,
+        completedAt: null,
+        prompt: 'old prompt',
+      }],
+    })
+    const pty = new FakePty()
+    const logDir = mkdtempSync(join(tmpdir(), 'quadtodo-log-'))
+    const ait = createAiTerminal({ db, pty, logDir, defaultCwd: '/Users/liuzhenhua/Desktop/code/crazyCombo' })
+    expect(pty.started).toHaveLength(1)
+    expect(pty.started[0].resumeNativeId).toBe('abcdef12-3456-7890-abcd-ef1234567890')
+    expect(pty.started[0].prompt).toBeNull()
+    expect(pty.started[0].cwd).toBe('/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo')
+    const updated = db.getTodo(todo.id)
+    expect(updated.status).toBe('ai_running')
+    expect(updated.aiSession.nativeSessionId).toBe('abcdef12-3456-7890-abcd-ef1234567890')
+    expect(updated.aiSession.sessionId).not.toBe('old-session')
+    expect(updated.aiSession.cwd).toBe('/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo')
+    ait.close()
+    rmSync(logDir, { recursive: true, force: true })
+    db.close()
+  })
+
+  it('startup recovery resets todo when no recoverable native session exists', () => {
+    const db = openDb(':memory:')
+    const todo = db.createTodo({
+      title: 'T',
+      quadrant: 1,
+      status: 'ai_running',
+      aiSessions: [{
+        sessionId: 'old-session',
+        tool: 'claude',
+        nativeSessionId: null,
+        status: 'running',
+        startedAt: 1,
+        completedAt: null,
+        prompt: 'old prompt',
+      }],
+    })
+    const pty = new FakePty()
+    const logDir = mkdtempSync(join(tmpdir(), 'quadtodo-log-'))
+    const ait = createAiTerminal({ db, pty, logDir })
+    expect(pty.started).toHaveLength(0)
+    const updated = db.getTodo(todo.id)
+    expect(updated.status).toBe('todo')
+    ait.close()
+    rmSync(logDir, { recursive: true, force: true })
+    db.close()
   })
 
   it('output event is captured in history buffer', async () => {
@@ -174,9 +326,9 @@ describe('routes/ai-terminal', () => {
     ctx.ait.addBrowser(body.sessionId, fakeWs1)
     ctx.ait.addBrowser(body.sessionId, fakeWs2)
     ctx.pty.emit('output', { sessionId: body.sessionId, data: 'hi' })
-    expect(sent1).toHaveLength(1)
-    expect(sent2).toHaveLength(1)
-    expect(JSON.parse(sent1[0])).toEqual({ type: 'output', data: 'hi' })
+    expect(sent1.some(item => JSON.parse(item).type === 'output')).toBe(true)
+    expect(sent2.some(item => JSON.parse(item).type === 'output')).toBe(true)
+    expect(sent1.some(item => JSON.parse(item).type === 'auto_mode')).toBe(true)
   })
 
   it('addBrowser replays existing outputHistory immediately', async () => {
@@ -212,5 +364,55 @@ describe('routes/ai-terminal', () => {
     const session = ctx.ait.sessions.get(body.sessionId)
     expect(session.outputSize).toBeLessThanOrEqual(512 * 1024 + big.length)
     expect(session.outputHistory.length).toBeLessThan(10)
+  })
+
+  it('confirm-like output marks todo as ai_pending and notifies', async () => {
+    const notify = vi.fn(async () => true)
+    ctx = makeApp({
+      notifier: {
+        detectConfirmMatch: () => 'Press Enter to confirm',
+        detectKeywordMatch: () => null,
+        canNotifyPendingConfirm: () => true,
+        notify,
+      },
+      getWebhookConfig: () => ({ enabled: true }),
+    })
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+
+    ctx.pty.emit('output', { sessionId: body.sessionId, data: 'Press Enter to confirm' })
+
+    const updated = ctx.db.getTodo(todo.id)
+    expect(updated.status).toBe('ai_pending')
+    expect(updated.aiSession.status).toBe('pending_confirm')
+    expect(notify).toHaveBeenCalledTimes(1)
+  })
+
+  it('set_auto_mode bypass auto-confirms an existing pending prompt', async () => {
+    vi.useFakeTimers()
+    ctx = makeApp({
+      notifier: {
+        detectConfirmMatch: () => 'Press Enter to confirm',
+        detectKeywordMatch: () => null,
+        canNotifyPendingConfirm: () => false,
+        notify: vi.fn(),
+      },
+    })
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+
+    const sent = []
+    const ws = { readyState: 1, OPEN: 1, send: (d) => sent.push(JSON.parse(d)) }
+    ctx.ait.addBrowser(body.sessionId, ws)
+    ctx.pty.emit('output', { sessionId: body.sessionId, data: 'Press Enter to confirm' })
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'set_auto_mode', autoMode: 'bypass' })
+    vi.advanceTimersByTime(250)
+
+    expect(ctx.pty.writes).toContainEqual({ id: body.sessionId, data: '\r' })
+    expect(sent.some(msg => msg.type === 'auto_mode' && msg.autoMode === 'bypass')).toBe(true)
+    vi.useRealTimers()
   })
 })

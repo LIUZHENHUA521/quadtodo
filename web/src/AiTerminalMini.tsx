@@ -8,12 +8,14 @@ import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined 
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { getTerminalWsUrl, stopAiExec, TodoStatus } from './api'
+import { getTerminalWsUrl, startAiExec, stopAiExec, TodoStatus, ResumeSessionInput } from './api'
 
 interface Props {
   sessionId: string
   todoId: string
   status: TodoStatus
+  resumeTarget?: ResumeSessionInput | null
+  onSessionRecovered?: (nextSessionId: string) => void
   onClose: () => void
   onDone?: (result: { status: string; exitCode?: number }) => void
 }
@@ -24,7 +26,7 @@ const MAX_RECONNECT_ATTEMPTS = 15
 const HEARTBEAT_INTERVAL = 15_000
 const RESIZE_DEBOUNCE_MS = 100
 
-export default function AiTerminalMini({ sessionId, todoId, status, onClose, onDone }: Props) {
+export default function AiTerminalMini({ sessionId, todoId, status, resumeTarget, onSessionRecovered, onClose, onDone }: Props) {
   void onClose
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
@@ -46,6 +48,41 @@ export default function AiTerminalMini({ sessionId, todoId, status, onClose, onD
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastPongRef = useRef<number>(Date.now())
   const STALE_THRESHOLD = 30_000
+  const recoveringRef = useRef(false)
+  const recoveryAttemptedRef = useRef(false)
+  const resumeTargetRef = useRef<ResumeSessionInput | null>(resumeTarget || null)
+  const onSessionRecoveredRef = useRef<typeof onSessionRecovered>(onSessionRecovered)
+
+  useEffect(() => {
+    resumeTargetRef.current = resumeTarget || null
+    onSessionRecoveredRef.current = onSessionRecovered
+  }, [resumeTarget, onSessionRecovered])
+
+  const tryAutoRecover = useCallback(async () => {
+    const latestResumeTarget = resumeTargetRef.current
+    if (!latestResumeTarget?.nativeSessionId || recoveringRef.current || recoveryAttemptedRef.current) return false
+    recoveringRef.current = true
+    recoveryAttemptedRef.current = true
+    try {
+      termRef.current?.writeln('\r\n\x1b[33m--- 检测到服务重启，正在自动恢复会话... ---\x1b[0m\r')
+      const { sessionId: nextSessionId } = await startAiExec({
+        todoId: latestResumeTarget.todoId,
+        tool: latestResumeTarget.tool,
+        prompt: latestResumeTarget.prompt,
+        cwd: latestResumeTarget.cwd,
+        resumeNativeId: latestResumeTarget.nativeSessionId,
+      })
+      stopReconnectRef.current = true
+      setSessionExpired(false)
+      onSessionRecoveredRef.current?.(nextSessionId)
+      return true
+    } catch (error: any) {
+      termRef.current?.writeln(`\r\n\x1b[31m--- 自动恢复失败：${error?.message || 'unknown error'} ---\x1b[0m\r`)
+      return false
+    } finally {
+      recoveringRef.current = false
+    }
+  }, [])
 
   /** fit + 发送 resize（跳过尺寸未变的情况） */
   const doFit = useCallback(() => {
@@ -70,6 +107,15 @@ export default function AiTerminalMini({ sessionId, todoId, status, onClose, onD
   useEffect(() => {
     if (!containerRef.current) return
     disposedRef.current = false
+    stopReconnectRef.current = false
+    recoveringRef.current = false
+    recoveryAttemptedRef.current = false
+    reconnectDelayRef.current = INITIAL_RECONNECT_DELAY
+    reconnectCountRef.current = 0
+    lastSentSizeRef.current = null
+    lastPongRef.current = Date.now()
+    setSessionExpired(false)
+    setWsConnected(false)
 
     const term = new Terminal({
       fontSize: 13,
@@ -128,6 +174,9 @@ export default function AiTerminalMini({ sessionId, todoId, status, onClose, onD
         setWsConnected(true)
         lastPongRef.current = Date.now()
         term.writeln('\x1b[36m--- Terminal connected ---\x1b[0m\r')
+        if (!resumeTargetRef.current?.nativeSessionId && status === 'ai_running') {
+          term.writeln('\x1b[90m--- 正在注入任务上下文，请稍候... ---\x1b[0m\r')
+        }
         requestAnimationFrame(() => {
           try {
             fit.fit()
@@ -151,9 +200,13 @@ export default function AiTerminalMini({ sessionId, todoId, status, onClose, onD
           }
           if (msg.type === 'error') {
             if (msg.error === 'session_not_found') {
-              stopReconnectRef.current = true
-              setSessionExpired(true)
-              term.writeln('\r\n\x1b[31m--- 会话已过期（服务端重启或已清理） ---\x1b[0m\r')
+              void tryAutoRecover().then((recovered) => {
+                if (!recovered) {
+                  stopReconnectRef.current = true
+                  setSessionExpired(true)
+                  term.writeln('\r\n\x1b[31m--- 会话已过期（服务端重启或已清理） ---\x1b[0m\r')
+                }
+              })
             }
             return
           }
@@ -168,6 +221,9 @@ export default function AiTerminalMini({ sessionId, todoId, status, onClose, onD
               break
             case 'pending_confirm':
               setSessionStatus('ai_pending')
+              break
+            case 'auto_mode':
+              setAutoMode(msg.autoMode || null)
               break
             case 'turn_done':
               break
@@ -196,9 +252,13 @@ export default function AiTerminalMini({ sessionId, todoId, status, onClose, onD
         if (disposedRef.current || stopReconnectRef.current) return
 
         if (ev.code === 4004) {
-          stopReconnectRef.current = true
-          setSessionExpired(true)
-          term.writeln('\r\n\x1b[31m--- 会话已过期 ---\x1b[0m\r')
+          void tryAutoRecover().then((recovered) => {
+            if (!recovered) {
+              stopReconnectRef.current = true
+              setSessionExpired(true)
+              term.writeln('\r\n\x1b[31m--- 会话已过期 ---\x1b[0m\r')
+            }
+          })
           return
         }
 
@@ -352,7 +412,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, onClose, onD
       wsRef.current = null
       fitRef.current = null
     }
-  }, [sessionId])
+  }, [sessionId, tryAutoRecover])
 
   useEffect(() => { setSessionStatus(status) }, [status])
 
@@ -363,6 +423,13 @@ export default function AiTerminalMini({ sessionId, todoId, status, onClose, onD
   const handleStop = useCallback(async () => {
     await stopAiExec(sessionId)
   }, [sessionId])
+
+  const handleManualRecover = useCallback(async () => {
+    const recovered = await tryAutoRecover()
+    if (!recovered) {
+      termRef.current?.writeln('\r\n\x1b[31m--- 当前没有可恢复的原生会话 ID ---\x1b[0m\r')
+    }
+  }, [tryAutoRecover])
 
   const handleSetAutoMode = useCallback((mode: string | null) => {
     setAutoMode(mode)
@@ -414,15 +481,16 @@ export default function AiTerminalMini({ sessionId, todoId, status, onClose, onD
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
         zIndex: 9999, background: '#1a1a2e', display: 'flex', flexDirection: 'column',
       } : {
-        borderRadius: 6, overflow: 'hidden', background: '#1a1a2e',
+        borderRadius: 10, overflow: 'hidden', background: '#1a1a2e',
         display: 'flex', flexDirection: 'column' as const, width: '100%',
         border: sessionStatus === 'ai_pending' ? '2px solid #ff4d4f' : '1px solid #303050',
+        boxShadow: '0 10px 24px rgba(8, 13, 30, 0.16)',
       }}
     >
       {/* 工具栏 */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
-        padding: '4px 8px', background: '#16213e', borderBottom: '1px solid #303050',
+        padding: '8px 10px', background: '#16213e', borderBottom: '1px solid #303050',
         fontSize: 11, color: '#888',
       }}>
         <span style={{ color: '#569cd6', fontWeight: 500 }}>AI</span>
@@ -438,6 +506,29 @@ export default function AiTerminalMini({ sessionId, todoId, status, onClose, onD
         )}
         {sessionStatus === 'ai_done' && (
           <Tag color="warning" style={{ fontSize: 10, lineHeight: '16px', margin: 0 }}>请验收</Tag>
+        )}
+        {sessionExpired && (
+          <Tag color="error" style={{ fontSize: 10, lineHeight: '16px', margin: 0 }}>
+            会话已过期
+          </Tag>
+        )}
+        {sessionExpired && resumeTargetRef.current?.nativeSessionId && (
+          <Button
+            size="small"
+            onClick={handleManualRecover}
+            style={{ height: 22, paddingInline: 8 }}
+          >
+            恢复会话
+          </Button>
+        )}
+        {sessionExpired && (
+          <Button
+            size="small"
+            onClick={onClose}
+            style={{ height: 22, paddingInline: 8 }}
+          >
+            关闭
+          </Button>
         )}
         {isActive && !sessionExpired && (
           <Dropdown

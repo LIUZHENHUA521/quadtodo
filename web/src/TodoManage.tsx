@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Button, Space, Tag, Drawer, Form, Input, DatePicker,
-  Radio, message, Popconfirm, Spin, Tooltip, Dropdown,
+  Radio, message, Popconfirm, Spin, Tooltip, Dropdown, Select,
 } from 'antd'
 import {
   PlusOutlined,
   DeleteOutlined, CheckOutlined,
   ClockCircleOutlined, SearchOutlined,
-  PlayCircleOutlined, SettingOutlined,
+  PlayCircleOutlined, SettingOutlined, CopyOutlined,
 } from '@ant-design/icons'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
@@ -19,7 +19,7 @@ import { CSS } from '@dnd-kit/utilities'
 import dayjs from 'dayjs'
 import {
   listTodos, createTodo, updateTodo, deleteTodo,
-  startAiExec,
+  startAiExec, getWorkDirOptions, pickDirectory, deleteTodoAiSession,
   Todo, Quadrant, AiTool,
 } from './api'
 import AiTerminalMini from './AiTerminalMini'
@@ -46,20 +46,56 @@ function isOverdue(dueDate: number | null) {
   return dueDate ? dueDate < Date.now() : false
 }
 
+function shortSessionId(id?: string | null) {
+  if (!id) return ''
+  return id.length > 12 ? id.slice(0, 12) : id
+}
+
+function formatSessionTime(ts?: number | null) {
+  if (!ts) return ''
+  return dayjs(ts).format('MM/DD HH:mm')
+}
+
+function toolDisplayName(tool: AiTool) {
+  return tool === 'claude' ? 'Claude Code' : 'Codex'
+}
+
+function buildTodoPrompt(todo: Todo) {
+  return `请完成以下待办任务:
+
+标题: ${todo.title}
+描述: ${todo.description || '无'}
+
+请先理解需求和当前项目上下文，再开始执行。
+完成后请给出变更摘要、验证结果，以及仍需我确认的事项。`
+}
+
+function currentStatusLabel(status: Todo['status']) {
+  if (status === 'ai_running') return { text: '运行中', className: 'status-chip-running' }
+  if (status === 'ai_pending') return { text: '待交互', className: 'status-chip-pending' }
+  if (status === 'ai_done') return { text: '待验收', className: 'status-chip-done' }
+  if (status === 'done') return { text: '已完成', className: 'status-chip-complete' }
+  return { text: '待办', className: 'status-chip-idle' }
+}
+
 // ─── 可拖拽任务卡片 ───
 
 interface SortableTodoCardProps {
   todo: Todo
   onClick: (t: Todo) => void
   onToggleDone: (t: Todo) => void
-  onAiExec: (todo: Todo, tool: AiTool) => void
+  onAiExec: (todo: Todo, tool: AiTool, session?: Todo['aiSessions'][number]) => void
+  onDeleteAiSession: (todo: Todo, session: Todo['aiSessions'][number], currentSessionId?: string | null) => void
   onDelete: (t: Todo) => void
   expandedTerminal: { todoId: string; sessionId: string } | null
   setExpandedTerminal: (v: { todoId: string; sessionId: string } | null) => void
+  hiddenTerminalSessionId?: string | null
+  onHideTerminal: (todoId: string, sessionId: string) => void
+  onShowTerminal: (todoId: string) => void
   onRefresh: () => void
 }
 
-function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onDelete, expandedTerminal, setExpandedTerminal, onRefresh }: SortableTodoCardProps) {
+function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onDeleteAiSession, onDelete, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionId, onHideTerminal, onShowTerminal, onRefresh }: SortableTodoCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todo.id })
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -68,6 +104,19 @@ function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onDelete, exp
   const isAiActive = todo.status === 'ai_running' || todo.status === 'ai_pending'
   const terminalOpen = expandedTerminal?.todoId === todo.id
   const sessionId = terminalOpen ? expandedTerminal!.sessionId : todo.aiSession?.sessionId
+  const historySessions = todo.aiSessions || []
+  const hasHistory = historySessions.length > 0
+  const statusChip = currentStatusLabel(todo.status)
+  const selectedSession = sessionId
+    ? historySessions.find(item => item.sessionId === sessionId) || null
+    : todo.aiSession || historySessions[0] || null
+  const resumeTarget = (selectedSession?.nativeSessionId ? selectedSession : null)
+    || historySessions.find(item => item.nativeSessionId) || null
+  const terminalHidden = Boolean(sessionId && hiddenTerminalSessionId === sessionId)
+  const aiMenuItems = [
+    { key: 'start:claude', label: '▶ 启动 Claude' },
+    { key: 'start:codex', label: '▶ 启动 Codex' },
+  ]
 
   const { role: _r, tabIndex: _t, ...safeAttributes } = attributes as any
   const finalAttributes = terminalOpen ? safeAttributes : attributes
@@ -80,69 +129,166 @@ function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onDelete, exp
       tabIndex={terminalOpen ? -1 : undefined}
       className={`todo-card quadrant-${todo.quadrant} ${isDragging ? 'dragging' : ''} ${todo.status === 'done' ? 'done' : ''}`}
     >
-      {/* 标题区域（可拖拽） */}
-      <div
-        {...listeners}
-        style={{ display: 'flex', alignItems: 'flex-start', gap: 6, cursor: 'grab' }}
-        onClick={(e) => { e.stopPropagation(); onClick(todo) }}
-      >
-        <input
-          type="checkbox"
-          checked={todo.status === 'done'}
-          onClick={(e) => e.stopPropagation()}
-          onChange={() => onToggleDone(todo)}
-          style={{ marginTop: 4 }}
-        />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="todo-card-title">{todo.title}</div>
-          <div className="todo-card-meta">
-            {todo.dueDate && (
-              <span className={isOverdue(todo.dueDate) && todo.status !== 'done' ? 'overdue' : ''}>
-                <ClockCircleOutlined style={{ marginRight: 2 }} />
-                {formatDate(todo.dueDate)}
-              </span>
-            )}
+      <div className="todo-card-shell">
+        <div
+          {...listeners}
+          className="todo-card-head"
+          onClick={(e) => { e.stopPropagation(); onClick(todo) }}
+        >
+          <input
+            type="checkbox"
+            checked={todo.status === 'done'}
+            onClick={(e) => e.stopPropagation()}
+            onChange={() => onToggleDone(todo)}
+            className="todo-card-checkbox"
+          />
+          <div className="todo-card-main">
+            <div className="todo-card-title-row">
+              <div className="todo-card-title">{todo.title}</div>
+              <span className={`todo-status-chip ${statusChip.className}`}>{statusChip.text}</span>
+            </div>
+            <div className="todo-card-meta">
+              {todo.workDir && (
+                <span className="todo-meta-pill" title={todo.workDir}>
+                  目录 · {todo.workDir.split('/').filter(Boolean).slice(-1)[0] || todo.workDir}
+                </span>
+              )}
+              {todo.dueDate && (
+                <span className={`todo-meta-pill ${isOverdue(todo.dueDate) && todo.status !== 'done' ? 'overdue' : ''}`}>
+                  <ClockCircleOutlined style={{ marginRight: 4 }} />
+                  {formatDate(todo.dueDate)}
+                </span>
+              )}
+              {hasHistory && (
+                <span className="todo-meta-pill">
+                  会话 {historySessions.length}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* AI 按钮 + 状态标签 */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-          {todo.status === 'todo' && (
-            <Dropdown
-              menu={{
-                items: [
-                  { key: 'claude', label: '▶ 启动 Claude' },
-                  { key: 'codex', label: '▶ 启动 Codex' },
-                ],
-                onClick: ({ key }) => {
-                  const tool = key as AiTool
-                  onAiExec(todo, tool)
-                },
-              }}
-              trigger={['click']}
-            >
-              <Button size="small" icon={<PlayCircleOutlined />}>AI 终端</Button>
-            </Dropdown>
-          )}
-          {todo.status === 'ai_running' && (
-            <Tag color="processing" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>运行中</Tag>
-          )}
-          {todo.status === 'ai_pending' && (
-            <Tag color="error" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0, animation: 'blink 1s infinite' }}>⚠ 待交互</Tag>
-          )}
-          {todo.status === 'ai_done' && (
-            <Tag color="warning" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>请验收</Tag>
+        <div className="todo-card-toolbar" onClick={(e) => e.stopPropagation()}>
+          <Dropdown
+            menu={{
+              items: aiMenuItems,
+              onClick: ({ key }) => {
+                const [action, value] = key.split(':')
+                if (action === 'start') {
+                  onShowTerminal(todo.id)
+                  onAiExec(todo, value as AiTool)
+                  return
+                }
+                const target = historySessions.find(item => item.sessionId === value)
+                if (!target) return
+                if (action === 'open') {
+                  onShowTerminal(todo.id)
+                  setExpandedTerminal({ todoId: todo.id, sessionId: target.sessionId })
+                  return
+                }
+                if (action === 'resume') {
+                  onShowTerminal(todo.id)
+                  onAiExec(todo, target.tool, target)
+                }
+              },
+            }}
+            trigger={['click']}
+          >
+            <Button size="small" icon={<PlayCircleOutlined />} className="todo-primary-action">AI 终端</Button>
+          </Dropdown>
+          {(todo.status === 'ai_running' || todo.status === 'ai_pending' || todo.status === 'ai_done') && (
+            <Tag className="todo-toolbar-tag" color={todo.status === 'ai_pending' ? 'error' : todo.status === 'ai_done' ? 'warning' : 'processing'}>
+              {todo.status === 'ai_pending' ? '待交互' : todo.status === 'ai_done' ? '待验收' : '运行中'}
+            </Tag>
           )}
           <Popconfirm title="确认删除？" onConfirm={() => onDelete(todo)}>
-            <Button size="small" danger icon={<DeleteOutlined />} onClick={(e) => e.stopPropagation()} />
+            <Button size="small" danger icon={<DeleteOutlined />} onClick={(e) => e.stopPropagation()} className="todo-danger-action" />
           </Popconfirm>
         </div>
+
+        {hasHistory && (
+          <div className="todo-history-box" onClick={(e) => e.stopPropagation()}>
+            <div className="todo-history-title">历史会话 ({historySessions.length})</div>
+            <div className="todo-history-list">
+              {historySessions.map((session) => {
+                const isCurrent = session.sessionId === sessionId
+                const nativeSessionId = session.nativeSessionId || ''
+                const terminalCommand = session.tool === 'claude'
+                  ? `claude --resume ${nativeSessionId}`
+                  : `codex resume ${nativeSessionId}`
+                return (
+                  <button
+                    key={session.sessionId}
+                    type="button"
+                    className={`todo-history-item ${isCurrent ? 'active' : ''}`}
+                    onClick={() => {
+                      onShowTerminal(todo.id)
+                      setExpandedTerminal({ todoId: todo.id, sessionId: session.sessionId })
+                    }}
+                  >
+                    <div className="todo-history-body">
+                      <div className="todo-history-headline">
+                        <span className="todo-history-tool">{toolDisplayName(session.tool)}</span>
+                        <span className="todo-history-time">{formatSessionTime(session.startedAt || session.completedAt)}</span>
+                      </div>
+                      <div className="todo-history-native-id" title={nativeSessionId || session.sessionId}>
+                        session id: {nativeSessionId || session.sessionId}
+                      </div>
+                      {nativeSessionId && (
+                        <div className="todo-history-command" title={terminalCommand}>
+                          {terminalCommand}
+                        </div>
+                      )}
+                    </div>
+                    <div className="todo-history-actions" onClick={(e) => e.stopPropagation()}>
+                      {nativeSessionId && (
+                        <>
+                          <button
+                            type="button"
+                            className="todo-history-link"
+                            onClick={() => navigator.clipboard?.writeText(nativeSessionId).then(() => {
+                              message.success('session ID 已复制')
+                            }).catch(() => {
+                              message.error('复制失败')
+                            })}
+                            title="复制原生 session ID"
+                          >
+                            <CopyOutlined />
+                          </button>
+                          <button
+                            type="button"
+                            className="todo-history-link"
+                            onClick={() => onAiExec(todo, session.tool, session)}
+                          >
+                            恢复
+                          </button>
+                        </>
+                      )}
+                      <Popconfirm
+                        title="删除这条历史会话？"
+                        description="只删除 quadtodo 中的记录，不影响 Claude/Codex 本地会话。"
+                        onConfirm={() => onDeleteAiSession(todo, session, sessionId)}
+                      >
+                        <button
+                          type="button"
+                          className="todo-history-delete"
+                        >
+                          删除
+                        </button>
+                      </Popconfirm>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 内嵌 AI 终端 */}
-      {sessionId && (terminalOpen || isAiActive || todo.status === 'ai_done') && (
+      {sessionId && !terminalHidden && (terminalOpen || isAiActive || todo.status === 'ai_done') && (
         <div
-          style={{ marginTop: 6 }}
+          className="todo-terminal-panel"
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
@@ -153,7 +299,22 @@ function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onDelete, exp
             sessionId={sessionId}
             todoId={todo.id}
             status={todo.status}
-            onClose={() => setExpandedTerminal(null)}
+            resumeTarget={resumeTarget ? {
+              todoId: todo.id,
+              tool: resumeTarget.tool,
+              prompt: resumeTarget.prompt,
+              cwd: resumeTarget.cwd || todo.workDir || undefined,
+              nativeSessionId: resumeTarget.nativeSessionId!,
+            } : null}
+            onSessionRecovered={(nextSessionId) => {
+              onShowTerminal(todo.id)
+              setExpandedTerminal({ todoId: todo.id, sessionId: nextSessionId })
+              onRefresh()
+            }}
+            onClose={() => {
+              onHideTerminal(todo.id, sessionId)
+              setExpandedTerminal(null)
+            }}
             onDone={() => onRefresh()}
           />
         </div>
@@ -169,15 +330,19 @@ interface QuadrantZoneProps {
   todos: Todo[]
   onCardClick: (t: Todo) => void
   onToggleDone: (t: Todo) => void
-  onAiExec: (todo: Todo, tool: AiTool) => void
+  onAiExec: (todo: Todo, tool: AiTool, session?: Todo['aiSessions'][number]) => void
+  onDeleteAiSession: (todo: Todo, session: Todo['aiSessions'][number], currentSessionId?: string | null) => void
   onDelete: (t: Todo) => void
   style?: React.CSSProperties
   expandedTerminal: { todoId: string; sessionId: string } | null
   setExpandedTerminal: (v: { todoId: string; sessionId: string } | null) => void
+  hiddenTerminalSessionIdByTodo: Record<string, string | null>
+  onHideTerminal: (todoId: string, sessionId: string) => void
+  onShowTerminal: (todoId: string) => void
   onRefresh: () => void
 }
 
-function QuadrantZone({ config, todos, onCardClick, onToggleDone, onAiExec, onDelete, style, expandedTerminal, setExpandedTerminal, onRefresh }: QuadrantZoneProps) {
+function QuadrantZone({ config, todos, onCardClick, onToggleDone, onAiExec, onDeleteAiSession, onDelete, style, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, onRefresh }: QuadrantZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `quadrant-${config.q}` })
 
   const header = (
@@ -198,9 +363,13 @@ function QuadrantZone({ config, todos, onCardClick, onToggleDone, onAiExec, onDe
             onClick={onCardClick}
             onToggleDone={onToggleDone}
             onAiExec={onAiExec}
+            onDeleteAiSession={onDeleteAiSession}
             onDelete={onDelete}
             expandedTerminal={expandedTerminal}
             setExpandedTerminal={setExpandedTerminal}
+            hiddenTerminalSessionId={hiddenTerminalSessionIdByTodo[t.id] || null}
+            onHideTerminal={onHideTerminal}
+            onShowTerminal={onShowTerminal}
             onRefresh={onRefresh}
           />
         ))}
@@ -234,6 +403,7 @@ export default function TodoManage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingTodo, setEditingTodo] = useState<Todo | null>(null)
   const [form] = Form.useForm()
+  const selectedWorkDir = Form.useWatch('workDir', form)
 
   // 详情
   const [detailTodo, setDetailTodo] = useState<Todo | null>(null)
@@ -241,9 +411,14 @@ export default function TodoManage() {
 
   // 设置
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [workDirOptions, setWorkDirOptions] = useState<{ label: string; value: string }[]>([])
+  const [workDirRoot, setWorkDirRoot] = useState<string>('')
+  const [workDirLoading, setWorkDirLoading] = useState(false)
+  const [pickingWorkDir, setPickingWorkDir] = useState(false)
 
   // AI 终端展开
   const [expandedTerminal, setExpandedTerminal] = useState<{ todoId: string; sessionId: string } | null>(null)
+  const [hiddenTerminalSessionIdByTodo, setHiddenTerminalSessionIdByTodo] = useState<Record<string, string | null>>({})
 
   // 拖拽
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -295,7 +470,7 @@ export default function TodoManage() {
   const handleCreate = () => {
     setEditingTodo(null)
     form.resetFields()
-    form.setFieldsValue({ quadrant: 1 })
+    form.setFieldsValue({ quadrant: 1, workDir: undefined })
     setDrawerOpen(true)
   }
 
@@ -306,8 +481,42 @@ export default function TodoManage() {
       description: todo.description,
       quadrant: todo.quadrant,
       dueDate: todo.dueDate ? dayjs(todo.dueDate) : null,
+      workDir: todo.workDir || undefined,
     })
     setDrawerOpen(true)
+  }
+
+  const fetchWorkDirOptions = useCallback(async () => {
+    setWorkDirLoading(true)
+    try {
+      const result = await getWorkDirOptions()
+      setWorkDirRoot(result.root)
+      setWorkDirOptions(result.options)
+    } catch (e: any) {
+      message.error(e?.message || '读取目录失败')
+    } finally {
+      setWorkDirLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (drawerOpen) fetchWorkDirOptions()
+  }, [drawerOpen, fetchWorkDirOptions])
+
+  const handlePickWorkDir = async () => {
+    try {
+      setPickingWorkDir(true)
+      const result = await pickDirectory({
+        defaultPath: form.getFieldValue('workDir') || workDirRoot,
+        prompt: '选择待办工作目录',
+      })
+      if (result.cancelled || !result.path) return
+      form.setFieldValue('workDir', result.path)
+    } catch (e: any) {
+      message.error(e?.message || '选择目录失败')
+    } finally {
+      setPickingWorkDir(false)
+    }
   }
 
   const handleSave = async () => {
@@ -318,6 +527,7 @@ export default function TodoManage() {
         description: values.description || '',
         quadrant: values.quadrant as Quadrant,
         dueDate: values.dueDate ? values.dueDate.valueOf() : null,
+        workDir: values.workDir || null,
       }
 
       if (editingTodo) {
@@ -356,6 +566,24 @@ export default function TodoManage() {
     }
   }
 
+  const handleDeleteAiSession = useCallback(async (todo: Todo, session: Todo['aiSessions'][number], currentSessionId?: string | null) => {
+    try {
+      const nextTodo = await deleteTodoAiSession(todo.id, session.sessionId)
+      message.success('历史会话已删除')
+      if (currentSessionId === session.sessionId) {
+        const nextSession = nextTodo.aiSessions[0]
+        if (nextSession) {
+          setExpandedTerminal({ todoId: todo.id, sessionId: nextSession.sessionId })
+        } else {
+          setExpandedTerminal(null)
+        }
+      }
+      fetchTodos()
+    } catch (e: any) {
+      message.error(e?.message || '删除历史会话失败')
+    }
+  }, [fetchTodos])
+
   // ─── 详情 ───
 
   const openDetail = (todo: Todo) => {
@@ -365,20 +593,30 @@ export default function TodoManage() {
 
   // ─── AI 执行 ───
 
-  const handleAiExec = useCallback(async (todo: Todo, tool: AiTool) => {
+  const handleAiExec = useCallback(async (todo: Todo, tool: AiTool, session?: Todo['aiSessions'][number]) => {
     try {
       const { sessionId } = await startAiExec({
         todoId: todo.id,
-        prompt: todo.description || todo.title,
+        prompt: session?.prompt || buildTodoPrompt(todo),
         tool,
-        resumeNativeId: todo.aiSession?.nativeSessionId || undefined,
+        cwd: session?.cwd || todo.workDir || undefined,
+        resumeNativeId: session?.nativeSessionId || undefined,
       })
+      setHiddenTerminalSessionIdByTodo(prev => ({ ...prev, [todo.id]: null }))
       setExpandedTerminal({ todoId: todo.id, sessionId })
       fetchTodos()
     } catch (e: any) {
       message.error(e?.message || 'AI 启动失败')
     }
   }, [fetchTodos])
+
+  const handleHideTerminal = useCallback((todoId: string, sessionId: string) => {
+    setHiddenTerminalSessionIdByTodo(prev => ({ ...prev, [todoId]: sessionId }))
+  }, [])
+
+  const handleShowTerminal = useCallback((todoId: string) => {
+    setHiddenTerminalSessionIdByTodo(prev => ({ ...prev, [todoId]: null }))
+  }, [])
 
   // ─── 拖拽 ───
 
@@ -519,10 +757,13 @@ export default function TodoManage() {
               <QuadrantZone
                 config={QUADRANT_CONFIG[0]} todos={todosByQuadrant[1] || []}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
-                onAiExec={handleAiExec} onDelete={handleDelete}
+                onAiExec={handleAiExec} onDeleteAiSession={handleDeleteAiSession} onDelete={handleDelete}
                 style={{ flex: splitV }}
                 expandedTerminal={expandedTerminal}
                 setExpandedTerminal={setExpandedTerminal}
+                hiddenTerminalSessionIdByTodo={hiddenTerminalSessionIdByTodo}
+                onHideTerminal={handleHideTerminal}
+                onShowTerminal={handleShowTerminal}
                 onRefresh={fetchTodos}
               />
               <div
@@ -549,10 +790,13 @@ export default function TodoManage() {
               <QuadrantZone
                 config={QUADRANT_CONFIG[1]} todos={todosByQuadrant[2] || []}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
-                onAiExec={handleAiExec} onDelete={handleDelete}
+                onAiExec={handleAiExec} onDeleteAiSession={handleDeleteAiSession} onDelete={handleDelete}
                 style={{ flex: 100 - splitV }}
                 expandedTerminal={expandedTerminal}
                 setExpandedTerminal={setExpandedTerminal}
+                hiddenTerminalSessionIdByTodo={hiddenTerminalSessionIdByTodo}
+                onHideTerminal={handleHideTerminal}
+                onShowTerminal={handleShowTerminal}
                 onRefresh={fetchTodos}
               />
             </div>
@@ -585,10 +829,13 @@ export default function TodoManage() {
               <QuadrantZone
                 config={QUADRANT_CONFIG[2]} todos={todosByQuadrant[3] || []}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
-                onAiExec={handleAiExec} onDelete={handleDelete}
+                onAiExec={handleAiExec} onDeleteAiSession={handleDeleteAiSession} onDelete={handleDelete}
                 style={{ flex: splitV }}
                 expandedTerminal={expandedTerminal}
                 setExpandedTerminal={setExpandedTerminal}
+                hiddenTerminalSessionIdByTodo={hiddenTerminalSessionIdByTodo}
+                onHideTerminal={handleHideTerminal}
+                onShowTerminal={handleShowTerminal}
                 onRefresh={fetchTodos}
               />
               <div
@@ -615,10 +862,13 @@ export default function TodoManage() {
               <QuadrantZone
                 config={QUADRANT_CONFIG[3]} todos={todosByQuadrant[4] || []}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
-                onAiExec={handleAiExec} onDelete={handleDelete}
+                onAiExec={handleAiExec} onDeleteAiSession={handleDeleteAiSession} onDelete={handleDelete}
                 style={{ flex: 100 - splitV }}
                 expandedTerminal={expandedTerminal}
                 setExpandedTerminal={setExpandedTerminal}
+                hiddenTerminalSessionIdByTodo={hiddenTerminalSessionIdByTodo}
+                onHideTerminal={handleHideTerminal}
+                onShowTerminal={handleShowTerminal}
                 onRefresh={fetchTodos}
               />
             </div>
@@ -649,6 +899,29 @@ export default function TodoManage() {
           </Form.Item>
           <Form.Item name="description" label="描述">
             <TextArea rows={3} placeholder="详细描述（可选）" />
+          </Form.Item>
+          <Form.Item
+            label="工作目录"
+            extra={workDirRoot ? `默认根目录：${workDirRoot}` : '未加载到默认启动目录'}
+          >
+            <Space.Compact block>
+              <Form.Item name="workDir" noStyle>
+                <Input allowClear placeholder="不填则使用默认启动目录" />
+              </Form.Item>
+              <Button loading={pickingWorkDir} onClick={handlePickWorkDir}>选择目录</Button>
+            </Space.Compact>
+            <div style={{ marginTop: 8 }}>
+              <Select
+                allowClear
+                showSearch
+                loading={workDirLoading}
+                placeholder="快速选择默认目录下的子文件夹"
+                options={workDirOptions}
+                optionFilterProp="label"
+                value={workDirOptions.some(item => item.value === selectedWorkDir) ? selectedWorkDir : undefined}
+                onChange={(value) => form.setFieldValue('workDir', value)}
+              />
+            </div>
           </Form.Item>
           <Form.Item name="quadrant" label="象限">
             <Radio.Group>
@@ -695,6 +968,7 @@ export default function TodoManage() {
               <div><strong>象限：</strong>{QUADRANT_CONFIG.find(c => c.q === detailTodo.quadrant)?.label}</div>
               <div><strong>状态：</strong>{detailTodo.status === 'done' ? '已完成' : '待办'}</div>
               <div><strong>截止：</strong>{formatDate(detailTodo.dueDate) || '无'}</div>
+              <div><strong>工作目录：</strong>{detailTodo.workDir || '默认目录'}</div>
             </div>
           </div>
         )}

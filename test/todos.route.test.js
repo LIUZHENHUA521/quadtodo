@@ -25,11 +25,12 @@ describe('routes/todos', () => {
   it('POST /api/todos creates a todo', async () => {
     const res = await request(app)
       .post('/api/todos')
-      .send({ title: 'New task', quadrant: 1 })
+      .send({ title: 'New task', quadrant: 1, workDir: '/tmp/project-a' })
     expect(res.status).toBe(200)
     expect(res.body.ok).toBe(true)
     expect(res.body.todo.title).toBe('New task')
     expect(res.body.todo.quadrant).toBe(1)
+    expect(res.body.todo.workDir).toBe('/tmp/project-a')
     expect(res.body.todo.id).toBeTruthy()
   })
 
@@ -42,11 +43,12 @@ describe('routes/todos', () => {
   it('PUT /api/todos/:id updates fields', async () => {
     const { body: create } = await request(app).post('/api/todos').send({ title: 'A', quadrant: 1 })
     const id = create.todo.id
-    const res = await request(app).put(`/api/todos/${id}`).send({ title: 'A2', quadrant: 2, sortOrder: 500 })
+    const res = await request(app).put(`/api/todos/${id}`).send({ title: 'A2', quadrant: 2, sortOrder: 500, workDir: '/tmp/project-b' })
     expect(res.status).toBe(200)
     expect(res.body.todo.title).toBe('A2')
     expect(res.body.todo.quadrant).toBe(2)
     expect(res.body.todo.sortOrder).toBe(500)
+    expect(res.body.todo.workDir).toBe('/tmp/project-b')
   })
 
   it('PUT /api/todos/:id returns 404 for unknown id', async () => {
@@ -55,11 +57,27 @@ describe('routes/todos', () => {
   })
 
   it('DELETE /api/todos/:id removes the row', async () => {
-    const { body: create } = await request(app).post('/api/todos').send({ title: 'A', quadrant: 1 })
-    const del = await request(app).delete(`/api/todos/${create.todo.id}`)
+    const create = await request(app).post('/api/todos').send({ title: 'A', quadrant: 1 })
+    const del = await request(app).delete(`/api/todos/${create.body.todo.id}`)
     expect(del.status).toBe(200)
     const list = await request(app).get('/api/todos')
     expect(list.body.list).toHaveLength(0)
+  })
+
+  it('DELETE /api/todos/:id/ai-sessions/:sessionId removes one ai session record', async () => {
+    const todo = db.createTodo({
+      title: 'A',
+      quadrant: 1,
+      aiSessions: [
+        { sessionId: 's1', tool: 'claude', nativeSessionId: 'n1', status: 'done', startedAt: 1, completedAt: 2, prompt: 'a' },
+        { sessionId: 's2', tool: 'claude', nativeSessionId: 'n2', status: 'done', startedAt: 3, completedAt: 4, prompt: 'b' },
+      ],
+    })
+
+    const res = await request(app).delete(`/api/todos/${todo.id}/ai-sessions/s1`)
+    expect(res.status).toBe(200)
+    expect(res.body.todo.aiSessions).toHaveLength(1)
+    expect(res.body.todo.aiSessions[0].sessionId).toBe('s2')
   })
 
   it('GET /api/todos?status=todo excludes done', async () => {

@@ -1,15 +1,43 @@
+import { existsSync } from 'node:fs'
 import { Router } from 'express'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createNotifier } from '../notifier.js'
 
 const MAX_OUTPUT_BUFFER = 512 * 1024
 const CLEANUP_MS = 30 * 60_000
+const AUTO_CONFIRM_COOLDOWN_MS = 3000
+const AUTO_CONFIRM_BYPASS_COOLDOWN_MS = 1500
+const EDIT_CONFIRM_RE = /Do you want to (make this edit|create|write|apply)/i
 
-export function createAiTerminal({ db, pty, logDir }) {
+export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, getWebhookConfig, notifier: injectedNotifier }) {
   /** @type {Map<string, any>} */
   const sessions = new Map()
   /** @type {Map<string, string>} */
   const todoSessionMap = new Map()
+  /** @type {Map<string, string>} */
+  const nativeSessionMap = new Map()
+  const notifier = injectedNotifier || createNotifier({ getWebhookConfig })
+
+  function resolveSessionCwd(requestedCwd) {
+    const fallback = getDefaultCwd?.() || defaultCwd || process.env.HOME || process.cwd()
+    if (requestedCwd && existsSync(requestedCwd)) return requestedCwd
+    if (fallback && existsSync(fallback)) return fallback
+    return process.env.HOME || process.cwd()
+  }
+
+  function mergeTodoAiSessions(todo, nextSession) {
+    const history = Array.isArray(todo?.aiSessions) ? todo.aiSessions : (todo?.aiSession ? [todo.aiSession] : [])
+    const filtered = history.filter((item) => {
+      if (!item) return false
+      if (item.sessionId === nextSession.sessionId) return false
+      if (nextSession.nativeSessionId && item.tool === nextSession.tool && item.nativeSessionId === nextSession.nativeSessionId) {
+        return false
+      }
+      return true
+    })
+    return [nextSession, ...filtered]
+  }
 
   function broadcastToSession(session, msg) {
     const data = JSON.stringify(msg)
@@ -25,6 +53,30 @@ export function createAiTerminal({ db, pty, logDir }) {
       const removed = session.outputHistory.shift()
       session.outputSize -= removed.length
     }
+  }
+
+  function shouldAutoConfirm(session, confirmMatch) {
+    if (!confirmMatch || !session.autoMode) return false
+    if (session.autoMode === 'bypass') return true
+    if (session.autoMode === 'acceptEdits') {
+      return EDIT_CONFIRM_RE.test(session.recentOutput || '')
+    }
+    return false
+  }
+
+  function maybeAutoConfirm(session, confirmMatch) {
+    if (!shouldAutoConfirm(session, confirmMatch)) return false
+    const now = Date.now()
+    const cooldown = session.autoMode === 'bypass' ? AUTO_CONFIRM_BYPASS_COOLDOWN_MS : AUTO_CONFIRM_COOLDOWN_MS
+    if (now - (session.lastAutoConfirmAt || 0) < cooldown) return false
+    session.lastAutoConfirmAt = now
+    session.recentOutput = ''
+    session.status = 'running'
+    setTimeout(() => {
+      pty.write(session.sessionId, '\r')
+    }, 200)
+    broadcastToSession(session, { type: 'auto_mode', autoMode: session.autoMode || null })
+    return true
   }
 
   async function writeFullLog(sessionId, fullLog) {
@@ -44,17 +96,81 @@ export function createAiTerminal({ db, pty, logDir }) {
     const session = sessions.get(sessionId)
     if (!session) return
     appendOutput(session, data)
+    session.recentOutput = `${session.recentOutput || ''}${data}`.slice(-4000)
+
+    const confirmMatch = notifier.detectConfirmMatch(session.recentOutput)
+    if (confirmMatch && maybeAutoConfirm(session, confirmMatch)) {
+      return
+    }
+    if (confirmMatch && session.status !== 'pending_confirm') {
+      session.status = 'pending_confirm'
+      const todo = db.getTodo(session.todoId)
+      if (todo) {
+        const current = (todo.aiSessions || []).find(item => item.sessionId === sessionId) || todo.aiSession || {}
+        db.updateTodo(session.todoId, {
+          status: 'ai_pending',
+          aiSessions: mergeTodoAiSessions(todo, {
+            ...current,
+            sessionId: session.sessionId,
+            tool: session.tool,
+            nativeSessionId: session.nativeSessionId || current.nativeSessionId || null,
+            status: 'pending_confirm',
+            startedAt: session.startedAt,
+            completedAt: null,
+            prompt: session.prompt,
+          }),
+        })
+      }
+      const snippet = session.recentOutput.slice(-500)
+      broadcastToSession(session, { type: 'pending_confirm', snippet, matchedKeyword: confirmMatch })
+      if (notifier.canNotifyPendingConfirm()) {
+        void notifier.notify({
+          sessionId,
+          todoTitle: todo?.title,
+          tool: session.tool,
+          cwd: session.cwd,
+          reason: 'pending_confirm',
+          matchedKeyword: confirmMatch,
+          snippet,
+        }).catch((e) => {
+          console.warn('[ai-terminal] pending_confirm webhook failed:', e.message)
+        })
+      }
+    } else {
+      const keywordMatch = notifier.detectKeywordMatch(session.recentOutput)
+      if (keywordMatch) {
+        const todo = db.getTodo(session.todoId)
+        void notifier.notify({
+          sessionId,
+          todoTitle: todo?.title,
+          tool: session.tool,
+          cwd: session.cwd,
+          reason: 'keyword_match',
+          matchedKeyword: keywordMatch,
+          snippet: session.recentOutput.slice(-500),
+        }).catch((e) => {
+          console.warn('[ai-terminal] keyword webhook failed:', e.message)
+        })
+      }
+    }
     broadcastToSession(session, { type: 'output', data })
   })
 
   pty.on('native-session', ({ sessionId, nativeId }) => {
     const session = sessions.get(sessionId)
     if (!session) return
+    if (session.nativeSessionId && session.nativeSessionId !== nativeId) {
+      nativeSessionMap.delete(`${session.tool}:${session.nativeSessionId}`)
+    }
     session.nativeSessionId = nativeId
+    nativeSessionMap.set(`${session.tool}:${nativeId}`, sessionId)
     const todo = db.getTodo(session.todoId)
-    if (todo && todo.aiSession) {
+    if (todo) {
+      const current = (todo.aiSessions || []).find(item => item.sessionId === sessionId) || todo.aiSession
+      if (!current) return
+      const nextAi = { ...current, nativeSessionId: nativeId, cwd: session.cwd || current.cwd || null }
       db.updateTodo(session.todoId, {
-        aiSession: { ...todo.aiSession, nativeSessionId: nativeId },
+        aiSessions: mergeTodoAiSessions(todo, nextAi),
       })
     }
   })
@@ -62,6 +178,7 @@ export function createAiTerminal({ db, pty, logDir }) {
   pty.on('done', ({ sessionId, exitCode, fullLog, nativeId, stopped }) => {
     const session = sessions.get(sessionId)
     if (!session) return
+    if (session.nativeSessionId) nativeSessionMap.delete(`${session.tool}:${session.nativeSessionId}`)
 
     let aiStatus, todoStatus
     if (stopped) {
@@ -81,16 +198,20 @@ export function createAiTerminal({ db, pty, logDir }) {
     const todo = db.getTodo(session.todoId)
     if (todo) {
       const newAi = {
-        ...(todo.aiSession || {}),
+        ...((todo.aiSessions || []).find(item => item.sessionId === session.sessionId) || todo.aiSession || {}),
         sessionId: session.sessionId,
         tool: session.tool,
-        nativeSessionId: nativeId || todo.aiSession?.nativeSessionId || null,
+        nativeSessionId: nativeId || session.nativeSessionId || null,
+        cwd: session.cwd || null,
         status: aiStatus,
         startedAt: session.startedAt,
         completedAt: session.completedAt,
         prompt: session.prompt,
       }
-      db.updateTodo(session.todoId, { status: todoStatus, aiSession: newAi })
+      db.updateTodo(session.todoId, {
+        status: todoStatus,
+        aiSessions: mergeTodoAiSessions(todo, newAi),
+      })
     }
 
     writeFullLog(sessionId, fullLog)
@@ -117,6 +238,14 @@ export function createAiTerminal({ db, pty, logDir }) {
         res.status(404).json({ ok: false, error: 'todo_not_found' })
         return
       }
+      if (resumeNativeId) {
+        const existingNativeSessionId = nativeSessionMap.get(`${tool}:${resumeNativeId}`)
+        if (existingNativeSessionId) {
+          res.json({ ok: true, sessionId: existingNativeSessionId, reused: true })
+          return
+        }
+      }
+
       const existingId = todoSessionMap.get(todoId)
       if (existingId) {
         const existing = sessions.get(existingId)
@@ -127,6 +256,7 @@ export function createAiTerminal({ db, pty, logDir }) {
       }
 
       const sessionId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      const sessionCwd = resolveSessionCwd(cwd)
       const session = {
         sessionId,
         todoId,
@@ -139,30 +269,45 @@ export function createAiTerminal({ db, pty, logDir }) {
         outputHistory: [],
         outputSize: 0,
         nativeSessionId: resumeNativeId || null,
+        recentOutput: '',
+        cwd: sessionCwd,
+        autoMode: null,
+        lastAutoConfirmAt: 0,
       }
       sessions.set(sessionId, session)
       todoSessionMap.set(todoId, sessionId)
+      if (resumeNativeId) {
+        nativeSessionMap.set(`${tool}:${resumeNativeId}`, sessionId)
+      }
 
       db.updateTodo(todoId, {
         status: 'ai_running',
-        aiSession: {
+        aiSessions: mergeTodoAiSessions(todo, {
           sessionId,
           tool,
           nativeSessionId: resumeNativeId || null,
+          cwd: sessionCwd,
           status: 'running',
           startedAt: session.startedAt,
           completedAt: null,
           prompt,
-        },
+        }),
       })
 
-      pty.start({
-        sessionId,
-        tool,
-        prompt: resumeNativeId ? null : prompt,
-        cwd: cwd || process.env.HOME || process.cwd(),
-        resumeNativeId: resumeNativeId || undefined,
-      })
+      try {
+        pty.start({
+          sessionId,
+          tool,
+          prompt: resumeNativeId ? null : prompt,
+          cwd: sessionCwd,
+          resumeNativeId: resumeNativeId || undefined,
+        })
+      } catch (error) {
+        sessions.delete(sessionId)
+        if (todoSessionMap.get(todoId) === sessionId) todoSessionMap.delete(todoId)
+        if (resumeNativeId) nativeSessionMap.delete(`${tool}:${resumeNativeId}`)
+        throw error
+      }
 
       res.json({ ok: true, sessionId })
     } catch (e) {
@@ -205,6 +350,7 @@ export function createAiTerminal({ db, pty, logDir }) {
     if (session.outputHistory.length > 0) {
       ws.send(JSON.stringify({ type: 'replay', chunks: session.outputHistory }))
     }
+    ws.send(JSON.stringify({ type: 'auto_mode', autoMode: session.autoMode || null }))
     if (session.status === 'done' || session.status === 'failed' || session.status === 'stopped') {
       ws.send(JSON.stringify({ type: 'done', status: session.status }))
     }
@@ -221,6 +367,14 @@ export function createAiTerminal({ db, pty, logDir }) {
       pty.write(sessionId, msg.data)
     } else if (msg.type === 'resize') {
       pty.resize(sessionId, msg.cols, msg.rows)
+    } else if (msg.type === 'set_auto_mode') {
+      const session = sessions.get(sessionId)
+      if (!session) return
+      session.autoMode = msg.autoMode || null
+      session.lastAutoConfirmAt = 0
+      broadcastToSession(session, { type: 'auto_mode', autoMode: session.autoMode || null })
+      const confirmMatch = notifier.detectConfirmMatch(session.recentOutput || '')
+      maybeAutoConfirm(session, confirmMatch)
     }
   }
 
@@ -234,6 +388,7 @@ export function createAiTerminal({ db, pty, logDir }) {
           && s.browsers.size === 0) {
         sessions.delete(id)
         if (todoSessionMap.get(s.todoId) === id) todoSessionMap.delete(s.todoId)
+        if (s.nativeSessionId) nativeSessionMap.delete(`${s.tool}:${s.nativeSessionId}`)
       }
     }
   }, 5 * 60_000)
@@ -244,12 +399,78 @@ export function createAiTerminal({ db, pty, logDir }) {
     for (const id of sessions.keys()) pty.stop(id)
     sessions.clear()
     todoSessionMap.clear()
+    nativeSessionMap.clear()
   }
+
+  function recoverPendingTodosOnStartup() {
+    const todos = db.listTodos()
+      .filter(todo => ['ai_running', 'ai_pending'].includes(todo.status))
+    for (const todo of todos) {
+      const recoverable = (todo.aiSessions || []).find(item => item?.nativeSessionId && (item.status === 'running' || item.status === 'pending_confirm'))
+        || (todo.aiSessions || []).find(item => item?.nativeSessionId)
+      if (!recoverable) {
+        db.updateTodo(todo.id, { status: 'todo' })
+        continue
+      }
+      if (nativeSessionMap.has(`${recoverable.tool}:${recoverable.nativeSessionId}`)) continue
+      const sessionId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      const cwd = resolveSessionCwd(recoverable.cwd || todo.workDir)
+      const session = {
+        sessionId,
+        todoId: todo.id,
+        tool: recoverable.tool,
+        prompt: recoverable.prompt,
+        status: 'running',
+        startedAt: Date.now(),
+        completedAt: null,
+        browsers: new Set(),
+        outputHistory: [],
+        outputSize: 0,
+        nativeSessionId: recoverable.nativeSessionId,
+        recentOutput: '',
+        cwd,
+        autoMode: null,
+        lastAutoConfirmAt: 0,
+      }
+      sessions.set(sessionId, session)
+      todoSessionMap.set(todo.id, sessionId)
+      nativeSessionMap.set(`${recoverable.tool}:${recoverable.nativeSessionId}`, sessionId)
+      db.updateTodo(todo.id, {
+        status: 'ai_running',
+        aiSessions: mergeTodoAiSessions(todo, {
+          ...recoverable,
+          sessionId,
+          cwd,
+          status: 'running',
+          startedAt: Date.now(),
+          completedAt: null,
+        }),
+      })
+      try {
+        pty.start({
+          sessionId,
+          tool: recoverable.tool,
+          prompt: null,
+          cwd,
+          resumeNativeId: recoverable.nativeSessionId,
+        })
+      } catch (e) {
+        console.warn('[ai-terminal] auto-recover failed:', e.message)
+        sessions.delete(sessionId)
+        todoSessionMap.delete(todo.id)
+        nativeSessionMap.delete(`${recoverable.tool}:${recoverable.nativeSessionId}`)
+        db.updateTodo(todo.id, { status: 'todo' })
+      }
+    }
+  }
+
+  recoverPendingTodosOnStartup()
 
   return {
     router,
     sessions,
     todoSessionMap,
+    nativeSessionMap,
     addBrowser,
     removeBrowser,
     handleBrowserMessage,

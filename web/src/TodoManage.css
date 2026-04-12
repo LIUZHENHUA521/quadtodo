@@ -117,23 +117,26 @@
 /* ─── 任务卡片 ─── */
 .todo-card {
   border-left: 3px solid;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-  background: #fafafa;
-  border-radius: 0 4px 4px 0;
+  padding: 12px 12px 10px;
+  margin-bottom: 10px;
+  background: #fcfbf8;
+  border-radius: 0 10px 10px 0;
   cursor: grab;
-  transition: box-shadow 0.2s, background 0.2s;
+  transition: box-shadow 0.2s, background 0.2s, transform 0.2s;
   user-select: none;
+  border-top: 1px solid rgba(31, 42, 68, 0.06);
+  border-right: 1px solid rgba(31, 42, 68, 0.06);
+  border-bottom: 1px solid rgba(31, 42, 68, 0.06);
 }
 
 .todo-card:hover {
-  background: #f0f0f0;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  background: #fffdf9;
+  box-shadow: 0 10px 24px rgba(31, 42, 68, 0.08);
 }
 
 .todo-card.dragging {
   opacity: 0.5;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 16px 28px rgba(31, 42, 68, 0.14);
 }
 
 .todo-card.done {
@@ -146,22 +149,23 @@
 }
 
 .todo-card-title {
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 2px;
+  font-size: 14px;
+  font-weight: 600;
   line-height: 1.4;
+  color: #1f2a44;
 }
 
 .todo-card-meta {
   font-size: 11px;
-  color: #999;
+  color: #746d62;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .todo-card-meta .overdue {
-  color: #ff4d4f;
+  color: #a63a2f;
 }
 
 .todo-card-tags {
@@ -235,6 +239,244 @@
 .todo-card .xterm-terminal-wrapper {
   user-select: text;
   cursor: text;
+}
+
+.todo-card-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.todo-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: grab;
+}
+
+.todo-card-checkbox {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.todo-card-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.todo-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.todo-status-chip {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.status-chip-idle {
+  background: #ece7dc;
+  color: #6b6257;
+}
+
+.status-chip-running {
+  background: #dce9ff;
+  color: #1f4b9a;
+}
+
+.status-chip-pending {
+  background: #fde3df;
+  color: #a63a2f;
+}
+
+.status-chip-done {
+  background: #f8e8c9;
+  color: #9b6a13;
+}
+
+.status-chip-complete {
+  background: #dfead6;
+  color: #49653b;
+}
+
+.todo-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f1ece2;
+  color: #6f665b;
+  white-space: nowrap;
+}
+
+.todo-card-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+.todo-history-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 68, 0.08);
+}
+
+.todo-history-title {
+  flex-shrink: 0;
+  min-width: 88px;
+  padding-top: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b6257;
+}
+
+.todo-history-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.todo-history-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(241, 236, 226, 0.72);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.todo-history-item.active {
+  background: rgba(220, 233, 255, 0.88);
+  box-shadow: inset 0 0 0 1px rgba(31, 75, 154, 0.12);
+}
+
+.todo-history-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.todo-history-headline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.todo-history-tool {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2a44;
+}
+
+.todo-history-native-id,
+.todo-history-command {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #6f665b;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+}
+
+.todo-history-command {
+  color: #8a8277;
+}
+
+.todo-history-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  padding-top: 2px;
+}
+
+.todo-history-link,
+.todo-history-delete {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+}
+
+.todo-history-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #8a8277;
+}
+
+.todo-history-link {
+  flex-shrink: 0;
+  color: #1677ff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.todo-history-link:hover {
+  color: #0958d9;
+}
+
+.todo-history-delete {
+  flex-shrink: 0;
+  color: #a63a2f;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.todo-history-delete:hover {
+  color: #8b2f25;
+}
+
+.todo-primary-action {
+  border-radius: 999px;
+}
+
+.todo-toolbar-tag {
+  margin: 0;
+  border-radius: 999px;
+  padding-inline: 8px;
+  font-size: 11px;
+}
+
+.todo-danger-action {
+  border-radius: 999px;
+}
+
+.todo-terminal-panel {
+  margin-top: 4px;
+  padding: 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(31, 42, 68, 0.06), rgba(31, 42, 68, 0.02));
+  border: 1px solid rgba(31, 42, 68, 0.08);
 }
 
 /* ─── 闪烁动画（待确认状态） ─── */

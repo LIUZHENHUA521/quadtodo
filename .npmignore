@@ -1,9 +1,8 @@
 node_modules/
 web/node_modules/
-web/dist/
-dist-web/
-web/tsconfig.tsbuildinfo
+test/
 *.log
 .DS_Store
 .vscode/
 .idea/
+quadtodo-*.tgz

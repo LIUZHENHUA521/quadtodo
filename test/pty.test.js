@@ -40,6 +40,7 @@ describe('PtyManager', () => {
     expect(factory.created).toHaveLength(1)
     expect(factory.created[0]._bin).toBe('claude')
     expect(factory.created[0]._opts.cwd).toBe('/tmp')
+    expect(factory.created[0]._opts.env.TZ).toBeTruthy()
     expect(pm.has('s1')).toBe(true)
   })
 
@@ -54,6 +55,19 @@ describe('PtyManager', () => {
       resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
     })
     expect(factory.created[0]._args).toEqual(['--resume', 'abcdef12-3456-7890-abcd-ef1234567890'])
+  })
+
+  it('codex resume uses resume subcommand', () => {
+    const factory = makeFakePty()
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    pm.start({
+      sessionId: 's1',
+      tool: 'codex',
+      prompt: null,
+      cwd: '/tmp',
+      resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+    })
+    expect(factory.created[0]._args).toEqual(['resume', 'abcdef12-3456-7890-abcd-ef1234567890'])
   })
 
   it('emits output event when pty emits data', () => {
@@ -74,6 +88,20 @@ describe('PtyManager', () => {
     pm.start({ sessionId: 's1', tool: 'claude', prompt: null, cwd: '/tmp' })
     factory.created[0]._emitData(
       'some prefix claude --resume abcdef12-3456-7890-abcd-ef1234567890 and suffix',
+    )
+    expect(events).toEqual([
+      { sessionId: 's1', nativeId: 'abcdef12-3456-7890-abcd-ef1234567890' },
+    ])
+  })
+
+  it('captures Codex session id from output and emits native-session', () => {
+    const factory = makeFakePty()
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    const events = []
+    pm.on('native-session', (ev) => events.push(ev))
+    pm.start({ sessionId: 's1', tool: 'codex', prompt: null, cwd: '/tmp' })
+    factory.created[0]._emitData(
+      'some prefix codex resume abcdef12-3456-7890-abcd-ef1234567890 and suffix',
     )
     expect(events).toEqual([
       { sessionId: 's1', nativeId: 'abcdef12-3456-7890-abcd-ef1234567890' },
@@ -141,5 +169,15 @@ describe('PtyManager', () => {
     expect(() =>
       pm.start({ sessionId: 's1', tool: 'nope', prompt: null, cwd: '/tmp' }),
     ).toThrow(/unknown tool/i)
+  })
+
+  it('spawn errors include bin and cwd context', () => {
+    const factory = () => {
+      throw new Error('posix_spawnp failed')
+    }
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    expect(() =>
+      pm.start({ sessionId: 's1', tool: 'claude', prompt: null, cwd: '/tmp' }),
+    ).toThrow(/PTY spawn failed for claude \(bin=claude, cwd=\/tmp/)
   })
 })

@@ -61,9 +61,10 @@ describe('db', () => {
   it('updateTodo changes fields and bumps updatedAt', async () => {
     const t = db.createTodo({ title: 'A', quadrant: 1 })
     await new Promise(r => setTimeout(r, 2))
-    const updated = db.updateTodo(t.id, { title: 'A2', description: 'd' })
+    const updated = db.updateTodo(t.id, { title: 'A2', description: 'd', workDir: '/tmp/project-a' })
     expect(updated.title).toBe('A2')
     expect(updated.description).toBe('d')
+    expect(updated.workDir).toBe('/tmp/project-a')
     expect(updated.updatedAt).toBeGreaterThan(t.updatedAt)
   })
 
@@ -89,6 +90,34 @@ describe('db', () => {
     const updated = db.updateTodo(t.id, { aiSession: session })
     expect(updated.aiSession.sessionId).toBe('ai-123')
     expect(updated.aiSession.tool).toBe('claude')
+    expect(updated.aiSessions).toHaveLength(1)
+  })
+
+  it('rowToTodo keeps aiSessions history and selects running session as aiSession', () => {
+    const t = db.createTodo({ title: 'A', quadrant: 1 })
+    const sessions = [
+      {
+        sessionId: 'old',
+        tool: 'claude',
+        nativeSessionId: 'old-native',
+        status: 'done',
+        startedAt: 1,
+        completedAt: 2,
+        prompt: 'old prompt',
+      },
+      {
+        sessionId: 'new',
+        tool: 'codex',
+        nativeSessionId: 'new-native',
+        status: 'running',
+        startedAt: 3,
+        completedAt: null,
+        prompt: 'new prompt',
+      },
+    ]
+    const updated = db.updateTodo(t.id, { aiSessions: sessions })
+    expect(updated.aiSessions).toHaveLength(2)
+    expect(updated.aiSession.sessionId).toBe('new')
   })
 
   it('deleteTodo removes the row', () => {

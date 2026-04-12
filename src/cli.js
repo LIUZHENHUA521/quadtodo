@@ -10,6 +10,7 @@ import {
   saveConfig,
   getConfigValue,
   setConfigValue,
+  resolveToolsConfig,
 } from './config.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -83,7 +84,7 @@ export async function doctorReport({ rootDir = DEFAULT_ROOT_DIR } = {}) {
   }
 
   for (const tool of ['claude', 'codex']) {
-    const bin = cfg?.tools?.[tool]?.bin || tool
+    const bin = cfg?.tools?.[tool]?.bin || cfg?.tools?.[tool]?.command || tool
     const which = spawnSync('command', ['-v', bin], {
       encoding: 'utf8',
       shell: '/bin/sh',
@@ -114,6 +115,7 @@ program.command('start')
   .action(async (cmdOpts) => {
     const rootDir = DEFAULT_ROOT_DIR
     const cfg = loadConfig({ rootDir })
+    const defaultCwd = cmdOpts.cwd || cfg.defaultCwd || process.env.HOME || process.cwd()
 
     const pf = pidFile(rootDir)
     if (existsSync(pf)) {
@@ -130,8 +132,10 @@ program.command('start')
     const srv = createServer({
       dbFile: join(rootDir, 'data.db'),
       logDir: join(rootDir, 'logs'),
-      tools: cfg.tools,
-      webDist: resolvePath(__dirname, '../web/dist'),
+      tools: resolveToolsConfig(cfg.tools),
+      defaultCwd,
+      configRootDir: rootDir,
+      webDist: resolvePath(__dirname, '../dist-web'),
     })
 
     try {
@@ -148,6 +152,7 @@ program.command('start')
     writeFileSync(pf, String(process.pid))
     const url = `http://127.0.0.1:${port}`
     console.log(`quadtodo listening on ${url}`)
+    console.log(`AI terminal default cwd: ${defaultCwd}`)
 
     if (cmdOpts.open !== false) {
       try {

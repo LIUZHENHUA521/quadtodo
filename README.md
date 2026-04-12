@@ -2,20 +2,37 @@
 
 本地四象限待办 CLI，每条 todo 可内嵌一个 Claude Code 或 Codex 终端会话。单 Node 进程自包含，不依赖云服务。
 
+GitHub 仓库：`git@github.com:LIUZHENHUA521/quadtodo.git`
+
 ## 依赖
 
 - Node 20+
 - npm 10+
-- `claude` 和/或 `codex` 在 PATH 里（任选其一或都有）
+- `claude` / `codex`，或公司内封装命令（如 `claude-w` / `codex-w`）可在 PATH 中找到
 - macOS / Linux（node-pty 需要 C++ 编译工具链）
 
 ## 安装
+
+### 从 npm 全局安装
+
+```bash
+npm install -g quadtodo
+```
+
+首次安装后，建议先执行：
+
+```bash
+quadtodo doctor
+```
+
+### 从源码安装
 
 ```bash
 cd quadtodo
 npm install                 # 后端依赖 + node-pty 原生编译
 cd web && npm install       # 前端依赖
-npm run build               # 前端构建，产物在 web/dist/
+cd ..
+npm run build               # 前端构建，产物在 dist-web/
 cd ..
 npm link                    # 全局链接 `quadtodo` 命令
 ```
@@ -52,8 +69,8 @@ quadtodo start              # 启动服务并自动打开浏览器
   "defaultTool": "claude",
   "defaultCwd": "~",
   "tools": {
-    "claude": { "bin": "claude", "args": [] },
-    "codex":  { "bin": "codex",  "args": [] }
+    "claude": { "command": "claude", "bin": "claude", "args": [] },
+    "codex":  { "command": "codex",  "bin": "codex",  "args": [] }
   }
 }
 ```
@@ -62,9 +79,16 @@ quadtodo start              # 启动服务并自动打开浏览器
 
 ```bash
 quadtodo config set port 6000
+quadtodo config set tools.claude.command claude-w
+quadtodo config set tools.codex.command codex-w
 quadtodo config set tools.claude.bin /usr/local/bin/claude
 quadtodo config set tools.codex.bin /opt/homebrew/bin/codex
 ```
+
+说明：
+
+- `tools.<tool>.command`：启动命令名，适合 `claude-w` / `codex-w` 这种公司内封装命令
+- `tools.<tool>.bin`：绝对路径覆盖，优先级高于 `command`
 
 ## 数据存储
 
@@ -128,6 +152,7 @@ quadtodo/
 ## 故障排除
 
 - **端口占用**：`quadtodo config set port <new>`
+- **公司内命令不是 `claude/codex`**：`quadtodo config set tools.claude.command claude-w`
 - **`claude` 找不到**：`quadtodo config set tools.claude.bin /full/path/to/claude`
 - **`node-pty` 安装报错**：通常是 node-gyp 找不到 C++ 工具链。macOS 装 Xcode Command Line Tools (`xcode-select --install`)
 - **终端显示 `session_not_found`**：会话已超时（30 分钟已结束的会话会被清理），重新点"启动 AI 终端"
