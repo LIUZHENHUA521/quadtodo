@@ -1,3 +1,9 @@
+/* 始终预留滚动条空间，避免 Drawer 打开时锁定 body 滚动导致页面宽度抖动 */
+html {
+  scrollbar-gutter: stable;
+  overflow-y: scroll;
+}
+
 /* ─── 四象限看板 ─── */
 .todo-board {
   display: flex;
@@ -477,6 +483,52 @@
   border-radius: 12px;
   background: linear-gradient(180deg, rgba(31, 42, 68, 0.06), rgba(31, 42, 68, 0.02));
   border: 1px solid rgba(31, 42, 68, 0.08);
+}
+
+.todo-terminal-panel.collapsed {
+  padding: 6px 10px;
+}
+
+.todo-terminal-collapse-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #555;
+  margin-bottom: 6px;
+  user-select: none;
+}
+
+.todo-terminal-collapse-bar .collapse-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-terminal-panel.collapsed .todo-terminal-body {
+  display: none;
+}
+
+.todo-terminal-body.side-by-side {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  min-width: 0;
+}
+
+.todo-terminal-body.side-by-side > * {
+  min-width: 0;
+}
+
+.todo-terminal-panel.collapsed .todo-terminal-collapse-bar {
+  margin-bottom: 0;
 }
 
 /* ─── 闪烁动画（待确认状态） ─── */

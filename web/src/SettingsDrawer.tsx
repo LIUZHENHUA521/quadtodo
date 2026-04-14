@@ -16,6 +16,12 @@ export default function SettingsDrawer({ open, onClose }: Props) {
   const [err, setErr] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [pickingDefaultCwd, setPickingDefaultCwd] = useState(false)
+  const [linkEditor, setLinkEditor] = useState<'trae-cn' | 'trae' | 'cursor'>(() => {
+    try {
+      const v = localStorage.getItem('quadtodo.editor')
+      return v === 'trae' || v === 'cursor' ? v : 'trae-cn'
+    } catch { return 'trae-cn' }
+  })
   const [form] = Form.useForm()
 
   const buildToolPatch = (tool: 'claude' | 'codex', nextCommandValue: string, nextBinValue: string) => {
@@ -286,6 +292,24 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           <Input placeholder="/Users/liuzhenhua/.nvm/versions/node/v20.19.5/bin/codex" />
         </Form.Item>
         {renderToolMeta('codex')}
+
+        <Form.Item
+          label="终端链接打开编辑器"
+          extra="终端中的文件路径点击时会使用该编辑器打开；也是卡片「代码」按钮的默认项。"
+        >
+          <Radio.Group
+            value={linkEditor}
+            onChange={(e) => {
+              const v = e.target.value as 'trae-cn' | 'trae' | 'cursor'
+              setLinkEditor(v)
+              try { localStorage.setItem('quadtodo.editor', v) } catch {}
+            }}
+          >
+            <Radio.Button value="trae-cn">Trae CN</Radio.Button>
+            <Radio.Button value="trae">Trae</Radio.Button>
+            <Radio.Button value="cursor">Cursor</Radio.Button>
+          </Radio.Group>
+        </Form.Item>
 
         <Form.Item
           name="port"

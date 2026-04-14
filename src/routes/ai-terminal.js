@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { Router } from 'express'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import pidusage from 'pidusage'
 import { createNotifier } from '../notifier.js'
 
 const MAX_OUTPUT_BUFFER = 512 * 1024
@@ -97,6 +98,8 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     if (!session) return
     appendOutput(session, data)
     session.recentOutput = `${session.recentOutput || ''}${data}`.slice(-4000)
+    session.lastOutputAt = Date.now()
+    session.outputBytesTotal = (session.outputBytesTotal || 0) + data.length
 
     const confirmMatch = notifier.detectConfirmMatch(session.recentOutput)
     if (confirmMatch && maybeAutoConfirm(session, confirmMatch)) {
@@ -216,6 +219,23 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
 
     writeFullLog(sessionId, fullLog)
     broadcastToSession(session, { type: 'done', exitCode, status: aiStatus })
+
+    // 落库一条历史记录，供仪表盘 Tab C 统计使用
+    try {
+      const todoQuadrant = todo?.quadrant ?? 4
+      db.insertSessionLog({
+        id: session.sessionId,
+        todoId: session.todoId,
+        tool: session.tool,
+        quadrant: todoQuadrant,
+        status: aiStatus,
+        exitCode: exitCode ?? null,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+      })
+    } catch (e) {
+      console.warn('[ai-terminal] insertSessionLog failed:', e.message)
+    }
   })
 
   // ─── REST ───
@@ -224,7 +244,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
 
   router.post('/exec', (req, res) => {
     try {
-      const { todoId, prompt, tool, cwd, resumeNativeId } = req.body || {}
+      const { todoId, prompt, tool, cwd, resumeNativeId, permissionMode } = req.body || {}
       if (!todoId || typeof prompt !== 'string' || !tool) {
         res.status(400).json({ ok: false, error: 'missing todoId, prompt, or tool' })
         return
@@ -246,15 +266,6 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
         }
       }
 
-      const existingId = todoSessionMap.get(todoId)
-      if (existingId) {
-        const existing = sessions.get(existingId)
-        if (existing && (existing.status === 'running' || existing.status === 'pending_confirm')) {
-          res.status(409).json({ ok: false, error: 'todo_session_running', sessionId: existingId })
-          return
-        }
-      }
-
       const sessionId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
       const sessionCwd = resolveSessionCwd(cwd)
       const session = {
@@ -271,8 +282,11 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
         nativeSessionId: resumeNativeId || null,
         recentOutput: '',
         cwd: sessionCwd,
-        autoMode: null,
+        autoMode: permissionMode && permissionMode !== 'default' ? permissionMode : null,
         lastAutoConfirmAt: 0,
+        lastOutputAt: null,
+        outputBytesTotal: 0,
+        completedAt: null,
       }
       sessions.set(sessionId, session)
       todoSessionMap.set(todoId, sessionId)
@@ -301,6 +315,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
           prompt: resumeNativeId ? null : prompt,
           cwd: sessionCwd,
           resumeNativeId: resumeNativeId || undefined,
+          permissionMode: permissionMode || null,
         })
       } catch (error) {
         sessions.delete(sessionId)
@@ -312,6 +327,92 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
       res.json({ ok: true, sessionId })
     } catch (e) {
       console.error('[ai-terminal/exec]', e)
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
+  // 返回当前内存中的所有会话（包含已完成的"雕像期"），供仪表盘和宠物视图使用
+  router.get('/sessions', (req, res) => {
+    try {
+      const out = []
+      for (const [sessionId, s] of sessions) {
+        const todo = db.getTodo(s.todoId)
+        out.push({
+          sessionId,
+          todoId: s.todoId,
+          todoTitle: todo?.title || '',
+          quadrant: todo?.quadrant || 4,
+          tool: s.tool,
+          status: s.status,
+          autoMode: s.autoMode || null,
+          nativeSessionId: s.nativeSessionId || null,
+          cwd: s.cwd || null,
+          startedAt: s.startedAt,
+          completedAt: s.completedAt || null,
+          lastOutputAt: s.lastOutputAt || null,
+          outputBytesTotal: s.outputBytesTotal || 0,
+        })
+      }
+      res.json({ ok: true, sessions: out })
+    } catch (e) {
+      console.error('[ai-terminal/sessions]', e)
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
+  // 聚合历史统计：range=today|week|month
+  router.get('/stats', (req, res) => {
+    try {
+      const range = req.query.range || 'today'
+      const now = Date.now()
+      let since = now - 86400_000
+      if (range === 'week') since = now - 7 * 86400_000
+      else if (range === 'month') since = now - 30 * 86400_000
+      const stats = db.querySessionStats({ since, until: now })
+      res.json({ ok: true, range, since, until: now, stats })
+    } catch (e) {
+      console.error('[ai-terminal/stats]', e)
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
+  // 当前所有 PTY 进程的 CPU/内存快照
+  router.get('/resource', async (req, res) => {
+    try {
+      const pids = pty.getPids ? pty.getPids() : []
+      if (!pids.length) {
+        res.json({ ok: true, resources: [] })
+        return
+      }
+      const pidList = pids.map(p => p.pid)
+      let usage = {}
+      try {
+        usage = await pidusage(pidList)
+      } catch (err) {
+        // 部分 pid 可能已退出，单独采样避免一错全错
+        for (const pid of pidList) {
+          try { usage[pid] = await pidusage(pid) } catch { /* skip dead pid */ }
+        }
+      }
+      const now = Date.now()
+      const resources = pids.map(({ sessionId, pid, tool }) => {
+        const u = usage[pid]
+        const session = sessions.get(sessionId)
+        const todo = session ? db.getTodo(session.todoId) : null
+        return {
+          sessionId,
+          todoId: session?.todoId || null,
+          todoTitle: todo?.title || '',
+          tool,
+          pid,
+          cpu: u?.cpu ?? 0,
+          memory: u?.memory ?? 0,
+          elapsedMs: session?.startedAt ? (now - session.startedAt) : 0,
+        }
+      })
+      res.json({ ok: true, resources })
+    } catch (e) {
+      console.error('[ai-terminal/resource]', e)
       res.status(500).json({ ok: false, error: e.message })
     }
   })
@@ -431,6 +532,9 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
         cwd,
         autoMode: null,
         lastAutoConfirmAt: 0,
+        lastOutputAt: null,
+        outputBytesTotal: 0,
+        completedAt: null,
       }
       sessions.set(sessionId, session)
       todoSessionMap.set(todo.id, sessionId)

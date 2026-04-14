@@ -31,6 +31,7 @@ class FakePty extends EventEmitter {
   }
   has(id) { return this._has.has(id) }
   list() { return [...this._has] }
+  getPids() { return [...this._has].map((id, i) => ({ sessionId: id, pid: 10000 + i, tool: 'claude' })) }
 }
 
 function makeApp(opts = {}) {
@@ -95,13 +96,14 @@ describe('routes/ai-terminal', () => {
     expect(ctx.pty.started[0].cwd).toBe('/Users/liuzhenhua/Desktop/code/crazyCombo')
   })
 
-  it('POST /exec refuses concurrent session on same todo', async () => {
+  it('POST /exec allows a new session on the same todo (concurrent)', async () => {
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
-    await request(ctx.app).post('/api/ai-terminal/exec')
+    const first = await request(ctx.app).post('/api/ai-terminal/exec')
       .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
-    const r = await request(ctx.app).post('/api/ai-terminal/exec')
+    const second = await request(ctx.app).post('/api/ai-terminal/exec')
       .send({ todoId: todo.id, prompt: 'again', tool: 'claude' })
-    expect(r.status).toBe(409)
+    expect(second.status).toBe(200)
+    expect(second.body.sessionId).not.toBe(first.body.sessionId)
   })
 
   it('native-session event saves nativeSessionId on todo', async () => {
@@ -414,5 +416,44 @@ describe('routes/ai-terminal', () => {
     expect(ctx.pty.writes).toContainEqual({ id: body.sessionId, data: '\r' })
     expect(sent.some(msg => msg.type === 'auto_mode' && msg.autoMode === 'bypass')).toBe(true)
     vi.useRealTimers()
+  })
+
+  describe('dashboard routes', () => {
+    it('GET /sessions lists active sessions with todo metadata', async () => {
+      const todo = ctx.db.createTodo({ title: 'Hello', quadrant: 2 })
+      await request(ctx.app).post('/api/ai-terminal/exec')
+        .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+      const r = await request(ctx.app).get('/api/ai-terminal/sessions')
+      expect(r.status).toBe(200)
+      expect(r.body.ok).toBe(true)
+      expect(r.body.sessions).toHaveLength(1)
+      expect(r.body.sessions[0]).toMatchObject({
+        todoId: todo.id,
+        todoTitle: 'Hello',
+        quadrant: 2,
+        tool: 'claude',
+        status: 'running',
+      })
+    })
+
+    it('GET /stats returns aggregated stats for range', async () => {
+      const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+      const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+        .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+      ctx.pty.emit('done', { sessionId: body.sessionId, exitCode: 0, fullLog: '', nativeId: null, stopped: false })
+      const r = await request(ctx.app).get('/api/ai-terminal/stats?range=today')
+      expect(r.status).toBe(200)
+      expect(r.body.ok).toBe(true)
+      expect(r.body.stats.total).toBe(1)
+      expect(r.body.stats.byStatus.done).toBe(1)
+      expect(r.body.stats.byTool.claude).toBe(1)
+    })
+
+    it('GET /resource returns empty when no active sessions', async () => {
+      const r = await request(ctx.app).get('/api/ai-terminal/resource')
+      expect(r.status).toBe(200)
+      expect(r.body.ok).toBe(true)
+      expect(r.body.resources).toEqual([])
+    })
   })
 })

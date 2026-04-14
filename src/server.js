@@ -244,6 +244,12 @@ export function createServer(opts = {}) {
 		}
 	});
 
+	const EDITOR_BINS = {
+		"trae-cn": "/Applications/Trae CN.app/Contents/Resources/app/bin/trae-cn",
+		"trae": "/Applications/Trae.app/Contents/Resources/app/bin/trae",
+		"cursor": "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
+	};
+
 	app.post("/api/system/open-trae", (req, res) => {
 		try {
 			const cwd = req.body?.cwd || runtimeConfig.defaultCwd;
@@ -251,14 +257,38 @@ export function createServer(opts = {}) {
 				res.status(400).json({ ok: false, error: "cwd_not_found" });
 				return;
 			}
-			const traeBin = "/Applications/Trae CN.app/Contents/Resources/app/bin/trae-cn";
-			const child = spawn(traeBin, ["--new-window", cwd], {
+			const editor = req.body?.editor || "trae-cn";
+			const bin = EDITOR_BINS[editor];
+			if (!bin) {
+				res.status(400).json({ ok: false, error: "invalid_editor" });
+				return;
+			}
+			if (!existsSync(bin)) {
+				res.status(400).json({ ok: false, error: "editor_not_installed" });
+				return;
+			}
+			// 可选的具体打开目标（文件或目录）；支持 path:line:col 语法
+			let target = cwd;
+			const rawPath = req.body?.path;
+			if (typeof rawPath === "string" && rawPath.trim()) {
+				const resolved = rawPath.startsWith("/")
+					? rawPath
+					: `${cwd.replace(/\/+$/, "")}/${rawPath.replace(/^\/+/, "")}`;
+				// 去掉 :line:col 后缀做存在性校验
+				const fsPath = resolved.replace(/:\d+(:\d+)?$/, "");
+				if (!existsSync(fsPath)) {
+					res.status(400).json({ ok: false, error: "path_not_found" });
+					return;
+				}
+				target = resolved;
+			}
+			const child = spawn(bin, ["--new-window", target], {
 				cwd,
 				stdio: "ignore",
 				detached: true,
 			});
 			child.on("error", (err) => {
-				console.warn("[open-trae] spawn error:", err.message);
+				console.warn(`[open-trae] ${editor} spawn error:`, err.message);
 			});
 			child.unref();
 			res.json({ ok: true });
@@ -340,7 +370,7 @@ export function createServer(opts = {}) {
 		}
 	});
 
-	app.use("/api/todos", createTodosRouter({ db }));
+	app.use("/api/todos", createTodosRouter({ db, logDir }));
 	app.use("/api/ai-terminal", ait.router);
 
 	// ─── static frontend ───

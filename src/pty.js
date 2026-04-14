@@ -6,6 +6,28 @@ import { homedir } from 'node:os'
 
 const require = createRequire(import.meta.url)
 
+/**
+ * 将托管模式映射为原生 CLI 参数：
+ *   - default / null：无额外参数（交互式确认）
+ *   - acceptEdits (半托管)：自动放行编辑类操作
+ *   - bypass (完全托管)：跳过全部权限询问
+ * claude/codex 两个 CLI 的标志不同，这里分开处理。
+ */
+function buildPermissionArgs(tool, mode) {
+  if (!mode || mode === 'default') return []
+  if (tool === 'claude') {
+    if (mode === 'acceptEdits') return ['--permission-mode', 'acceptEdits']
+    if (mode === 'bypass') return ['--permission-mode', 'bypassPermissions']
+    return []
+  }
+  if (tool === 'codex') {
+    if (mode === 'acceptEdits') return ['--ask-for-approval', 'on-request', '--sandbox', 'workspace-write']
+    if (mode === 'bypass') return ['--dangerously-bypass-approvals-and-sandbox']
+    return []
+  }
+  return []
+}
+
 const CLAUDE_SESSION_RE = /claude\s+--resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
 const CODEX_SESSION_RE = /codex\s+resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -91,15 +113,32 @@ export class PtyManager extends EventEmitter {
     return [...this.sessions.keys()]
   }
 
-  start({ sessionId, tool, prompt, cwd, resumeNativeId }) {
+  /** 返回当前所有活跃 PTY 的 { sessionId, pid, tool }，供 pidusage 采样用 */
+  getPids() {
+    const out = []
+    for (const [sessionId, s] of this.sessions) {
+      const pid = s.proc?.pid
+      if (pid) out.push({ sessionId, pid, tool: s.tool })
+    }
+    return out
+  }
+
+  start({ sessionId, tool, prompt, cwd, resumeNativeId, permissionMode }) {
     const toolCfg = this.tools[tool]
     if (!toolCfg) throw new Error(`unknown tool: ${tool}`)
     const baseArgs = toolCfg.args || []
+    // 是否通过 CLI 参数传递 prompt（仅新会话、非 resume 时可用）
+    const useCliPrompt = prompt && !resumeNativeId
+    // permissionMode → 原生 CLI 标志：把托管模式直接交给 claude/codex 处理，
+    // 比在 PTY 输出里做正则匹配 + 自动回车 更可靠。
+    const permissionArgs = buildPermissionArgs(tool, permissionMode)
     const args = resumeNativeId
       ? tool === 'codex'
-        ? [...baseArgs, 'resume', resumeNativeId]
-        : [...baseArgs, '--resume', resumeNativeId]
-      : [...baseArgs]
+        ? [...baseArgs, ...permissionArgs, 'resume', resumeNativeId]
+        : [...baseArgs, ...permissionArgs, '--resume', resumeNativeId]
+      : useCliPrompt
+        ? [...baseArgs, ...permissionArgs, prompt]
+        : [...baseArgs, ...permissionArgs]
     const effectiveCwd = cwd || process.env.HOME || process.cwd()
 
     console.log(`[pty] starting ${tool} bin=${toolCfg.bin} cwd=${effectiveCwd} args=${JSON.stringify(args)}`)
@@ -129,7 +168,7 @@ export class PtyManager extends EventEmitter {
       sessionId,
       fullLog: [],
       logBytes: 0,
-      pendingPrompt: prompt && !resumeNativeId ? prompt : null,
+      pendingPrompt: useCliPrompt ? null : (prompt && !resumeNativeId ? prompt : null),
       resized: false,
       promptTimer: null,
       nativeId: resumeNativeId || null,

@@ -139,16 +139,24 @@ describe('PtyManager', () => {
     expect(factory.created[0].resize).toHaveBeenCalledWith(100, 40)
   })
 
-  it('pending prompt is sent after first resize', () => {
-    vi.useFakeTimers()
+  it('getPids returns active session pids', () => {
     const factory = makeFakePty()
-    const pm = new PtyManager({ tools: tools(), ptyFactory: factory, promptDelayMs: 0 })
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    pm.start({ sessionId: 's1', tool: 'claude', prompt: null, cwd: '/tmp' })
+    pm.start({ sessionId: 's2', tool: 'codex', prompt: null, cwd: '/tmp' })
+    const pids = pm.getPids()
+    expect(pids).toHaveLength(2)
+    expect(pids[0]).toMatchObject({ sessionId: 's1', tool: 'claude' })
+    expect(typeof pids[0].pid).toBe('number')
+  })
+
+  it('prompt is passed as CLI argument for new sessions', () => {
+    const factory = makeFakePty()
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
     pm.start({ sessionId: 's1', tool: 'claude', prompt: 'hello world', cwd: '/tmp' })
+    // prompt 应通过 CLI 参数传递，而非写入 stdin
+    expect(factory.created[0]._args).toContain('hello world')
     expect(factory.created[0].write).not.toHaveBeenCalled()
-    pm.resize('s1', 100, 40)
-    vi.advanceTimersByTime(0)
-    expect(factory.created[0].write).toHaveBeenCalledWith('hello world\r')
-    vi.useRealTimers()
   })
 
   it('stop kills the pty and emits stopped', () => {

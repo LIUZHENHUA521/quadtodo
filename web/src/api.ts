@@ -26,6 +26,7 @@ export interface Todo {
   status: TodoStatus
   dueDate: number | null
   workDir: string | null
+  brainstorm: boolean
   sortOrder: number
   aiSession: AiSession | null
   aiSessions: AiSession[]
@@ -113,6 +114,7 @@ export async function createTodo(data: {
   quadrant: Quadrant
   dueDate?: number | null
   workDir?: string | null
+  brainstorm?: boolean
 }): Promise<Todo> {
   const body = await jsonFetch<{ ok: true; todo: Todo }>('/api/todos', {
     method: 'POST',
@@ -150,6 +152,63 @@ export async function deleteComment(todoId: string, commentId: string): Promise<
   await jsonFetch(`/api/todos/${todoId}/comments/${commentId}`, { method: 'DELETE' })
 }
 
+export type TranscriptRole = 'user' | 'assistant' | 'thinking' | 'tool_use' | 'tool_result' | 'raw'
+
+export interface TranscriptTurn {
+  role: TranscriptRole
+  content: string
+  toolName?: string
+  toolUseId?: string
+  timestamp?: number
+}
+
+export interface TranscriptResponse {
+  source: 'jsonl' | 'ptylog' | 'empty'
+  total: number
+  offset: number
+  turns: TranscriptTurn[]
+  session: {
+    sessionId: string
+    tool: AiTool
+    nativeSessionId: string | null
+    status: AiStatus
+    label: string
+    startedAt: number
+    completedAt: number | null
+  }
+}
+
+export async function getTranscript(todoId: string, sessionId: string, since?: number): Promise<TranscriptResponse> {
+  const qs = since ? `?since=${since}` : ''
+  const body = await jsonFetch<{ ok: true } & TranscriptResponse>(`/api/todos/${todoId}/ai-sessions/${sessionId}/transcript${qs}`)
+  return body
+}
+
+export interface ForkResult {
+  prompt: string
+  targetTodoId: string
+  tool: AiTool
+  cwd: string | null
+  sourceSessionId: string
+  summaryUsed: boolean
+  tailCount: number
+  headCount: number
+}
+
+export async function forkAiSession(todoId: string, sessionId: string, input: {
+  targetTodoId?: string
+  tool?: AiTool
+  newInstruction?: string
+  keepLastTurns?: number
+  summarize?: boolean
+}): Promise<ForkResult> {
+  const body = await jsonFetch<{ ok: true } & ForkResult>(`/api/todos/${todoId}/ai-sessions/${sessionId}/fork`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return body
+}
+
 export async function updateSessionLabel(todoId: string, sessionId: string, label: string): Promise<Todo> {
   const body = await jsonFetch<{ ok: true; todo: Todo }>(`/api/todos/${todoId}/ai-sessions/${sessionId}`, {
     method: 'PATCH',
@@ -171,6 +230,7 @@ export async function startAiExec(input: {
   tool: AiTool
   cwd?: string
   resumeNativeId?: string
+  permissionMode?: string | null
 }): Promise<{ sessionId: string }> {
   const body = await jsonFetch<{ ok: true; sessionId: string }>('/api/ai-terminal/exec', {
     method: 'POST',
@@ -227,10 +287,12 @@ export async function pickDirectory(input: {
   return { path: body.path, cancelled: body.cancelled }
 }
 
-export async function openTraeCN(cwd: string): Promise<void> {
+export type EditorKind = 'trae-cn' | 'trae' | 'cursor'
+
+export async function openTraeCN(cwd: string, editor: EditorKind = 'trae-cn', path?: string): Promise<void> {
   await jsonFetch('/api/system/open-trae', {
     method: 'POST',
-    body: JSON.stringify({ cwd }),
+    body: JSON.stringify({ cwd, editor, path }),
   })
 }
 
@@ -246,4 +308,58 @@ export async function openTerminal(cwd: string): Promise<{ sessionId: string }> 
 export function getTerminalWsUrl(sessionId: string): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${location.host}/ws/terminal/${sessionId}`
+}
+
+// ─── Dashboard / PetView 相关 ───
+
+export interface LiveSession {
+  sessionId: string
+  todoId: string
+  todoTitle: string
+  quadrant: Quadrant
+  tool: AiTool
+  status: AiStatus
+  autoMode: string | null
+  nativeSessionId: string | null
+  cwd: string | null
+  startedAt: number
+  completedAt: number | null
+  lastOutputAt: number | null
+  outputBytesTotal: number
+}
+
+export interface SessionStats {
+  total: number
+  byStatus: { done: number; failed: number; stopped: number }
+  byTool: { claude: number; codex: number }
+  byQuadrant: Record<1 | 2 | 3 | 4, number>
+  totalDurationMs: number
+  avgDurationMs: number
+  timeline: { t: number; count: number }[]
+}
+
+export interface ResourceSnapshot {
+  sessionId: string
+  todoId: string | null
+  todoTitle: string
+  tool: AiTool
+  pid: number
+  cpu: number
+  memory: number
+  elapsedMs: number
+}
+
+export async function listLiveSessions(): Promise<LiveSession[]> {
+  const body = await jsonFetch<{ ok: true; sessions: LiveSession[] }>('/api/ai-terminal/sessions')
+  return body.sessions
+}
+
+export async function getSessionStats(range: 'today' | 'week' | 'month'): Promise<{ range: string; since: number; until: number; stats: SessionStats }> {
+  const body = await jsonFetch<{ ok: true; range: string; since: number; until: number; stats: SessionStats }>(`/api/ai-terminal/stats?range=${range}`)
+  return body
+}
+
+export async function getResourceSnapshot(): Promise<ResourceSnapshot[]> {
+  const body = await jsonFetch<{ ok: true; resources: ResourceSnapshot[] }>('/api/ai-terminal/resource')
+  return body.resources
 }

@@ -136,4 +136,31 @@ describe('db', () => {
     expect(db.nextSortOrder(1)).toBe(3 * 1024)
     expect(db.nextSortOrder(2)).toBe(1024)
   })
+
+  describe('ai_session_log', () => {
+    it('insertSessionLog + querySessionStats aggregates', () => {
+      const now = Date.now()
+      db.insertSessionLog({ id: 's1', todoId: 't1', tool: 'claude', quadrant: 1, status: 'done', exitCode: 0, startedAt: now - 60000, completedAt: now - 30000 })
+      db.insertSessionLog({ id: 's2', todoId: 't2', tool: 'codex', quadrant: 2, status: 'failed', exitCode: 1, startedAt: now - 120000, completedAt: now - 100000 })
+      db.insertSessionLog({ id: 's3', todoId: 't3', tool: 'claude', quadrant: 1, status: 'stopped', exitCode: null, startedAt: now - 10000, completedAt: now - 5000 })
+      const stats = db.querySessionStats({ since: now - 3600_000, until: now })
+      expect(stats.total).toBe(3)
+      expect(stats.byStatus.done).toBe(1)
+      expect(stats.byStatus.failed).toBe(1)
+      expect(stats.byStatus.stopped).toBe(1)
+      expect(stats.byTool.claude).toBe(2)
+      expect(stats.byTool.codex).toBe(1)
+      expect(stats.byQuadrant[1]).toBe(2)
+      expect(stats.byQuadrant[2]).toBe(1)
+      expect(stats.totalDurationMs).toBe(30000 + 20000 + 5000)
+      expect(stats.avgDurationMs).toBe(Math.round((30000 + 20000 + 5000) / 3))
+    })
+
+    it('querySessionStats excludes rows outside range', () => {
+      const now = Date.now()
+      db.insertSessionLog({ id: 's1', todoId: 't1', tool: 'claude', quadrant: 1, status: 'done', exitCode: 0, startedAt: now - 100, completedAt: now - 50 })
+      const stats = db.querySessionStats({ since: now + 1000, until: now + 2000 })
+      expect(stats.total).toBe(0)
+    })
+  })
 })

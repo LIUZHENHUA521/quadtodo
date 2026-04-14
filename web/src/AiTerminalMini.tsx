@@ -4,16 +4,22 @@
 
 import React, { useEffect, useRef, useCallback, useState } from 'react'
 import { Button, Tooltip, Tag, Dropdown } from 'antd'
-import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, CloseOutlined } from '@ant-design/icons'
+import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, CloseOutlined, VerticalAlignBottomOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { getTerminalWsUrl, startAiExec, stopAiExec, TodoStatus, ResumeSessionInput } from './api'
+import { getTerminalWsUrl, startAiExec, stopAiExec, openTraeCN, TodoStatus, ResumeSessionInput, EditorKind } from './api'
+
+// 匹配 xterm 一行中的文件路径（相对或绝对，可带 :line 或 :line:col）
+// 规避回溯：只匹配不含空格/冒号/斜杠的 path segment + 已知扩展名
+const FILE_LINK_RE = /(?:[./]|\b)[\w.@-]+(?:\/[\w.@-]+)+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|css|scss|less|html|vue|py|go|rs|java|kt|swift|sh|yml|yaml|toml|lock|env|txt|sql|prisma|xml|c|cc|cpp|h|hpp|rb|php|proto)(?::\d+(?::\d+)?)?/g
+const MAX_LINKS_PER_LINE = 8
 
 interface Props {
   sessionId: string
   todoId: string
   status: TodoStatus
+  cwd?: string | null
   resumeTarget?: ResumeSessionInput | null
   onSessionRecovered?: (nextSessionId: string) => void
   onClose: () => void
@@ -26,18 +32,28 @@ const MAX_RECONNECT_ATTEMPTS = 15
 const HEARTBEAT_INTERVAL = 15_000
 const RESIZE_DEBOUNCE_MS = 100
 
-export default function AiTerminalMini({ sessionId, todoId, status, resumeTarget, onSessionRecovered, onClose, onDone }: Props) {
+export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeTarget, onSessionRecovered, onClose, onDone }: Props) {
   void onClose
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
+  const cwdRef = useRef<string | null>(cwd ?? null)
+  const linkProviderRef = useRef<{ dispose: () => void } | null>(null)
+  useEffect(() => { cwdRef.current = cwd ?? null }, [cwd])
   const wsRef = useRef<WebSocket | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
   const [sessionStatus, setSessionStatus] = useState<TodoStatus>(status)
   const [wsConnected, setWsConnected] = useState(false)
   const [sessionExpired, setSessionExpired] = useState(false)
   const [height, setHeight] = useState(420)
-  const [autoMode, setAutoMode] = useState<string | null>(null)
+  const [autoMode, setAutoMode] = useState<string | null>(() => {
+    try { return localStorage.getItem('quadtodo.autoMode') || null } catch { return null }
+  })
+  const [followTail, setFollowTail] = useState<boolean>(() => {
+    try { return localStorage.getItem('quadtodo.followTail') !== '0' } catch { return true }
+  })
+  const followTailRef = useRef<boolean>(followTail)
+  useEffect(() => { followTailRef.current = followTail }, [followTail])
   const dragRef = useRef<{ startY: number; startH: number } | null>(null)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY)
@@ -144,8 +160,63 @@ export default function AiTerminalMini({ sessionId, todoId, status, resumeTarget
     }
     term.attachCustomKeyEventHandler((ev: KeyboardEvent) => {
       if (imeComposing || ev.isComposing || ev.keyCode === 229) return false
+      if (ev.type === 'keydown' && ev.ctrlKey && ev.key === 'End') {
+        term.scrollToBottom()
+        setFollowTail(true)
+        try { localStorage.setItem('quadtodo.followTail', '1') } catch { /* ignore */ }
+        return false
+      }
       return true
     })
+
+    // 注册文件路径链接：hover 显示下划线，点击用用户选择的编辑器打开
+    // 仅在有 cwd 时启用，避免相对路径无处解析
+    if (cwdRef.current) {
+      const linkProvider = term.registerLinkProvider({
+        provideLinks(bufferLineNumber, callback) {
+          try {
+            const line = term.buffer.active.getLine(bufferLineNumber - 1)
+            if (!line) { callback(undefined); return }
+            const text = line.translateToString(true)
+            // 预过滤：没有 '/' 一定不是路径
+            if (!text || text.indexOf('/') < 0) { callback(undefined); return }
+            const links: Array<{ range: { start: { x: number; y: number }; end: { x: number; y: number } }; text: string; activate: (_e: MouseEvent, t: string) => void }> = []
+            FILE_LINK_RE.lastIndex = 0
+            let m: RegExpExecArray | null
+            let count = 0
+            while ((m = FILE_LINK_RE.exec(text)) && count < MAX_LINKS_PER_LINE) {
+              count++
+              const start = m.index
+              const end = start + m[0].length
+              links.push({
+                text: m[0],
+                range: {
+                  start: { x: start + 1, y: bufferLineNumber },
+                  end: { x: end, y: bufferLineNumber },
+                },
+                activate: (_ev, hit) => {
+                  const base = cwdRef.current || ''
+                  if (!base) return
+                  let editor: EditorKind = 'trae-cn'
+                  try {
+                    const saved = localStorage.getItem('quadtodo.editor') as EditorKind | null
+                    if (saved === 'trae' || saved === 'trae-cn' || saved === 'cursor') editor = saved
+                  } catch {}
+                  openTraeCN(base, editor, hit).catch((err) => {
+                    console.warn('[AiTerminalMini] open link failed:', err)
+                  })
+                },
+              })
+            }
+            callback(links.length ? links : undefined)
+          } catch (e) {
+            console.warn('[AiTerminalMini] link provider error:', e)
+            callback(undefined)
+          }
+        },
+      })
+      linkProviderRef.current = linkProvider
+    }
 
     requestAnimationFrame(() => { try { fit.fit() } catch {} })
 
@@ -212,11 +283,14 @@ export default function AiTerminalMini({ sessionId, todoId, status, resumeTarget
           }
           switch (msg.type) {
             case 'output':
-              term.write(msg.data)
+              term.write(msg.data, () => {
+                if (followTailRef.current) term.scrollToBottom()
+              })
               break
             case 'replay':
               if (Array.isArray(msg.chunks)) {
                 for (const chunk of msg.chunks) term.write(chunk)
+                if (followTailRef.current) term.scrollToBottom()
               }
               break
             case 'pending_confirm':
@@ -407,6 +481,8 @@ export default function AiTerminalMini({ sessionId, todoId, status, resumeTarget
       ro.disconnect()
       const ws = wsRef.current
       if (ws) ws.close()
+      try { linkProviderRef.current?.dispose() } catch {}
+      linkProviderRef.current = null
       term.dispose()
       termRef.current = null
       wsRef.current = null
@@ -433,6 +509,10 @@ export default function AiTerminalMini({ sessionId, todoId, status, resumeTarget
 
   const handleSetAutoMode = useCallback((mode: string | null) => {
     setAutoMode(mode)
+    try {
+      if (mode) localStorage.setItem('quadtodo.autoMode', mode)
+      else localStorage.removeItem('quadtodo.autoMode')
+    } catch { /* ignore */ }
     const ws = wsRef.current
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'set_auto_mode', autoMode: mode }))
@@ -472,6 +552,24 @@ export default function AiTerminalMini({ sessionId, todoId, status, resumeTarget
 
   const focusTerm = useCallback(() => {
     termRef.current?.focus()
+  }, [])
+
+  const scrollToBottom = useCallback(() => {
+    const term = termRef.current
+    if (!term) return
+    term.scrollToBottom()
+    setFollowTail(true)
+    try { localStorage.setItem('quadtodo.followTail', '1') } catch { /* ignore */ }
+    term.focus()
+  }, [])
+
+  const toggleFollowTail = useCallback(() => {
+    setFollowTail(prev => {
+      const next = !prev
+      try { localStorage.setItem('quadtodo.followTail', next ? '1' : '0') } catch { /* ignore */ }
+      if (next) termRef.current?.scrollToBottom()
+      return next
+    })
   }, [])
 
   return (
@@ -551,6 +649,22 @@ export default function AiTerminalMini({ sessionId, todoId, status, resumeTarget
             </Tag>
           </Dropdown>
         )}
+        <Tooltip title={followTail ? '已跟随新输出（点击暂停）' : '已暂停跟随（点击恢复）'}>
+          <Tag
+            color={followTail ? 'green' : 'default'}
+            onClick={toggleFollowTail}
+            style={{ fontSize: 10, lineHeight: '16px', margin: 0, cursor: 'pointer', userSelect: 'none' }}
+          >
+            {followTail ? <LockOutlined style={{ fontSize: 9 }} /> : <UnlockOutlined style={{ fontSize: 9 }} />} 跟随
+          </Tag>
+        </Tooltip>
+        <Tooltip title="滚动到底部（Ctrl+End）">
+          <Button type="text" size="small"
+            icon={<VerticalAlignBottomOutlined />}
+            style={{ color: '#888', fontSize: 12, width: 20, height: 20, minWidth: 20 }}
+            onClick={scrollToBottom}
+          />
+        </Tooltip>
         {isActive && !sessionExpired && (
           <Tooltip title="中止">
             <Button type="text" size="small" danger icon={<StopOutlined />}

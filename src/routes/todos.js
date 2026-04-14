@@ -1,6 +1,8 @@
 import { Router } from 'express'
+import { loadTranscript } from '../transcript.js'
+import { summarizeTurns } from '../summarize.js'
 
-export function createTodosRouter({ db }) {
+export function createTodosRouter({ db, logDir }) {
   const router = Router()
 
   router.get('/', (req, res) => {
@@ -15,7 +17,7 @@ export function createTodosRouter({ db }) {
 
   router.post('/', (req, res) => {
     try {
-      const { title, description, quadrant, dueDate, workDir } = req.body || {}
+      const { title, description, quadrant, dueDate, workDir, brainstorm } = req.body || {}
       if (!title || typeof title !== 'string') {
         res.status(400).json({ ok: false, error: 'missing title' })
         return
@@ -31,6 +33,7 @@ export function createTodosRouter({ db }) {
         quadrant: q,
         dueDate: dueDate ?? null,
         workDir: workDir || null,
+        brainstorm: !!brainstorm,
       })
       res.json({ ok: true, todo })
     } catch (e) {
@@ -154,6 +157,142 @@ export function createTodosRouter({ db }) {
       const todo = db.updateTodo(req.params.id, { aiSessions: nextAiSessions })
       res.json({ ok: true, todo })
     } catch (e) {
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
+  router.get('/:id/ai-sessions/:sessionId/transcript', (req, res) => {
+    try {
+      const todo = db.getTodo(req.params.id)
+      if (!todo) {
+        res.status(404).json({ ok: false, error: 'not_found' })
+        return
+      }
+      const session = (todo.aiSessions || []).find(s => s?.sessionId === req.params.sessionId)
+      if (!session) {
+        res.status(404).json({ ok: false, error: 'session_not_found' })
+        return
+      }
+      const result = loadTranscript({
+        tool: session.tool,
+        nativeSessionId: session.nativeSessionId,
+        cwd: session.cwd || todo.workDir || null,
+        sessionId: session.sessionId,
+        logDir,
+      })
+      const since = Number(req.query.since)
+      const turns = Number.isFinite(since) && since > 0
+        ? result.turns.slice(since)
+        : result.turns
+      res.json({
+        ok: true,
+        source: result.source,
+        total: result.turns.length,
+        offset: Number.isFinite(since) && since > 0 ? since : 0,
+        turns,
+        session: {
+          sessionId: session.sessionId,
+          tool: session.tool,
+          nativeSessionId: session.nativeSessionId,
+          status: session.status,
+          label: session.label || '',
+          startedAt: session.startedAt,
+          completedAt: session.completedAt,
+        },
+      })
+    } catch (e) {
+      console.error('[transcript]', e)
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
+  router.post('/:id/ai-sessions/:sessionId/fork', async (req, res) => {
+    try {
+      const sourceTodo = db.getTodo(req.params.id)
+      if (!sourceTodo) {
+        res.status(404).json({ ok: false, error: 'not_found' })
+        return
+      }
+      const session = (sourceTodo.aiSessions || []).find(s => s?.sessionId === req.params.sessionId)
+      if (!session) {
+        res.status(404).json({ ok: false, error: 'session_not_found' })
+        return
+      }
+
+      const {
+        targetTodoId,
+        tool = session.tool,
+        newInstruction = '',
+        keepLastTurns = 6,
+        summarize = true,
+      } = req.body || {}
+
+      if (!['claude', 'codex'].includes(tool)) {
+        res.status(400).json({ ok: false, error: 'invalid tool' })
+        return
+      }
+
+      const targetTodo = targetTodoId ? db.getTodo(targetTodoId) : sourceTodo
+      if (!targetTodo) {
+        res.status(404).json({ ok: false, error: 'target_not_found' })
+        return
+      }
+
+      const transcript = loadTranscript({
+        tool: session.tool,
+        nativeSessionId: session.nativeSessionId,
+        cwd: session.cwd || sourceTodo.workDir || null,
+        sessionId: session.sessionId,
+        logDir,
+      })
+
+      const allTurns = transcript.turns || []
+      const keep = Math.max(0, Math.min(Number(keepLastTurns) || 0, allTurns.length))
+      const tail = keep > 0 ? allTurns.slice(-keep) : []
+      const head = keep > 0 ? allTurns.slice(0, -keep) : allTurns.slice()
+
+      let summary = ''
+      if (summarize && head.length > 0) {
+        try {
+          summary = await summarizeTurns(head, { tool })
+        } catch (e) {
+          console.warn('[fork] summarize failed:', e.message)
+          summary = `（自动摘要失败：${e.message}）`
+        }
+      }
+
+      const parts = []
+      parts.push(`# 继续任务：${targetTodo.title}`)
+      if (targetTodo.description) parts.push(`## 任务描述\n${targetTodo.description}`)
+      if (summary) parts.push(`## 历史会话摘要\n${summary}`)
+      if (tail.length > 0) {
+        const tailText = tail.map(t => {
+          const role = t.role === 'user' ? '用户' : t.role === 'assistant' ? 'AI' : t.role
+          return `【${role}】${String(t.content || '').slice(0, 2000)}`
+        }).join('\n\n')
+        parts.push(`## 最近 ${tail.length} 轮原始对话\n${tailText}`)
+      }
+      if (newInstruction && newInstruction.trim()) {
+        parts.push(`## 新指令\n${newInstruction.trim()}`)
+      } else {
+        parts.push(`## 新指令\n请在上面的上下文基础上继续推进。`)
+      }
+
+      const prompt = parts.join('\n\n')
+
+      res.json({
+        ok: true,
+        prompt,
+        targetTodoId: targetTodo.id,
+        tool,
+        cwd: targetTodo.workDir || session.cwd || null,
+        sourceSessionId: session.sessionId,
+        summaryUsed: !!summary,
+        tailCount: tail.length,
+        headCount: head.length,
+      })
+    } catch (e) {
+      console.error('[fork]', e)
       res.status(500).json({ ok: false, error: e.message })
     }
   })
