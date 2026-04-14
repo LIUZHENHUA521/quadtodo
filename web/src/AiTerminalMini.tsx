@@ -24,6 +24,7 @@ interface Props {
   onSessionRecovered?: (nextSessionId: string) => void
   onClose: () => void
   onDone?: (result: { status: string; exitCode?: number }) => void
+  fillHeight?: boolean
 }
 
 const MAX_RECONNECT_DELAY = 10_000
@@ -32,7 +33,7 @@ const MAX_RECONNECT_ATTEMPTS = 15
 const HEARTBEAT_INTERVAL = 15_000
 const RESIZE_DEBOUNCE_MS = 100
 
-export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeTarget, onSessionRecovered, onClose, onDone }: Props) {
+export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeTarget, onSessionRecovered, onClose, onDone, fillHeight }: Props) {
   void onClose
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
@@ -290,6 +291,8 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             case 'replay':
               if (Array.isArray(msg.chunks)) {
                 for (const chunk of msg.chunks) term.write(chunk)
+                // 回放结束后强制 SGR reset，避免 TUI 在切片边界遗留 underline/颜色
+                term.write('\x1b[0m')
                 if (followTailRef.current) term.scrollToBottom()
               }
               break
@@ -578,6 +581,12 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       style={fullscreen ? {
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
         zIndex: 9999, background: '#1a1a2e', display: 'flex', flexDirection: 'column',
+      } : fillHeight ? {
+        borderRadius: 10, overflow: 'hidden', background: '#1a1a2e',
+        display: 'flex', flexDirection: 'column' as const, width: '100%',
+        flex: 1, minHeight: 0, height: '100%',
+        border: sessionStatus === 'ai_pending' ? '2px solid #ff4d4f' : '1px solid #303050',
+        boxShadow: '0 10px 24px rgba(8, 13, 30, 0.16)',
       } : {
         borderRadius: 10, overflow: 'hidden', background: '#1a1a2e',
         display: 'flex', flexDirection: 'column' as const, width: '100%',
@@ -695,8 +704,9 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         onClick={focusTerm}
         onMouseDown={focusTerm}
         style={{
-          flex: fullscreen ? 1 : undefined,
-          height: fullscreen ? undefined : height,
+          flex: (fullscreen || fillHeight) ? 1 : undefined,
+          minHeight: (fullscreen || fillHeight) ? 0 : undefined,
+          height: (fullscreen || fillHeight) ? undefined : height,
           width: '100%',
           position: 'relative',
           overflow: 'hidden',
@@ -705,7 +715,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         }}
       />
       {/* 拖拽手柄 */}
-      {!fullscreen && (
+      {!fullscreen && !fillHeight && (
         <div
           onMouseDown={onDragStart}
           onTouchStart={onDragStart}

@@ -4,6 +4,24 @@ html {
   overflow-y: scroll;
 }
 
+/* AntD Drawer/Modal 打开时会给 body 加 overflow:hidden + padding-right 抵消滚动条宽度，
+   配合上面的 scrollbar-gutter 反而导致主内容区变宽抖动；这里强制锁住 */
+body {
+  padding-right: 0 !important;
+  overflow: visible !important;
+}
+
+/* 常驻顶部工具栏 + 筛选栏 */
+.todo-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #fff;
+  margin: -16px -16px 0;
+  padding: 16px 16px 4px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
 /* ─── 四象限看板 ─── */
 .todo-board {
   display: flex;

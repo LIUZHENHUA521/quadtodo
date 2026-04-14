@@ -14,7 +14,10 @@ import {
 import { openDb } from "./db.js";
 import { PtyManager } from "./pty.js";
 import { createAiTerminal } from "./routes/ai-terminal.js";
+import { createTranscriptsRouter } from "./routes/transcripts.js";
+import { createTranscriptsService } from "./transcripts/index.js";
 import { createTodosRouter } from "./routes/todos.js";
+import { createTemplatesRouter } from "./routes/templates.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -268,7 +271,8 @@ export function createServer(opts = {}) {
 				return;
 			}
 			// 可选的具体打开目标（文件或目录）；支持 path:line:col 语法
-			let target = cwd;
+			// 始终把 cwd 作为 workspace folder 传入，再附带具体文件，让编辑器默认打开这个目录
+			const args = ["--new-window", cwd];
 			const rawPath = req.body?.path;
 			if (typeof rawPath === "string" && rawPath.trim()) {
 				const resolved = rawPath.startsWith("/")
@@ -280,9 +284,10 @@ export function createServer(opts = {}) {
 					res.status(400).json({ ok: false, error: "path_not_found" });
 					return;
 				}
-				target = resolved;
+				// VSCode 系 CLI 支持 --goto file:line:col 精确跳转
+				args.push("--goto", resolved);
 			}
-			const child = spawn(bin, ["--new-window", target], {
+			const child = spawn(bin, args, {
 				cwd,
 				stdio: "ignore",
 				detached: true,
@@ -371,7 +376,23 @@ export function createServer(opts = {}) {
 	});
 
 	app.use("/api/todos", createTodosRouter({ db, logDir }));
+	app.use("/api/templates", createTemplatesRouter({ db }));
 	app.use("/api/ai-terminal", ait.router);
+
+	const transcriptsService = createTranscriptsService({
+		db,
+		listTodos: () => db.listTodos(),
+		updateTodo: (id, patch) => db.updateTodo(id, patch),
+	});
+	app.use("/api/transcripts", createTranscriptsRouter({ service: transcriptsService }));
+	// async startup scan (non-blocking)
+	Promise.resolve().then(() => transcriptsService.scanFull())
+		.then(r => console.log(`[transcripts] full scan done newFiles=${r.newFiles} indexed=${r.indexed} autoBound=${r.autoBound} unbound=${r.unbound}`))
+		.catch(e => {
+			if (!/database connection is not open/i.test(e?.message || '')) {
+				console.warn(`[transcripts] full scan failed:`, e.message);
+			}
+		});
 
 	// ─── static frontend ───
 	if (webDist && existsSync(webDist)) {

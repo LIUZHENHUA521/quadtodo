@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Button, Space, Tag, Drawer, Form, Input, DatePicker,
-  Radio, message, Popconfirm, Spin, Tooltip, Dropdown, Select, Switch, Segmented,
+  Radio, message, Popconfirm, Spin, Tooltip, Dropdown, Select, Switch, Segmented, Modal,
 } from 'antd'
 import {
   PlusOutlined,
@@ -10,7 +10,7 @@ import {
   PlayCircleOutlined, SettingOutlined, CopyOutlined,
   CodeOutlined, DesktopOutlined, SendOutlined, EditOutlined,
   DownOutlined, UpOutlined, CloseOutlined,
-  DashboardOutlined,
+  DashboardOutlined, FileTextOutlined,
 } from '@ant-design/icons'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
@@ -26,14 +26,19 @@ import {
   openTraeCN, openTerminal, updateSessionLabel,
   listComments, addComment, deleteComment,
   listLiveSessions, stopAiExec,
+  listTemplates, PromptTemplate,
   Todo, Quadrant, AiTool, Comment,
 } from './api'
+import { renderAppliedTemplates } from './promptRender'
 import SessionViewer from './SessionViewer'
 import SettingsDrawer from './SettingsDrawer'
+import TemplateDrawer from './TemplateDrawer'
 import ForkDialog from './ForkDialog'
 import DashboardDrawer from './dashboard/DashboardDrawer'
 import PetView from './pet/PetView'
+import TranscriptSearchDrawer from './transcripts/TranscriptSearchDrawer'
 import { useAiSessionStore } from './store/aiSessionStore'
+import { getTranscriptStats } from './api'
 import './TodoManage.css'
 
 const { TextArea } = Input
@@ -70,26 +75,16 @@ function toolDisplayName(tool: AiTool) {
   return tool === 'claude' ? 'Claude Code' : 'Codex'
 }
 
-function buildTodoPrompt(todo: Todo) {
-  const brainstormPrefix = todo.brainstorm
-    ? `在动手实现之前，请先进行 brainstorm（脑爆）：
-1. 分析任务需求，列出可能的实现方案（至少 2-3 个）
-2. 对比各方案的优劣势
-3. 选择最佳方案并说明理由
-4. 确认方案后再开始编码实现
-
----
-
-`
-    : ''
-
-  return `${brainstormPrefix}请完成以下待办任务:
+function buildTodoPrompt(todo: Todo, templates: PromptTemplate[] = []) {
+  const templatePrefix = renderAppliedTemplates(todo, templates)
+  const base = `请完成以下待办任务:
 
 标题: ${todo.title}
 描述: ${todo.description || '无'}
 
 请先理解需求和当前项目上下文，再开始执行。
 完成后请给出变更摘要、验证结果，以及仍需我确认的事项。`
+  return templatePrefix ? `${templatePrefix}\n\n---\n\n${base}` : base
 }
 
 function currentStatusLabel(status: Todo['status']) {
@@ -340,6 +335,11 @@ function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onAiExecBoth,
                       </div>
                       <div className="todo-history-native-id" title={nativeSessionId || session.sessionId}>
                         session id: {nativeSessionId || session.sessionId}
+                        {!nativeSessionId && (
+                          <Tooltip title="该会话未正常结束，没有拿到原生 session ID，无法 resume/fork。请在 AI 完成后在终端里按 Ctrl+D 或 /exit 正常退出。">
+                            <Tag color="warning" style={{ marginLeft: 6 }}>未正常结束</Tag>
+                          </Tooltip>
+                        )}
                       </div>
                       {nativeSessionId && (
                         <div className="todo-history-command" title={terminalCommand}>
@@ -607,6 +607,11 @@ export default function TodoManage() {
   // 数据
   const [todos, setTodos] = useState<Todo[]>([])
   const [loading, setLoading] = useState(false)
+  const [templates, setTemplates] = useState<PromptTemplate[]>([])
+  const refreshTemplates = useCallback(async () => {
+    try { setTemplates(await listTemplates()) } catch { /* ignore */ }
+  }, [])
+  useEffect(() => { refreshTemplates() }, [refreshTemplates])
 
   // 视图
   const [filterStatus, setFilterStatus] = useState<'todo' | 'done' | ''>('todo')
@@ -628,7 +633,10 @@ export default function TodoManage() {
 
   // 设置
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [templateDrawerOpen, setTemplateDrawerOpen] = useState(false)
   const [dashboardOpen, setDashboardOpen] = useState(false)
+  const [transcriptDrawerOpen, setTranscriptDrawerOpen] = useState(false)
+  const [unboundTranscripts, setUnboundTranscripts] = useState(0)
   const [viewMode, setViewMode] = useState<'list' | 'pet'>(() => {
     return (localStorage.getItem('quadtodo:viewMode') as 'list' | 'pet') || 'list'
   })
@@ -652,6 +660,9 @@ export default function TodoManage() {
     localStorage.setItem('quadtodo:autoFillPrompt', val ? '1' : '0')
   }, [])
   const [expandedTerminal, setExpandedTerminal] = useState<{ todoId: string; sessionId: string } | null>(null)
+  // 独立于视图模式的浮层终端：点击宠物 / Dashboard 展开终端 时使用，
+  // 因为 expandedTerminal 只能在列表视图的 SortableTodoCard 内被消费
+  const [overlayTerminal, setOverlayTerminal] = useState<{ todoId: string; sessionId: string } | null>(null)
   const [hiddenTerminalSessionIdByTodo, setHiddenTerminalSessionIdByTodo] = useState<Record<string, string | null>>({})
   const [collapsedTerminalByTodo, setCollapsedTerminalByTodo] = useState<Record<string, boolean>>({})
   const [sideBySideByTodo, setSideBySideByTodo] = useState<Record<string, string | null>>({})
@@ -676,9 +687,24 @@ export default function TodoManage() {
     return () => { cancelled = true; clearInterval(t) }
   }, [setLiveSessions])
 
+  useEffect(() => {
+    let cancelled = false
+    async function poll() {
+      try {
+        const s = await getTranscriptStats()
+        if (!cancelled) setUnboundTranscripts(s.unboundCount)
+      } catch {}
+    }
+    poll()
+    const t = setInterval(poll, 30000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [transcriptDrawerOpen])
+
   const handleDashboardOpenTerminal = useCallback((_sessionId: string, todoId: string) => {
     setDashboardOpen(false)
+    // 同步 expandedTerminal 以便列表视图切回时能看到；同时用 overlayTerminal 在当前视图直接展示
     setExpandedTerminal({ todoId, sessionId: _sessionId })
+    setOverlayTerminal({ todoId, sessionId: _sessionId })
   }, [])
 
   const handleDashboardStop = useCallback(async (sessionId: string) => {
@@ -753,6 +779,8 @@ export default function TodoManage() {
       dueDate: todo.dueDate ? dayjs(todo.dueDate) : null,
       workDir: todo.workDir || undefined,
       brainstorm: !!todo.brainstorm,
+      useTemplates: (todo.appliedTemplateIds || []).length > 0,
+      appliedTemplateIds: todo.appliedTemplateIds || [],
     })
     setDrawerOpen(true)
   }
@@ -800,6 +828,7 @@ export default function TodoManage() {
         dueDate: values.dueDate ? values.dueDate.valueOf() : null,
         workDir: values.workDir || null,
         brainstorm: !!values.brainstorm,
+        appliedTemplateIds: values.useTemplates ? (values.appliedTemplateIds || []) : [],
       }
 
       if (editingTodo) {
@@ -903,7 +932,7 @@ export default function TodoManage() {
 
   const handleAiExec = useCallback(async (todo: Todo, tool: AiTool, session?: Todo['aiSessions'][number]) => {
     try {
-      const prompt = session?.prompt || (autoFillPrompt ? buildTodoPrompt(todo) : '')
+      const prompt = session?.prompt || (autoFillPrompt ? buildTodoPrompt(todo, templates) : '')
       // 读取用户上次选择的托管模式（持久化在 localStorage），
       // 这样新启动/恢复会话时能直接通过原生 CLI 标志生效，不依赖运行时的正则兜底。
       let permissionMode: string | null = null
@@ -922,11 +951,11 @@ export default function TodoManage() {
     } catch (e: any) {
       message.error(e?.message || 'AI 启动失败')
     }
-  }, [fetchTodos, autoFillPrompt])
+  }, [fetchTodos, autoFillPrompt, templates])
 
   const handleAiExecBoth = useCallback(async (todo: Todo) => {
     try {
-      const prompt = autoFillPrompt ? buildTodoPrompt(todo) : ''
+      const prompt = autoFillPrompt ? buildTodoPrompt(todo, templates) : ''
       let permissionMode: string | null = null
       try { permissionMode = localStorage.getItem('quadtodo.autoMode') } catch { /* ignore */ }
       const cwd = todo.workDir || undefined
@@ -941,7 +970,7 @@ export default function TodoManage() {
     } catch (e: any) {
       message.error(e?.message || '并行启动失败')
     }
-  }, [fetchTodos, autoFillPrompt])
+  }, [fetchTodos, autoFillPrompt, templates])
 
   const handleRequestFork = useCallback((todo: Todo, sessionId: string) => {
     setForkTarget({ todo, sessionId })
@@ -1087,7 +1116,7 @@ export default function TodoManage() {
   }, [])
 
   const handleCopyPrompt = useCallback((todo: Todo) => {
-    const text = buildTodoPrompt(todo)
+    const text = buildTodoPrompt(todo, templates)
     navigator.clipboard.writeText(text).then(
       () => message.success('已复制到剪贴板'),
       () => message.error('复制失败')
@@ -1100,6 +1129,7 @@ export default function TodoManage() {
 
   return (
     <div style={{ padding: 16 }}>
+      <div className="todo-sticky-header">
       {/* 工具栏 */}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <h2 style={{ margin: 0, fontSize: 18 }}>待办事项</h2>
@@ -1117,6 +1147,18 @@ export default function TodoManage() {
           size="small"
           onClick={() => setDashboardOpen(true)}
           title="AI 工作面板"
+        />
+        <Button
+          icon={<SearchOutlined />}
+          size="small"
+          onClick={() => setTranscriptDrawerOpen(true)}
+          title="历史会话找回"
+        />
+        <Button
+          icon={<FileTextOutlined />}
+          size="small"
+          onClick={() => setTemplateDrawerOpen(true)}
+          title="Prompt 模板库"
         />
         <Button
           icon={<SettingOutlined />}
@@ -1159,6 +1201,7 @@ export default function TodoManage() {
             { label: '宠物', value: 'pet' },
           ]}
         />
+      </div>
       </div>
 
       {viewMode === 'pet' ? (
@@ -1346,8 +1389,20 @@ export default function TodoManage() {
           <Form.Item name="description" label="描述">
             <TextArea rows={3} placeholder="详细描述（可选）" />
           </Form.Item>
-          <Form.Item name="brainstorm" label="脑爆模式" valuePropName="checked" extra="开启后 AI 会先进行方案分析和对比，再动手实现">
+          <Form.Item name="useTemplates" label="启用模板" valuePropName="checked" extra="开启后 AI 启动时会在 prompt 前按顺序拼接所选模板">
             <Switch />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(p, n) => p.useTemplates !== n.useTemplates}>
+            {({ getFieldValue }) => getFieldValue('useTemplates') ? (
+              <Form.Item name="appliedTemplateIds" label="应用的模板（按顺序拼接）">
+                <Select
+                  mode="multiple"
+                  placeholder={templates.length ? '选择要应用的模板' : '暂无模板，请先在模板管理中创建'}
+                  options={templates.map(t => ({ value: t.id, label: t.builtin ? `${t.name}（内置）` : t.name }))}
+                  optionFilterProp="label"
+                />
+              </Form.Item>
+            ) : null}
           </Form.Item>
           <Form.Item
             label="工作目录"
@@ -1472,11 +1527,23 @@ export default function TodoManage() {
       </Drawer>
 
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <TemplateDrawer
+        open={templateDrawerOpen}
+        onClose={() => setTemplateDrawerOpen(false)}
+        onChanged={refreshTemplates}
+      />
       <DashboardDrawer
         open={dashboardOpen}
         onClose={() => setDashboardOpen(false)}
         onOpenTerminal={handleDashboardOpenTerminal}
         onStop={handleDashboardStop}
+      />
+      <TranscriptSearchDrawer
+        open={transcriptDrawerOpen}
+        onClose={() => setTranscriptDrawerOpen(false)}
+        preselectTodoId={detailTodo?.id || null}
+        initialQuery={detailTodo?.title}
+        initialCwd={detailTodo?.workDir || ''}
       />
       <ForkDialog
         open={!!forkTarget}
@@ -1486,6 +1553,49 @@ export default function TodoManage() {
         onCancel={() => setForkTarget(null)}
         onConfirm={handleForkConfirm}
       />
+      {(() => {
+        if (!overlayTerminal) return null
+        const t = todos.find(x => x.id === overlayTerminal.todoId)
+        if (!t) return null
+        const sess = (t.aiSessions || []).find(s => s.sessionId === overlayTerminal.sessionId)
+        const resumeTarget = sess?.nativeSessionId ? {
+          todoId: t.id,
+          tool: sess.tool,
+          prompt: sess.prompt,
+          cwd: sess.cwd || t.workDir || undefined,
+          nativeSessionId: sess.nativeSessionId,
+        } : null
+        return (
+          <Modal
+            open
+            onCancel={() => setOverlayTerminal(null)}
+            footer={null}
+            title={`AI 终端 · ${t.title}${sess?.tool === 'codex' ? ' · Codex' : ' · Claude'}${sess?.label ? ` · ${sess.label}` : ''}`}
+            width="90vw"
+            style={{ top: 20 }}
+            styles={{ body: { padding: 0, height: '80vh', display: 'flex', flexDirection: 'column' } }}
+            destroyOnClose
+          >
+            <SessionViewer
+              key={overlayTerminal.sessionId}
+              sessionId={overlayTerminal.sessionId}
+              todoId={t.id}
+              status={t.status}
+              cwd={t.workDir || resumeTarget?.cwd || null}
+              resumeTarget={resumeTarget}
+              fillHeight
+              onSessionRecovered={(nextSessionId) => {
+                setOverlayTerminal({ todoId: t.id, sessionId: nextSessionId })
+                setExpandedTerminal({ todoId: t.id, sessionId: nextSessionId })
+                fetchTodos()
+              }}
+              onClose={() => setOverlayTerminal(null)}
+              onDone={() => fetchTodos()}
+              onFork={() => { setForkTarget({ todo: t, sessionId: overlayTerminal.sessionId }); setOverlayTerminal(null) }}
+            />
+          </Modal>
+        )
+      })()}
     </div>
   )
 }

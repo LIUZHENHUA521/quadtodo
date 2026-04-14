@@ -27,6 +27,7 @@ export interface Todo {
   dueDate: number | null
   workDir: string | null
   brainstorm: boolean
+  appliedTemplateIds: string[]
   sortOrder: number
   aiSession: AiSession | null
   aiSessions: AiSession[]
@@ -94,6 +95,42 @@ async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
+export interface PromptTemplate {
+  id: string
+  name: string
+  description: string
+  content: string
+  builtin: boolean
+  sortOrder: number
+  createdAt: number
+  updatedAt: number
+}
+
+export async function listTemplates(): Promise<PromptTemplate[]> {
+  const body = await jsonFetch<{ ok: true; list: PromptTemplate[] }>('/api/templates')
+  return body.list
+}
+
+export async function createTemplate(data: { name: string; description?: string; content: string; sortOrder?: number }): Promise<PromptTemplate> {
+  const body = await jsonFetch<{ ok: true; template: PromptTemplate }>('/api/templates', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+  return body.template
+}
+
+export async function updateTemplate(id: string, patch: Partial<PromptTemplate>): Promise<PromptTemplate> {
+  const body = await jsonFetch<{ ok: true; template: PromptTemplate }>(`/api/templates/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  })
+  return body.template
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  await jsonFetch<{ ok: true }>(`/api/templates/${id}`, { method: 'DELETE' })
+}
+
 export async function listTodos(params: {
   quadrant?: Quadrant
   status?: 'todo' | 'done'
@@ -115,6 +152,7 @@ export async function createTodo(data: {
   dueDate?: number | null
   workDir?: string | null
   brainstorm?: boolean
+  appliedTemplateIds?: string[]
 }): Promise<Todo> {
   const body = await jsonFetch<{ ok: true; todo: Todo }>('/api/todos', {
     method: 'POST',
@@ -362,4 +400,80 @@ export async function getSessionStats(range: 'today' | 'week' | 'month'): Promis
 export async function getResourceSnapshot(): Promise<ResourceSnapshot[]> {
   const body = await jsonFetch<{ ok: true; resources: ResourceSnapshot[] }>('/api/ai-terminal/resource')
   return body.resources
+}
+
+// ─── Transcript rescue ───
+
+export interface TranscriptFile {
+  id: number
+  tool: AiTool
+  native_id: string | null
+  cwd: string | null
+  jsonl_path: string
+  size: number
+  mtime: number
+  started_at: number | null
+  ended_at: number | null
+  first_user_prompt: string | null
+  turn_count: number
+  bound_todo_id: string | null
+  indexed_at: number
+  snippet?: string | null
+}
+
+export interface TranscriptSearchResult {
+  total: number
+  items: TranscriptFile[]
+}
+
+export async function scanTranscripts(): Promise<{ newFiles: number; indexed: number; autoBound: number; unbound: number }> {
+  const body = await jsonFetch<{ ok: true; newFiles: number; indexed: number; autoBound: number; unbound: number }>('/api/transcripts/scan', { method: 'POST' })
+  return body
+}
+
+export async function getTranscriptStats(): Promise<{ unboundCount: number }> {
+  const body = await jsonFetch<{ ok: true; unboundCount: number }>('/api/transcripts/stats')
+  return { unboundCount: body.unboundCount }
+}
+
+export async function searchTranscripts(params: {
+  q?: string
+  tool?: AiTool
+  cwd?: string
+  since?: number
+  unboundOnly?: boolean
+  limit?: number
+  offset?: number
+}): Promise<TranscriptSearchResult> {
+  const qs = new URLSearchParams()
+  if (params.q) qs.set('q', params.q)
+  if (params.tool) qs.set('tool', params.tool)
+  if (params.cwd) qs.set('cwd', params.cwd)
+  if (params.since) qs.set('since', String(params.since))
+  if (params.unboundOnly) qs.set('unboundOnly', '1')
+  if (params.limit) qs.set('limit', String(params.limit))
+  if (params.offset) qs.set('offset', String(params.offset))
+  const body = await jsonFetch<{ ok: true; total: number; items: TranscriptFile[] }>(`/api/transcripts/search?${qs.toString()}`)
+  return { total: body.total, items: body.items }
+}
+
+export async function previewTranscript(fileId: number, offset = 0, limit = 200): Promise<{ file: TranscriptFile; turns: { role: string; content: string }[]; totalTurns: number }> {
+  const body = await jsonFetch<{ ok: true; file: TranscriptFile; turns: { role: string; content: string }[]; totalTurns: number }>(`/api/transcripts/${fileId}/preview?offset=${offset}&limit=${limit}`)
+  return { file: body.file, turns: body.turns, totalTurns: body.totalTurns }
+}
+
+export async function bindTranscript(fileId: number, todoId: string, force = false): Promise<{ ok: boolean; currentTodoId?: string | null; conflict?: boolean }> {
+  const r = await fetch(BASE + `/api/transcripts/${fileId}/bind`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ todoId, force }),
+  })
+  const body = await r.json()
+  if (r.status === 409) return { ok: false, conflict: true, currentTodoId: body.currentTodoId || null }
+  if (!body.ok) throw new Error(body.error || `${r.status}`)
+  return { ok: true }
+}
+
+export async function unbindTranscript(fileId: number): Promise<void> {
+  await jsonFetch(`/api/transcripts/${fileId}/unbind`, { method: 'POST' })
 }

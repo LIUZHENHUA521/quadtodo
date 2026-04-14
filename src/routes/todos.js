@@ -17,7 +17,7 @@ export function createTodosRouter({ db, logDir }) {
 
   router.post('/', (req, res) => {
     try {
-      const { title, description, quadrant, dueDate, workDir, brainstorm } = req.body || {}
+      const { title, description, quadrant, dueDate, workDir, brainstorm, appliedTemplateIds } = req.body || {}
       if (!title || typeof title !== 'string') {
         res.status(400).json({ ok: false, error: 'missing title' })
         return
@@ -34,6 +34,7 @@ export function createTodosRouter({ db, logDir }) {
         dueDate: dueDate ?? null,
         workDir: workDir || null,
         brainstorm: !!brainstorm,
+        appliedTemplateIds: Array.isArray(appliedTemplateIds) ? appliedTemplateIds : [],
       })
       res.json({ ok: true, todo })
     } catch (e) {

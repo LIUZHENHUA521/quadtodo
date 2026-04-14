@@ -14,12 +14,13 @@ interface Props {
   onClose: () => void
   onDone?: (result: { status: string; exitCode?: number }) => void
   onFork?: (turnIndex: number, upToTurns: TranscriptTurn[]) => void
+  fillHeight?: boolean
 }
 
 type ViewMode = 'live' | 'transcript'
 
 export default function SessionViewer(props: Props) {
-  const { status, sessionId, todoId, onFork } = props
+  const { status, sessionId, todoId, onFork, fillHeight } = props
   const isRunning = status === 'ai_running' || status === 'ai_pending'
   const [mode, setMode] = useState<ViewMode>(isRunning ? 'live' : 'transcript')
 
@@ -30,8 +31,11 @@ export default function SessionViewer(props: Props) {
   }, [sessionId])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 6,
+      ...(fillHeight ? { height: '100%', flex: 1, minHeight: 0, padding: 8 } : {}),
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
         <Segmented
           size="small"
           value={mode}
@@ -43,10 +47,16 @@ export default function SessionViewer(props: Props) {
         />
       </div>
       {/* 两个视图都挂载，用 display 切换，避免丢失 xterm / WS 状态 */}
-      <div style={{ display: mode === 'live' ? 'block' : 'none' }}>
-        <AiTerminalMini {...props} />
+      <div style={{
+        display: mode === 'live' ? 'flex' : 'none',
+        ...(fillHeight ? { flex: 1, minHeight: 0, flexDirection: 'column' as const } : {}),
+      }}>
+        <AiTerminalMini {...props} fillHeight={fillHeight} />
       </div>
-      <div style={{ display: mode === 'transcript' ? 'block' : 'none', height: 440 }}>
+      <div style={{
+        display: mode === 'transcript' ? 'block' : 'none',
+        ...(fillHeight ? { flex: 1, minHeight: 0, overflow: 'auto' } : { height: 440 }),
+      }}>
         {mode === 'transcript' && (
           <TranscriptView
             todoId={todoId}
