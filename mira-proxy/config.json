@@ -1,0 +1,45 @@
+{
+  "mira_session": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2IjoidjEiLCJ0biI6Im1pcmEiLCJ1aWQiOiI5NTg5NTk1Iiwic2MiOiJ1c2VyIiwiaXNzIjoibWlyYSIsImV4cCI6MTc3ODc2MjAyNSwiaWF0IjoxNzc2MTcwMDI1fQ.9Fxh_m5epFiodzww_txQYeGpr26ALvpIgZtjLzJXffE",
+  "mira_base_url": "https://mira.byteintl.net",
+  "proxy_port": 8642,
+  "default_model": "re-o-46",
+  "model_map": {
+    "claude-sonnet-4-20250514": "re-o-46",
+    "claude-3-5-sonnet-20241022": "re-o-46",
+    "claude-3-opus-20240229": "re-o-46",
+    "claude-haiku-4-5-20251001": "re-o-46",
+    "gpt-4": "re-o-46",
+    "gpt-4o": "re-o-46",
+    "gemini-pro": "re-o-46"
+  },
+  "completion_defaults": {
+    "messageType": 1,
+    "summaryAgent": "re-o-46",
+    "dataSources": [
+      "manus"
+    ],
+    "comprehensive": 1,
+    "config": {
+      "online": true,
+      "mode": "quick",
+      "model": "re-o-46",
+      "tool_list": [
+        { "name": "Browser", "id": 74803200019, "scope": "GLOBAL" },
+        { "name": "ImageRich", "id": 54604820243, "scope": "GLOBAL" },
+        { "name": "KnowledgeQASearch", "id": 54604816403, "scope": "GLOBAL" },
+        { "name": "Lingo", "id": 54604817683, "scope": "GLOBAL" },
+        { "name": "ocic-frontend-mcp", "id": 74434908435, "scope": "USER" },
+        { "name": "Web", "id": 54604802835, "scope": "GLOBAL" }
+      ]
+    }
+  },
+  "anthropic_tool_map": {
+    "Bash": { "name": "bash", "scope": "GLOBAL" },
+    "Read": { "name": "read_file", "scope": "GLOBAL" },
+    "Write": { "name": "write_file", "scope": "GLOBAL" },
+    "Edit": { "name": "edit_file", "scope": "GLOBAL" },
+    "Glob": { "name": "glob", "scope": "GLOBAL" },
+    "Grep": { "name": "grep", "scope": "GLOBAL" }
+  },
+  "log_requests": true
+}

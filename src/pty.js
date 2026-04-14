@@ -215,6 +215,65 @@ export class PtyManager extends EventEmitter {
     })
   }
 
+  startShell({ sessionId, shell, cwd }) {
+    const effectiveCwd = cwd || process.env.HOME || process.cwd()
+    let proc
+    try {
+      proc = this.ptyFactory(shell, [], {
+        name: 'xterm-256color',
+        cols: 80,
+        rows: 24,
+        cwd: effectiveCwd,
+        env: {
+          ...process.env,
+          TERM: 'xterm-256color',
+          TZ: process.env.TZ || 'America/Los_Angeles',
+          FORCE_COLOR: '1',
+        },
+      })
+    } catch (error) {
+      error.message = `PTY spawn failed for shell (bin=${shell}, cwd=${effectiveCwd}): ${error.message}`
+      throw error
+    }
+
+    const session = {
+      proc,
+      tool: 'shell',
+      sessionId,
+      fullLog: [],
+      logBytes: 0,
+      pendingPrompt: null,
+      resized: false,
+      promptTimer: null,
+      nativeId: null,
+      stopped: false,
+      detectTimer: null,
+    }
+    this.sessions.set(sessionId, session)
+
+    proc.onData((data) => {
+      session.fullLog.push(data)
+      session.logBytes += data.length
+      while (session.logBytes > MAX_LOG_BYTES && session.fullLog.length > 1) {
+        const removed = session.fullLog.shift()
+        session.logBytes -= removed.length
+      }
+      this.emit('output', { sessionId, data })
+    })
+
+    proc.onExit(({ exitCode }) => {
+      const fullLog = session.fullLog.join('')
+      this.sessions.delete(sessionId)
+      this.emit('done', {
+        sessionId,
+        exitCode: exitCode ?? 0,
+        fullLog,
+        nativeId: null,
+        stopped: session.stopped,
+      })
+    })
+  }
+
   write(sessionId, data) {
     const s = this.sessions.get(sessionId)
     if (s) s.proc.write(data)

@@ -1,0 +1,11 @@
+{
+  "name": "mira-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local proxy: Anthropic Messages API → Mira (mira.bytedance.com)",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {}
+}

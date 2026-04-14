@@ -33,6 +33,8 @@
   ],
   "scripts": {
     "start": "node src/cli.js start",
+    "mira:proxy": "cd mira-proxy && node server.js",
+    "claude:mira": "./claude-mira.sh",
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "npm run build:web",

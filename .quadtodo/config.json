@@ -1,0 +1,26 @@
+{
+  "port": 5677,
+  "defaultTool": "claude",
+  "defaultCwd": "/Users/bytedance",
+  "tools": {
+    "claude": {
+      "command": "claude-w",
+      "bin": "/Users/bytedance/.nvm/versions/node/v18.20.3/bin/claude",
+      "args": []
+    },
+    "codex": {
+      "command": "codex-w",
+      "bin": "/Users/bytedance/.nvm/versions/node/v18.20.3/bin/codex",
+      "args": []
+    }
+  },
+  "webhook": {
+    "enabled": false,
+    "provider": "wecom",
+    "url": "",
+    "keywords": [],
+    "cooldownMs": 180000,
+    "notifyOnPendingConfirm": true,
+    "notifyOnKeywordMatch": true
+  }
+}

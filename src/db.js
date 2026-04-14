@@ -17,6 +17,15 @@ CREATE TABLE IF NOT EXISTS todos (
 );
 CREATE INDEX IF NOT EXISTS idx_todos_quadrant_sort ON todos(quadrant, sort_order);
 CREATE INDEX IF NOT EXISTS idx_todos_status        ON todos(status);
+
+CREATE TABLE IF NOT EXISTS comments (
+  id         TEXT PRIMARY KEY,
+  todo_id    TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (todo_id) REFERENCES todos(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_comments_todo ON comments(todo_id, created_at);
 `
 
 const UNFINISHED = ['todo', 'ai_running', 'ai_pending', 'ai_done']
@@ -163,6 +172,43 @@ export function openDb(file = ':memory:') {
     return rows.map(rowToTodo)
   }
 
+  const commentStmts = {
+    insert: db.prepare(`INSERT INTO comments (id, todo_id, content, created_at) VALUES (@id, @todo_id, @content, @created_at)`),
+    listByTodo: db.prepare(`SELECT * FROM comments WHERE todo_id = ? ORDER BY created_at ASC`),
+    deleteById: db.prepare(`DELETE FROM comments WHERE id = ?`),
+    getById: db.prepare(`SELECT * FROM comments WHERE id = ?`),
+  }
+
+  function addComment(todoId, content) {
+    const row = {
+      id: randomUUID(),
+      todo_id: todoId,
+      content,
+      created_at: Date.now(),
+    }
+    commentStmts.insert.run(row)
+    return { id: row.id, todoId: row.todo_id, content: row.content, createdAt: row.created_at }
+  }
+
+  function listComments(todoId) {
+    return commentStmts.listByTodo.all(todoId).map(r => ({
+      id: r.id,
+      todoId: r.todo_id,
+      content: r.content,
+      createdAt: r.created_at,
+    }))
+  }
+
+  function deleteComment(id) {
+    commentStmts.deleteById.run(id)
+  }
+
+  function getComment(id) {
+    const r = commentStmts.getById.get(id)
+    if (!r) return null
+    return { id: r.id, todoId: r.todo_id, content: r.content, createdAt: r.created_at }
+  }
+
   return {
     raw: db,
     createTodo,
@@ -171,6 +217,10 @@ export function openDb(file = ':memory:') {
     deleteTodo,
     listTodos,
     nextSortOrder,
+    addComment,
+    listComments,
+    deleteComment,
+    getComment,
     close: () => db.close(),
   }
 }

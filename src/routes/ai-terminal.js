@@ -225,7 +225,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
   router.post('/exec', (req, res) => {
     try {
       const { todoId, prompt, tool, cwd, resumeNativeId } = req.body || {}
-      if (!todoId || !prompt || !tool) {
+      if (!todoId || typeof prompt !== 'string' || !tool) {
         res.status(400).json({ ok: false, error: 'missing todoId, prompt, or tool' })
         return
       }

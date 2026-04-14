@@ -15,6 +15,7 @@ export interface AiSession {
   startedAt: number
   completedAt: number | null
   prompt: string
+  label?: string
 }
 
 export interface Todo {
@@ -30,6 +31,13 @@ export interface Todo {
   aiSessions: AiSession[]
   createdAt: number
   updatedAt: number
+}
+
+export interface Comment {
+  id: string
+  todoId: string
+  content: string
+  createdAt: number
 }
 
 export interface AppConfig {
@@ -125,6 +133,31 @@ export async function deleteTodo(id: string): Promise<void> {
   await jsonFetch(`/api/todos/${id}`, { method: 'DELETE' })
 }
 
+export async function listComments(todoId: string): Promise<Comment[]> {
+  const body = await jsonFetch<{ ok: true; list: Comment[] }>(`/api/todos/${todoId}/comments`)
+  return body.list
+}
+
+export async function addComment(todoId: string, content: string): Promise<Comment> {
+  const body = await jsonFetch<{ ok: true; comment: Comment }>(`/api/todos/${todoId}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
+  return body.comment
+}
+
+export async function deleteComment(todoId: string, commentId: string): Promise<void> {
+  await jsonFetch(`/api/todos/${todoId}/comments/${commentId}`, { method: 'DELETE' })
+}
+
+export async function updateSessionLabel(todoId: string, sessionId: string, label: string): Promise<Todo> {
+  const body = await jsonFetch<{ ok: true; todo: Todo }>(`/api/todos/${todoId}/ai-sessions/${sessionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ label }),
+  })
+  return body.todo
+}
+
 export async function deleteTodoAiSession(todoId: string, sessionId: string): Promise<Todo> {
   const body = await jsonFetch<{ ok: true; todo: Todo }>(`/api/todos/${todoId}/ai-sessions/${sessionId}`, {
     method: 'DELETE',
@@ -192,6 +225,21 @@ export async function pickDirectory(input: {
     body: JSON.stringify(input),
   })
   return { path: body.path, cancelled: body.cancelled }
+}
+
+export async function openTraeCN(cwd: string): Promise<void> {
+  await jsonFetch('/api/system/open-trae', {
+    method: 'POST',
+    body: JSON.stringify({ cwd }),
+  })
+}
+
+export async function openTerminal(cwd: string): Promise<{ sessionId: string }> {
+  const body = await jsonFetch<{ ok: true; sessionId: string }>('/api/system/open-terminal', {
+    method: 'POST',
+    body: JSON.stringify({ cwd }),
+  })
+  return { sessionId: body.sessionId }
 }
 
 /** 浏览器 WS 地址：开发时走 vite proxy，生产同源 */
