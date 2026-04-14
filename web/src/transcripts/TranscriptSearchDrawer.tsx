@@ -15,6 +15,8 @@ type Props = {
   initialQuery?: string
   /** Prefill cwd filter */
   initialCwd?: string
+  /** 绑定/解绑成功后通知外层刷新 todo 列表 */
+  onBindingChanged?: () => void
 }
 
 function formatTs(ts: number | null | undefined) {
@@ -23,7 +25,7 @@ function formatTs(ts: number | null | undefined) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId, initialQuery, initialCwd }: Props) {
+export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId, initialQuery, initialCwd, onBindingChanged }: Props) {
   const [q, setQ] = useState('')
   const [tool, setTool] = useState<AiTool | ''>('')
   const [cwd, setCwd] = useState('')
@@ -108,6 +110,7 @@ export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId,
       setBindTodoId('')
       await doSearch()
       await refreshStats()
+      onBindingChanged?.()
     } catch (e) { message.error((e as Error).message) }
   }
 
@@ -117,6 +120,7 @@ export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId,
       message.success('已解绑')
       await doSearch()
       await refreshStats()
+      onBindingChanged?.()
     } catch (e) { message.error((e as Error).message) }
   }
 

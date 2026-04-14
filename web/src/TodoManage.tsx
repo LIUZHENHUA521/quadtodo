@@ -1544,6 +1544,7 @@ export default function TodoManage() {
         preselectTodoId={detailTodo?.id || null}
         initialQuery={detailTodo?.title}
         initialCwd={detailTodo?.workDir || ''}
+        onBindingChanged={() => { void fetchTodos() }}
       />
       <ForkDialog
         open={!!forkTarget}
