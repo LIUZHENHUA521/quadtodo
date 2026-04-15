@@ -205,4 +205,42 @@ describe('usage integration', () => {
     expect(out.usage.primaryModel).toBe('claude-sonnet-4-6')
     expect(out.usage.activeMs).toBe(40000)
   })
+
+  it('usage columns survive full scan→indexer→DB pipeline', async () => {
+    const tmp = mkTmpDir()
+    const claudeDir = path.join(tmp, 'claude')
+    const codexDir = path.join(tmp, 'codex')
+    fs.mkdirSync(claudeDir)
+    fs.mkdirSync(codexDir)
+
+    // Write the fixture into a properly-structured claude project dir
+    const claudeProjectHash = '-Users-me-usage-proj'
+    const usageUuid = 'bbbbbbbb-0000-0000-0000-000000000001'
+    const projDir = path.join(claudeDir, claudeProjectHash)
+    fs.mkdirSync(projDir, { recursive: true })
+    const fixtureSrc = path.join(import.meta.dirname, 'fixtures', 'claude-usage.jsonl')
+    fs.copyFileSync(fixtureSrc, path.join(projDir, `${usageUuid}.jsonl`))
+
+    const db = openDb(':memory:')
+    const service = createTranscriptsService({
+      db,
+      listTodos: () => db.listTodos(),
+      updateTodo: (id, patch) => db.updateTodo(id, patch),
+      dirs: { claude: claudeDir, codex: codexDir },
+    })
+
+    await service.scanFull()
+
+    const meta = db.listTranscriptFilesMeta()
+    expect(meta).toHaveLength(1)
+    const row = db.getTranscriptFile(meta[0].id)
+
+    expect(row.input_tokens).toBe(160)
+    expect(row.output_tokens).toBe(35)
+    expect(row.primary_model).toBe('claude-sonnet-4-6')
+    expect(row.active_ms).toBe(40000)
+
+    db.close()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  })
 })
