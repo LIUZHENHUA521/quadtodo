@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import readline from 'node:readline'
+import { extractUsage } from '../usage-parser.js'
 
 export const DEFAULT_CLAUDE_DIR = path.join(os.homedir(), '.claude', 'projects')
 export const DEFAULT_CODEX_DIR = path.join(os.homedir(), '.codex', 'sessions')
@@ -38,8 +39,10 @@ async function parseClaudeFile(filePath) {
   let firstUserPrompt = null
   let turnCount = 0
   const turns = []
+  const rawLines = []
   for await (const line of rl) {
     if (!line.trim()) continue
+    rawLines.push(line)
     let j
     try { j = JSON.parse(line) } catch { continue }
     if (!nativeId && j.sessionId) nativeId = j.sessionId
@@ -70,7 +73,8 @@ async function parseClaudeFile(filePath) {
     const parent = path.basename(path.dirname(filePath))
     cwd = decodeClaudeCwdFromDir(parent)
   }
-  return { nativeId, cwd, startedAt, endedAt, firstUserPrompt, turnCount, turns }
+  const usage = extractUsage('claude', rawLines, {})
+  return { nativeId, cwd, startedAt, endedAt, firstUserPrompt, turnCount, turns, usage }
 }
 
 async function parseCodexFile(filePath) {
@@ -82,8 +86,10 @@ async function parseCodexFile(filePath) {
   let firstUserPrompt = null
   let turnCount = 0
   const turns = []
+  const rawLines = []
   for await (const line of rl) {
     if (!line.trim()) continue
+    rawLines.push(line)
     let j
     try { j = JSON.parse(line) } catch { continue }
     const ts = j.timestamp ? Date.parse(j.timestamp) : null
@@ -112,7 +118,8 @@ async function parseCodexFile(filePath) {
     turns.push({ role: role || 'raw', content })
     if (!firstUserPrompt && role === 'user') firstUserPrompt = content.slice(0, 200)
   }
-  return { nativeId, cwd, startedAt, endedAt, firstUserPrompt, turnCount, turns }
+  const usage = extractUsage('codex', rawLines, {})
+  return { nativeId, cwd, startedAt, endedAt, firstUserPrompt, turnCount, turns, usage }
 }
 
 export function listTranscriptFiles({ claudeDir = DEFAULT_CLAUDE_DIR, codexDir = DEFAULT_CODEX_DIR } = {}) {

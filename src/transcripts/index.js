@@ -84,7 +84,8 @@ export function createTranscriptsService({ db, listTodos, updateTodo, dirs = {} 
     let newFiles = 0
     for (const f of disk) {
       const existing = dbByPath.get(f.jsonlPath)
-      const dirty = mode === 'full' || !existing || existing.size !== f.size || existing.mtime !== f.mtime
+      const missingUsage = existing && existing.input_tokens == null && existing.output_tokens == null
+      const dirty = mode === 'full' || !existing || existing.size !== f.size || existing.mtime !== f.mtime || missingUsage
       if (!dirty) continue
       if (!existing) newFiles++
       const row = await indexFile(db, f)

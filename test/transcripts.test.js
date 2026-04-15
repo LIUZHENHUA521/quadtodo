@@ -195,3 +195,14 @@ describe('transcripts service', () => {
     expect(file.bound_todo_id).toBeNull()
   })
 })
+
+describe('usage integration', () => {
+  it('scanner 解析 claude fixture 时填充 usage 字段', async () => {
+    const { parseTranscriptFile } = await import('../src/transcripts/scanner.js')
+    const p = new URL('./fixtures/claude-usage.jsonl', import.meta.url).pathname
+    const out = await parseTranscriptFile('claude', p)
+    expect(out.usage.inputTokens).toBe(160)
+    expect(out.usage.primaryModel).toBe('claude-sonnet-4-6')
+    expect(out.usage.activeMs).toBe(40000)
+  })
+})
