@@ -105,7 +105,7 @@ export function buildReport(db, { since, until = Date.now(), pricing, topN = 10 
 	// byTool / byQuadrant / byModel
 	const byTool = aggregateBy(files, logs, f => f.tool, l => l.tool, pricing)
 	const byQuadrant = aggregateBy(files, logs,
-		f => (todoById.get(f.bound_todo_id)?.quadrant) || 0,
+		f => { const t = todoById.get(f.bound_todo_id); return t ? t.quadrant : null },
 		l => l.quadrant, pricing)
 	const byModel = aggregateBy(files, [], f => f.primary_model || '(unknown)', () => null, pricing, { includeWall: false })
 
@@ -136,7 +136,8 @@ export function buildReport(db, { since, until = Date.now(), pricing, topN = 10 
 			activeMs: totalActive,
 			tokens: { ...totalTokens, total: totalTokens.input + totalTokens.output + totalTokens.cacheRead + totalTokens.cacheCreation },
 			cost: totalCost,
-			sessionCount: logs.length || files.length,
+			// transcripts 是 AI 活动的权威来源；ai_session_log 仅覆盖经过 PTY runner 的会话
+			sessionCount: files.length,
 			todoCount: coveredTodos.size,
 			unboundSessionCount: unbound,
 		},
@@ -174,7 +175,7 @@ function aggregateBy(files, logs, keyF, keyL, pricing, { includeWall = true } = 
 function rangeLabel(since, until) {
 	const days = Math.round((until - since) / 86400_000)
 	if (days === 7) return '本周'
-	if (days >= 28 && days <= 31) return '本月'
 	if (days === 30) return '近 30 天'
+	if (days >= 28 && days <= 31) return '本月'
 	return '自定义'
 }

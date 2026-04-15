@@ -54,6 +54,18 @@ describe('buildReport', () => {
 		const ids = report.topTodos.map(t => t.todoId)
 		expect(ids).toContain(a.id)
 		expect(ids).toContain(b.id)
+
+		expect(report.range.label).toBe('自定义')
+		expect(report.byTool.find(x => x.key === 'claude').sessions).toBeGreaterThan(0)
+		expect(report.byQuadrant.map(x => x.key)).toEqual(expect.arrayContaining([1, 2]))
+		expect(report.byModel.find(x => x.key === 'claude-opus-4-6')).toBeTruthy()
+		expect(report.timeline.length).toBeGreaterThan(0)
+	})
+
+	it('range.label for 7-day window = 本周', () => {
+		const day = 86400_000
+		const r = buildReport(db, { since: 0, until: 7 * day, pricing: DEFAULT_PRICING })
+		expect(r.range.label).toBe('本周')
 	})
 
 	it('空 DB 返回 empty summary', () => {
