@@ -164,3 +164,39 @@ describe('db', () => {
     })
   })
 })
+
+describe('transcript_files usage columns', () => {
+  it('upsert 可写入 usage / active_ms / primary_model 字段', () => {
+    const db = openDb(':memory:')
+    db.upsertTranscriptFile({
+      tool: 'claude',
+      nativeId: 'u1',
+      cwd: '/tmp',
+      jsonlPath: '/tmp/u1.jsonl',
+      size: 10, mtime: 1,
+      startedAt: 1000, endedAt: 2000,
+      firstUserPrompt: 'hi', turnCount: 2,
+      inputTokens: 100, outputTokens: 50,
+      cacheReadTokens: 10, cacheCreationTokens: 5,
+      primaryModel: 'claude-sonnet-4-6', activeMs: 800,
+    })
+    const row = db.raw.prepare(`SELECT * FROM transcript_files WHERE jsonl_path = ?`).get('/tmp/u1.jsonl')
+    expect(row.input_tokens).toBe(100)
+    expect(row.output_tokens).toBe(50)
+    expect(row.cache_read_tokens).toBe(10)
+    expect(row.cache_creation_tokens).toBe(5)
+    expect(row.primary_model).toBe('claude-sonnet-4-6')
+    expect(row.active_ms).toBe(800)
+    db.close()
+  })
+
+  it('老 DB 自动补列', () => {
+    const db1 = openDb(':memory:')
+    const db2 = openDb(':memory:')
+    const cols = db2.raw.prepare(`PRAGMA table_info(transcript_files)`).all().map(c => c.name)
+    for (const c of ['input_tokens','output_tokens','cache_read_tokens','cache_creation_tokens','primary_model','active_ms']) {
+      expect(cols).toContain(c)
+    }
+    db1.close(); db2.close()
+  })
+})

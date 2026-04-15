@@ -54,6 +54,12 @@ CREATE TABLE IF NOT EXISTS transcript_files (
   ended_at          INTEGER,
   first_user_prompt TEXT,
   turn_count        INTEGER NOT NULL DEFAULT 0,
+  input_tokens          INTEGER,
+  output_tokens         INTEGER,
+  cache_read_tokens     INTEGER,
+  cache_creation_tokens INTEGER,
+  primary_model         TEXT,
+  active_ms             INTEGER,
   bound_todo_id     TEXT,
   indexed_at        INTEGER NOT NULL
 );
@@ -137,6 +143,18 @@ export function openDb(file = ':memory:') {
   }
   if (!columns.some(col => col.name === 'applied_template_ids')) {
     db.exec(`ALTER TABLE todos ADD COLUMN applied_template_ids TEXT`)
+  }
+
+  const tfCols = db.prepare(`PRAGMA table_info(transcript_files)`).all().map(c => c.name)
+  for (const col of [
+    ['input_tokens', 'INTEGER'],
+    ['output_tokens', 'INTEGER'],
+    ['cache_read_tokens', 'INTEGER'],
+    ['cache_creation_tokens', 'INTEGER'],
+    ['primary_model', 'TEXT'],
+    ['active_ms', 'INTEGER'],
+  ]) {
+    if (!tfCols.includes(col[0])) db.exec(`ALTER TABLE transcript_files ADD COLUMN ${col[0]} ${col[1]}`)
   }
 
   const stmts = {
@@ -343,8 +361,8 @@ export function openDb(file = ':memory:') {
     getByPath: db.prepare(`SELECT * FROM transcript_files WHERE jsonl_path = ?`),
     listAllPaths: db.prepare(`SELECT id, jsonl_path, size, mtime FROM transcript_files`),
     upsert: db.prepare(`
-      INSERT INTO transcript_files (tool, native_id, cwd, jsonl_path, size, mtime, started_at, ended_at, first_user_prompt, turn_count, bound_todo_id, indexed_at)
-      VALUES (@tool, @native_id, @cwd, @jsonl_path, @size, @mtime, @started_at, @ended_at, @first_user_prompt, @turn_count, @bound_todo_id, @indexed_at)
+      INSERT INTO transcript_files (tool, native_id, cwd, jsonl_path, size, mtime, started_at, ended_at, first_user_prompt, turn_count, bound_todo_id, indexed_at, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, primary_model, active_ms)
+      VALUES (@tool, @native_id, @cwd, @jsonl_path, @size, @mtime, @started_at, @ended_at, @first_user_prompt, @turn_count, @bound_todo_id, @indexed_at, @input_tokens, @output_tokens, @cache_read_tokens, @cache_creation_tokens, @primary_model, @active_ms)
       ON CONFLICT(jsonl_path) DO UPDATE SET
         tool=excluded.tool,
         native_id=excluded.native_id,
@@ -355,7 +373,13 @@ export function openDb(file = ':memory:') {
         ended_at=excluded.ended_at,
         first_user_prompt=excluded.first_user_prompt,
         turn_count=excluded.turn_count,
-        indexed_at=excluded.indexed_at
+        indexed_at=excluded.indexed_at,
+        input_tokens=excluded.input_tokens,
+        output_tokens=excluded.output_tokens,
+        cache_read_tokens=excluded.cache_read_tokens,
+        cache_creation_tokens=excluded.cache_creation_tokens,
+        primary_model=excluded.primary_model,
+        active_ms=excluded.active_ms
     `),
     deleteByPath: db.prepare(`DELETE FROM transcript_files WHERE jsonl_path = ?`),
     getById: db.prepare(`SELECT * FROM transcript_files WHERE id = ?`),
@@ -383,6 +407,12 @@ export function openDb(file = ':memory:') {
       turn_count: row.turnCount ?? 0,
       bound_todo_id: row.boundTodoId ?? null,
       indexed_at: Date.now(),
+      input_tokens: row.inputTokens ?? null,
+      output_tokens: row.outputTokens ?? null,
+      cache_read_tokens: row.cacheReadTokens ?? null,
+      cache_creation_tokens: row.cacheCreationTokens ?? null,
+      primary_model: row.primaryModel ?? null,
+      active_ms: row.activeMs ?? null,
     })
     return tfStmts.getByPath.get(row.jsonlPath)
   }
