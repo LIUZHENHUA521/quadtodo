@@ -18,6 +18,7 @@ import { createTranscriptsRouter } from "./routes/transcripts.js";
 import { createTranscriptsService } from "./transcripts/index.js";
 import { createTodosRouter } from "./routes/todos.js";
 import { createTemplatesRouter } from "./routes/templates.js";
+import { createStatsRouter } from "./routes/stats.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -385,6 +386,10 @@ export function createServer(opts = {}) {
 		updateTodo: (id, patch) => db.updateTodo(id, patch),
 	});
 	app.use("/api/transcripts", createTranscriptsRouter({ service: transcriptsService }));
+	app.use("/api/stats", createStatsRouter({
+		db,
+		getPricing: () => loadConfig({ rootDir: configRootDir }).pricing,
+	}));
 	// async startup scan (non-blocking)
 	Promise.resolve().then(() => transcriptsService.scanFull())
 		.then(r => console.log(`[transcripts] full scan done newFiles=${r.newFiles} indexed=${r.indexed} autoBound=${r.autoBound} unbound=${r.unbound}`))
