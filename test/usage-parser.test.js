@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import path from 'node:path'
 import readline from 'node:readline'
 import fs from 'node:fs'
 import { extractUsage } from '../src/usage-parser.js'
@@ -13,7 +12,7 @@ async function rawLines(file) {
 
 describe('extractUsage', () => {
   it('claude：累加 usage、算 activeMs、归一化 primaryModel', async () => {
-    const lines = await rawLines(path.resolve(__dirname, 'fixtures/claude-usage.jsonl'))
+    const lines = await rawLines(import.meta.dirname + '/fixtures/claude-usage.jsonl')
     const out = extractUsage('claude', lines, { idleThresholdMs: 120000 })
     expect(out.inputTokens).toBe(160)
     expect(out.outputTokens).toBe(35)
@@ -25,11 +24,29 @@ describe('extractUsage', () => {
   })
 
   it('codex：读 token_usage', async () => {
-    const lines = await rawLines(path.resolve(__dirname, 'fixtures/codex-usage.jsonl'))
+    const lines = await rawLines(import.meta.dirname + '/fixtures/codex-usage.jsonl')
     const out = extractUsage('codex', lines, { idleThresholdMs: 120000 })
     expect(out.inputTokens).toBe(30)
     expect(out.outputTokens).toBe(8)
     expect(out.primaryModel).toBe('gpt-5-codex')
+    expect(out.activeMs).toBe(0)
+    expect(out.parseErrorCount).toBe(0)
+  })
+
+  it('codex: falls back to p.usage when token_usage absent', () => {
+    const line = JSON.stringify({
+      type: 'response_item',
+      timestamp: '2026-04-15T12:00:00.000Z',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        model: 'gpt-5-codex',
+        usage: { input_tokens: 42, output_tokens: 7, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      },
+    })
+    const out = extractUsage('codex', [line], { idleThresholdMs: 120000 })
+    expect(out.inputTokens).toBe(42)
+    expect(out.outputTokens).toBe(7)
   })
 
   it('空输入不炸', () => {
