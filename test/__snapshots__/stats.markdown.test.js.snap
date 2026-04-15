@@ -1,0 +1,16 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderMarkdown > snapshot 1`] = `
+"# quadtodo 周报 · 2026-04-07 ~ 2026-04-14
+
+AI 活跃 8.3h（墙钟 12.1h）· 47 场会话 · 覆盖 12 个任务
+Token 13.2M（cache 命中 8.1M）· 成本 $23.70 / ¥170.6
+> 其中 3 场未关联任务
+
+## Top 10 任务
+1. 修复 bug — 活跃 2.1h · $4.20 / ¥30.0 · 6 场
+
+## 按模型
+- claude-opus-4-6: 18 场 · 2.5M tok · $12.10 / ¥87.0
+- claude-sonnet-4-6: 29 场 · 2.5M tok · $11.60 / ¥83.0"
+`;
