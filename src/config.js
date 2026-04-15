@@ -147,6 +147,16 @@ export function inspectToolsConfig(tools = {}) {
 	};
 }
 
+function cloneDefaultPricing() {
+	return {
+		default: { ...DEFAULT_PRICING.default },
+		models: Object.fromEntries(
+			Object.entries(DEFAULT_PRICING.models).map(([k, v]) => [k, { ...v }]),
+		),
+		cnyRate: DEFAULT_PRICING.cnyRate,
+	};
+}
+
 function defaultConfig() {
 	return {
 		port: 5677,
@@ -154,7 +164,9 @@ function defaultConfig() {
 		defaultCwd: homedir(),
 		tools: resolveToolsConfig(),
 		webhook: { ...DEFAULT_WEBHOOK_CONFIG },
-		pricing: DEFAULT_PRICING,
+		// Clone DEFAULT_PRICING so user mutations (e.g. via setConfigValue) don't
+		// leak back into the module-level constant.
+		pricing: cloneDefaultPricing(),
 		stats: { idleThresholdMs: 120_000 },
 	};
 }
@@ -185,6 +197,12 @@ function normalizeConfig(cfg = {}) {
 						.filter(Boolean)
 				: [...DEFAULT_WEBHOOK_CONFIG.keywords],
 		},
+		// Note on models merge precedence: user entries with the SAME key as a
+		// default (e.g. 'claude-opus-4-*') override the default. To override
+		// pricing for a default-model pattern, the user must re-use the exact
+		// same glob key — adding a differently shaped glob will coexist with the
+		// default, and which one wins at estimateCost time depends on iteration
+		// order.
 		pricing: {
 			...defaults.pricing,
 			...(cfg.pricing || {}),
