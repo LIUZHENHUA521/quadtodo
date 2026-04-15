@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { DEFAULT_PRICING } from "./pricing.js";
 import {
 	accessSync,
 	constants,
@@ -153,6 +154,8 @@ function defaultConfig() {
 		defaultCwd: homedir(),
 		tools: resolveToolsConfig(),
 		webhook: { ...DEFAULT_WEBHOOK_CONFIG },
+		pricing: DEFAULT_PRICING,
+		stats: { idleThresholdMs: 120_000 },
 	};
 }
 
@@ -182,6 +185,12 @@ function normalizeConfig(cfg = {}) {
 						.filter(Boolean)
 				: [...DEFAULT_WEBHOOK_CONFIG.keywords],
 		},
+		pricing: {
+			...defaults.pricing,
+			...(cfg.pricing || {}),
+			models: { ...defaults.pricing.models, ...(cfg.pricing?.models || {}) },
+		},
+		stats: { ...defaults.stats, ...(cfg.stats || {}) },
 	};
 }
 
