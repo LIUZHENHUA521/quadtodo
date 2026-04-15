@@ -103,6 +103,23 @@ quadtodo config set tools.codex.bin /opt/homebrew/bin/codex
 
 导出/迁移：整个 `~/.quadtodo/` 是一个普通目录，tar 打包即可。
 
+## 统计与周/月报告
+
+顶栏 📊 按钮打开"统计"抽屉：展示所选时段的 AI 活跃时长、墙钟时长、token 消耗、成本估算与 Top 10 任务，支持复制/下载 Markdown 周报。
+
+单价默认内置，也可在 `~/.quadtodo/config.json` 的 `pricing` 段里 override：
+
+```json
+"pricing": {
+  "models": {
+    "claude-opus-4-*":   { "input": 15.00, "output": 75.00, "cacheRead": 1.50, "cacheWrite": 18.75 }
+  },
+  "cnyRate": 7.2
+}
+```
+
+活跃时长的空闲阈值（默认 120s）可通过 `stats.idleThresholdMs` 调整。
+
 ## 迁移到另一台电脑
 
 ```bash
