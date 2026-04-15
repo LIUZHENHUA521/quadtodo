@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import Database from 'better-sqlite3'
 import { openDb } from '../src/db.js'
 
 describe('db', () => {
@@ -191,12 +195,42 @@ describe('transcript_files usage columns', () => {
   })
 
   it('老 DB 自动补列', () => {
-    const db1 = openDb(':memory:')
-    const db2 = openDb(':memory:')
-    const cols = db2.raw.prepare(`PRAGMA table_info(transcript_files)`).all().map(c => c.name)
-    for (const c of ['input_tokens','output_tokens','cache_read_tokens','cache_creation_tokens','primary_model','active_ms']) {
-      expect(cols).toContain(c)
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'quadtodo-migration-test-'))
+    const tmpFile = path.join(tmpDir, 'old.db')
+    let migratedDb
+    try {
+      // 1. Create old-schema DB without usage columns
+      const raw = new Database(tmpFile)
+      raw.exec(`
+        CREATE TABLE transcript_files (
+          id                INTEGER PRIMARY KEY,
+          tool              TEXT NOT NULL,
+          native_id         TEXT,
+          cwd               TEXT,
+          jsonl_path        TEXT NOT NULL UNIQUE,
+          size              INTEGER NOT NULL,
+          mtime             INTEGER NOT NULL,
+          started_at        INTEGER,
+          ended_at          INTEGER,
+          first_user_prompt TEXT,
+          turn_count        INTEGER NOT NULL DEFAULT 0,
+          bound_todo_id     TEXT,
+          indexed_at        INTEGER NOT NULL
+        )
+      `)
+      raw.close()
+
+      // 2. Open via openDb — must run migration
+      migratedDb = openDb(tmpFile)
+
+      // 3. Assert all 6 new columns now exist
+      const cols = migratedDb.raw.prepare(`PRAGMA table_info(transcript_files)`).all().map(c => c.name)
+      for (const c of ['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_creation_tokens', 'primary_model', 'active_ms']) {
+        expect(cols).toContain(c)
+      }
+    } finally {
+      migratedDb?.close()
+      rmSync(tmpDir, { recursive: true })
     }
-    db1.close(); db2.close()
   })
 })

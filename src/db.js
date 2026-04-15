@@ -146,7 +146,7 @@ export function openDb(file = ':memory:') {
   }
 
   const tfCols = db.prepare(`PRAGMA table_info(transcript_files)`).all().map(c => c.name)
-  for (const col of [
+  for (const [name, type] of [
     ['input_tokens', 'INTEGER'],
     ['output_tokens', 'INTEGER'],
     ['cache_read_tokens', 'INTEGER'],
@@ -154,7 +154,7 @@ export function openDb(file = ':memory:') {
     ['primary_model', 'TEXT'],
     ['active_ms', 'INTEGER'],
   ]) {
-    if (!tfCols.includes(col[0])) db.exec(`ALTER TABLE transcript_files ADD COLUMN ${col[0]} ${col[1]}`)
+    if (!tfCols.includes(name)) db.exec(`ALTER TABLE transcript_files ADD COLUMN ${name} ${type}`)
   }
 
   const stmts = {
