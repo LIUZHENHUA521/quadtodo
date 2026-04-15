@@ -32,6 +32,7 @@ import {
 import { renderAppliedTemplates } from './promptRender'
 import SessionViewer from './SessionViewer'
 import SettingsDrawer from './SettingsDrawer'
+import StatsDrawer from './StatsDrawer'
 import TemplateDrawer from './TemplateDrawer'
 import ForkDialog from './ForkDialog'
 import DashboardDrawer from './dashboard/DashboardDrawer'
@@ -633,6 +634,7 @@ export default function TodoManage() {
 
   // 设置
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [statsOpen, setStatsOpen] = useState(false)
   const [templateDrawerOpen, setTemplateDrawerOpen] = useState(false)
   const [dashboardOpen, setDashboardOpen] = useState(false)
   const [transcriptDrawerOpen, setTranscriptDrawerOpen] = useState(false)
@@ -1166,6 +1168,7 @@ export default function TodoManage() {
           onClick={() => setSettingsOpen(true)}
           title="设置"
         />
+        <Button size="small" onClick={() => setStatsOpen(true)}>📊 统计</Button>
       </div>
 
       {/* 筛选栏 */}
@@ -1527,6 +1530,7 @@ export default function TodoManage() {
       </Drawer>
 
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <StatsDrawer open={statsOpen} onClose={() => setStatsOpen(false)} />
       <TemplateDrawer
         open={templateDrawerOpen}
         onClose={() => setTemplateDrawerOpen(false)}
