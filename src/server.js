@@ -376,7 +376,11 @@ export function createServer(opts = {}) {
 		}
 	});
 
-	app.use("/api/todos", createTodosRouter({ db, logDir }));
+	app.use("/api/todos", createTodosRouter({
+		db,
+		logDir,
+		getPricing: () => loadConfig({ rootDir: configRootDir }).pricing,
+	}));
 	app.use("/api/templates", createTemplatesRouter({ db }));
 	app.use("/api/ai-terminal", ait.router);
 

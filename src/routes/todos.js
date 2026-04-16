@@ -1,8 +1,9 @@
 import { Router } from 'express'
 import { loadTranscript } from '../transcript.js'
 import { summarizeTurns } from '../summarize.js'
+import { buildTodoExport, renderTodoMarkdown } from '../export/todoMarkdown.js'
 
-export function createTodosRouter({ db, logDir }) {
+export function createTodosRouter({ db, logDir, getPricing }) {
   const router = Router()
 
   router.get('/', (req, res) => {
@@ -294,6 +295,44 @@ export function createTodosRouter({ db, logDir }) {
       })
     } catch (e) {
       console.error('[fork]', e)
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
+  router.get('/:id/export.md', async (req, res) => {
+    try {
+      const turns = ['summary', 'full', 'none'].includes(String(req.query.turns)) ? String(req.query.turns) : 'summary'
+      const turnLimit = req.query.turnLimit ? Math.min(Math.max(Number(req.query.turnLimit) || 0, 1), 500) : 80
+      const pricing = typeof getPricing === 'function' ? getPricing() : undefined
+      const report = await buildTodoExport(db, req.params.id, { turns, turnLimit, pricing })
+      if (!report) {
+        res.status(404).json({ ok: false, error: 'not_found' })
+        return
+      }
+      const md = renderTodoMarkdown(report)
+      res.set('Content-Type', 'text/markdown; charset=utf-8')
+      res.set('Content-Disposition', `inline; filename="todo-${req.params.id}.md"`)
+      res.send(md)
+    } catch (e) {
+      console.error('[export.md]', e)
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
+  router.get('/:id/export.json', async (req, res) => {
+    try {
+      const turns = ['summary', 'full', 'none'].includes(String(req.query.turns)) ? String(req.query.turns) : 'summary'
+      const turnLimit = req.query.turnLimit ? Math.min(Math.max(Number(req.query.turnLimit) || 0, 1), 500) : 80
+      const pricing = typeof getPricing === 'function' ? getPricing() : undefined
+      const report = await buildTodoExport(db, req.params.id, { turns, turnLimit, pricing })
+      if (!report) {
+        res.status(404).json({ ok: false, error: 'not_found' })
+        return
+      }
+      const md = renderTodoMarkdown(report)
+      res.json({ ok: true, markdown: md, todo: { id: report.todo.id, title: report.todo.title } })
+    } catch (e) {
+      console.error('[export.json]', e)
       res.status(500).json({ ok: false, error: e.message })
     }
   })

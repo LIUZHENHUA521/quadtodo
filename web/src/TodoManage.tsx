@@ -10,7 +10,7 @@ import {
   PlayCircleOutlined, SettingOutlined, CopyOutlined,
   CodeOutlined, DesktopOutlined, SendOutlined, EditOutlined,
   DownOutlined, UpOutlined, CloseOutlined,
-  DashboardOutlined, FileTextOutlined,
+  DashboardOutlined, FileTextOutlined, ExportOutlined,
 } from '@ant-design/icons'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
@@ -33,6 +33,7 @@ import { renderAppliedTemplates } from './promptRender'
 import SessionViewer from './SessionViewer'
 import SettingsDrawer from './SettingsDrawer'
 import StatsDrawer from './StatsDrawer'
+import ExportDialog from './ExportDialog'
 import TemplateDrawer from './TemplateDrawer'
 import ForkDialog from './ForkDialog'
 import DashboardDrawer from './dashboard/DashboardDrawer'
@@ -110,6 +111,7 @@ interface SortableTodoCardProps {
   onOpenTrae: (todo: Todo, editor?: 'trae-cn' | 'trae' | 'cursor') => void
   onOpenTerminal: (todo: Todo) => void
   onCopyPrompt: (todo: Todo) => void
+  onExport: (todo: Todo) => void
   expandedTerminal: { todoId: string; sessionId: string } | null
   setExpandedTerminal: (v: { todoId: string; sessionId: string } | null) => void
   hiddenTerminalSessionId?: string | null
@@ -124,7 +126,7 @@ interface SortableTodoCardProps {
   onRefresh: () => void
 }
 
-function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onCopyPrompt, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionId, onHideTerminal, onShowTerminal, terminalCollapsed, onToggleTerminalCollapsed, sideBySideSessionId, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: SortableTodoCardProps) {
+function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onCopyPrompt, onExport, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionId, onHideTerminal, onShowTerminal, terminalCollapsed, onToggleTerminalCollapsed, sideBySideSessionId, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: SortableTodoCardProps) {
   const [editingLabelSessionId, setEditingLabelSessionId] = useState<string | null>(null)
   const [editingLabelText, setEditingLabelText] = useState('')
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todo.id })
@@ -263,6 +265,9 @@ function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onAiExecBoth,
               {todo.status === 'ai_pending' ? '待交互' : todo.status === 'ai_done' ? '待验收' : '运行中'}
             </Tag>
           )}
+          <Tooltip title="导出 Markdown / 推送到飞书">
+            <Button size="small" icon={<ExportOutlined />} onClick={() => onExport(todo)} className="todo-primary-action" />
+          </Tooltip>
           <Popconfirm title="确认删除？" onConfirm={() => onDelete(todo)}>
             <Button size="small" danger icon={<DeleteOutlined />} onClick={(e) => e.stopPropagation()} className="todo-danger-action" />
           </Popconfirm>
@@ -530,6 +535,7 @@ interface QuadrantZoneProps {
   onOpenTrae: (todo: Todo, editor?: 'trae-cn' | 'trae' | 'cursor') => void
   onOpenTerminal: (todo: Todo) => void
   onCopyPrompt: (todo: Todo) => void
+  onExport: (todo: Todo) => void
   style?: React.CSSProperties
   expandedTerminal: { todoId: string; sessionId: string } | null
   setExpandedTerminal: (v: { todoId: string; sessionId: string } | null) => void
@@ -545,7 +551,7 @@ interface QuadrantZoneProps {
   onRefresh: () => void
 }
 
-function QuadrantZone({ config, todos, onCardClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onCopyPrompt, style, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: QuadrantZoneProps) {
+function QuadrantZone({ config, todos, onCardClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onCopyPrompt, onExport, style, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: QuadrantZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `quadrant-${config.q}` })
 
   const header = (
@@ -574,6 +580,7 @@ function QuadrantZone({ config, todos, onCardClick, onToggleDone, onAiExec, onAi
             onOpenTrae={onOpenTrae}
             onOpenTerminal={onOpenTerminal}
             onCopyPrompt={onCopyPrompt}
+            onExport={onExport}
             expandedTerminal={expandedTerminal}
             setExpandedTerminal={setExpandedTerminal}
             hiddenTerminalSessionId={hiddenTerminalSessionIdByTodo[t.id] || null}
@@ -1125,6 +1132,11 @@ export default function TodoManage() {
     )
   }, [])
 
+  const [exportTarget, setExportTarget] = useState<Todo | null>(null)
+  const handleExport = useCallback((todo: Todo) => {
+    setExportTarget(todo)
+  }, [])
+
   const activeTodo = activeId ? todos.find(t => t.id === activeId) : null
 
   // ─── 渲染 ───
@@ -1225,7 +1237,7 @@ export default function TodoManage() {
                 config={QUADRANT_CONFIG[0]} todos={todosByQuadrant[1] || []}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
                 onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
-                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt}
+                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
                 style={{ flex: splitV }}
                 expandedTerminal={expandedTerminal}
                 setExpandedTerminal={setExpandedTerminal}
@@ -1264,7 +1276,7 @@ export default function TodoManage() {
                 config={QUADRANT_CONFIG[1]} todos={todosByQuadrant[2] || []}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
                 onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
-                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt}
+                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
                 style={{ flex: 100 - splitV }}
                 expandedTerminal={expandedTerminal}
                 setExpandedTerminal={setExpandedTerminal}
@@ -1309,7 +1321,7 @@ export default function TodoManage() {
                 config={QUADRANT_CONFIG[2]} todos={todosByQuadrant[3] || []}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
                 onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
-                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt}
+                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
                 style={{ flex: splitV }}
                 expandedTerminal={expandedTerminal}
                 setExpandedTerminal={setExpandedTerminal}
@@ -1348,7 +1360,7 @@ export default function TodoManage() {
                 config={QUADRANT_CONFIG[3]} todos={todosByQuadrant[4] || []}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
                 onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
-                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt}
+                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
                 style={{ flex: 100 - splitV }}
                 expandedTerminal={expandedTerminal}
                 setExpandedTerminal={setExpandedTerminal}
@@ -1531,6 +1543,11 @@ export default function TodoManage() {
 
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <StatsDrawer open={statsOpen} onClose={() => setStatsOpen(false)} />
+      <ExportDialog
+        todo={exportTarget}
+        open={!!exportTarget}
+        onClose={() => setExportTarget(null)}
+      />
       <TemplateDrawer
         open={templateDrawerOpen}
         onClose={() => setTemplateDrawerOpen(false)}
