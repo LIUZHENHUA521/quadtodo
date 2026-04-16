@@ -110,8 +110,30 @@ export async function readGitStatus(workDir, opts = {}) {
   return out
 }
 
-export async function readGitDiff(workDir, _opts = {}) {
+export async function readGitDiff(workDir, opts = {}) {
   const pre = checkDir(workDir)
   if (pre) return pre
-  return { state: 'ok', diff: '', untracked: [], truncated: false }
+  const maxBytes = Number.isFinite(opts.maxBytes) ? opts.maxBytes : 200 * 1024
+
+  const isRepo = await runGit(['rev-parse', '--is-inside-work-tree'], { cwd: workDir })
+  if (isRepo.error === 'git_missing') return { state: 'git_missing' }
+  if (isRepo.error === 'timeout') return { state: 'timeout' }
+  if (isRepo.error) return { state: 'error', message: (isRepo.stderr || '').slice(0, 500) }
+  if (isRepo.code !== 0 || (isRepo.stdout || '').trim() !== 'true') return { state: 'not_a_repo' }
+
+  const diffRes = await runGit(['diff', 'HEAD'], { cwd: workDir, maxBytes })
+  if (diffRes.error === 'timeout') return { state: 'timeout' }
+  if (diffRes.error) return { state: 'error', message: (diffRes.stderr || '').slice(0, 500) }
+
+  const untrackedRes = await runGit(['ls-files', '--others', '--exclude-standard'], { cwd: workDir })
+  const untracked = untrackedRes.code === 0
+    ? (untrackedRes.stdout || '').split('\n').map((l) => l.trim()).filter(Boolean)
+    : []
+
+  return {
+    state: 'ok',
+    diff: diffRes.stdout || '',
+    untracked,
+    truncated: !!diffRes.truncated,
+  }
 }

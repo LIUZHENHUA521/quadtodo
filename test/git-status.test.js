@@ -89,4 +89,37 @@ describe('readGitStatus', () => {
     expect(r.branch).toBe('HEAD')
     expect(r.headShort).toMatch(/^[0-9a-f]{7}$/)
   })
+
+  it('diff: modified + untracked files', async () => {
+    const d = makeRepo(); dirs.push(d)
+    writeFileSync(join(d, 'a.txt'), 'hello\n')
+    execSync('git add a.txt && git commit -m "a"', { cwd: d })
+    writeFileSync(join(d, 'a.txt'), 'hello\nworld\n')
+    writeFileSync(join(d, 'new.txt'), 'brand new\n')
+    const r = await readGitDiff(d)
+    expect(r.state).toBe('ok')
+    expect(r.diff).toContain('a.txt')
+    expect(r.diff).toContain('+world')
+    expect(r.untracked).toContain('new.txt')
+    expect(r.truncated).toBe(false)
+  })
+
+  it('diff: truncates when exceeding maxBytes', async () => {
+    const d = makeRepo(); dirs.push(d)
+    writeFileSync(join(d, 'big.txt'), '')
+    execSync('git add big.txt && git commit -m "empty"', { cwd: d })
+    const big = 'line\n'.repeat(5000)
+    writeFileSync(join(d, 'big.txt'), big)
+    const r = await readGitDiff(d, { maxBytes: 1024 })
+    expect(r.state).toBe('ok')
+    expect(r.truncated).toBe(true)
+    expect(r.diff.length).toBeLessThanOrEqual(1024 + 256)
+  })
+
+  it('diff: not_a_repo for plain dir', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'quadtodo-nogit-diff-'))
+    dirs.push(d)
+    const r = await readGitDiff(d)
+    expect(r.state).toBe('not_a_repo')
+  })
 })
