@@ -65,12 +65,49 @@ function checkDir(workDir) {
 export async function readGitStatus(workDir, opts = {}) {
   const pre = checkDir(workDir)
   if (pre) return pre
+
   const isRepo = await runGit(['rev-parse', '--is-inside-work-tree'], { cwd: workDir, ...opts })
   if (isRepo.error === 'git_missing') return { state: 'git_missing' }
   if (isRepo.error === 'timeout') return { state: 'timeout' }
   if (isRepo.error) return { state: 'error', message: (isRepo.stderr || '').slice(0, 500) }
   if (isRepo.code !== 0 || (isRepo.stdout || '').trim() !== 'true') return { state: 'not_a_repo' }
-  return { state: 'ok', branch: '', dirty: 0, ahead: 0, behind: 0, hasUpstream: false }
+
+  const branchRes = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: workDir, ...opts })
+  if (branchRes.error === 'timeout') return { state: 'timeout' }
+  if (branchRes.error) return { state: 'error', message: (branchRes.stderr || '').slice(0, 500) }
+  const branch = (branchRes.stdout || '').trim() || 'HEAD'
+
+  let headShort
+  if (branch === 'HEAD') {
+    const shaRes = await runGit(['rev-parse', '--short=7', 'HEAD'], { cwd: workDir, ...opts })
+    if (shaRes.code === 0) headShort = (shaRes.stdout || '').trim()
+  }
+
+  const statusRes = await runGit(['status', '--porcelain'], { cwd: workDir, ...opts })
+  if (statusRes.error === 'timeout') return { state: 'timeout' }
+  if (statusRes.error) return { state: 'error', message: (statusRes.stderr || '').slice(0, 500) }
+  const dirty = (statusRes.stdout || '').split('\n').filter((l) => l.trim().length > 0).length
+
+  let hasUpstream = false
+  let ahead = 0
+  let behind = 0
+  const revListRes = await runGit(
+    ['rev-list', '--count', '--left-right', '@{upstream}...HEAD'],
+    { cwd: workDir, ...opts }
+  )
+  if (revListRes.error === 'timeout') return { state: 'timeout' }
+  if (!revListRes.error && revListRes.code === 0) {
+    const parts = (revListRes.stdout || '').trim().split(/\s+/)
+    if (parts.length === 2) {
+      hasUpstream = true
+      behind = Number(parts[0]) || 0
+      ahead = Number(parts[1]) || 0
+    }
+  }
+
+  const out = { state: 'ok', branch, dirty, ahead, behind, hasUpstream }
+  if (headShort) out.headShort = headShort
+  return out
 }
 
 export async function readGitDiff(workDir, _opts = {}) {
