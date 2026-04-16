@@ -3,12 +3,14 @@
  */
 
 import React, { useEffect, useRef, useCallback, useState } from 'react'
-import { Button, Tooltip, Tag, Dropdown } from 'antd'
-import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, CloseOutlined, VerticalAlignBottomOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons'
+import { Button, Tooltip, Tag, Dropdown, Popover, ColorPicker } from 'antd'
+import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, CloseOutlined, VerticalAlignBottomOutlined, LockOutlined, UnlockOutlined, BgColorsOutlined } from '@ant-design/icons'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { getTerminalWsUrl, startAiExec, stopAiExec, openTraeCN, TodoStatus, ResumeSessionInput, EditorKind } from './api'
+import { useTerminalTheme } from './hooks/useTerminalTheme'
+import { PRESET_LABELS, PRESET_ORDER, TerminalPresetName, TERMINAL_PRESETS } from './terminalThemes'
 
 // 匹配 xterm 一行中的文件路径（相对或绝对，可带 :line 或 :line:col）
 // 规避回溯：只匹配不含空格/冒号/斜杠的 path segment + 已知扩展名
@@ -35,6 +37,11 @@ const RESIZE_DEBOUNCE_MS = 100
 
 export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeTarget, onSessionRecovered, onClose, onDone, fillHeight }: Props) {
   void onClose
+  const { theme, preset, override, setPreset, setOverride, resetOverride } = useTerminalTheme()
+  const themeRef = useRef(theme)
+  useEffect(() => { themeRef.current = theme }, [theme])
+  const [customPopoverOpen, setCustomPopoverOpen] = useState(false)
+  const overrideSnapshotRef = useRef<typeof override>({})
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -137,7 +144,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     const term = new Terminal({
       fontSize: 13,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      theme: { background: '#1a1a2e', foreground: '#d4d4d4', cursor: '#569cd6' },
+      theme: themeRef.current,
       cursorBlink: true,
       convertEol: true,
       scrollback: 5000,
@@ -496,6 +503,11 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   useEffect(() => { setSessionStatus(status) }, [status])
 
   useEffect(() => {
+    const term = termRef.current
+    if (term) term.options.theme = theme
+  }, [theme])
+
+  useEffect(() => {
     requestAnimationFrame(doFit)
   }, [fullscreen, height, doFit])
 
@@ -565,6 +577,23 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     try { localStorage.setItem('quadtodo.followTail', '1') } catch { /* ignore */ }
     term.focus()
   }, [])
+
+  const handleOpenCustomPopover = useCallback(() => {
+    overrideSnapshotRef.current = { ...override }
+    setCustomPopoverOpen(true)
+  }, [override])
+
+  const handleCancelCustom = useCallback(() => {
+    const snap = overrideSnapshotRef.current
+    resetOverride()
+    if (snap.background || snap.foreground) {
+      setOverride({
+        ...(snap.background ? { background: snap.background } : {}),
+        ...(snap.foreground ? { foreground: snap.foreground } : {}),
+      })
+    }
+    setCustomPopoverOpen(false)
+  }, [setOverride, resetOverride])
 
   const toggleFollowTail = useCallback(() => {
     setFollowTail(prev => {
@@ -658,6 +687,72 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             </Tag>
           </Dropdown>
         )}
+        <Popover
+          open={customPopoverOpen}
+          onOpenChange={(open) => { if (!open) setCustomPopoverOpen(false) }}
+          trigger={[]}
+          placement="bottomRight"
+          destroyTooltipOnHide
+          content={
+            <div style={{ width: 220 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 12 }}>背景色</span>
+                <ColorPicker
+                  size="small"
+                  value={override.background || theme.background}
+                  onChange={(c) => setOverride({ background: c.toHexString() })}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <span style={{ fontSize: 12 }}>文字色</span>
+                <ColorPicker
+                  size="small"
+                  value={override.foreground || theme.foreground}
+                  onChange={(c) => setOverride({ foreground: c.toHexString() })}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <Button size="small" onClick={() => resetOverride()}>恢复预设默认</Button>
+                <Button size="small" onClick={handleCancelCustom}>取消</Button>
+              </div>
+            </div>
+          }
+        >
+        <Dropdown
+          menu={{
+            items: [
+              ...PRESET_ORDER.map((name) => ({
+                key: name,
+                label: (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      display: 'inline-block', width: 14, height: 14, borderRadius: 3,
+                      border: '1px solid rgba(128,128,128,0.3)',
+                      background: `linear-gradient(135deg, ${TERMINAL_PRESETS[name].background} 50%, ${TERMINAL_PRESETS[name].foreground} 50%)`,
+                    }} />
+                    <span>{PRESET_LABELS[name]}</span>
+                  </div>
+                ),
+              })),
+              { type: 'divider' as const },
+              { key: '__custom', label: '自定义...' },
+            ],
+            selectedKeys: [preset],
+            onClick: ({ key }) => {
+              if (key === '__custom') handleOpenCustomPopover()
+              else setPreset(key as TerminalPresetName)
+            },
+          }}
+          trigger={['click']}
+        >
+          <Tag
+            icon={<BgColorsOutlined style={{ fontSize: 9 }} />}
+            style={{ fontSize: 10, lineHeight: '16px', margin: 0, cursor: 'pointer', userSelect: 'none' }}
+          >
+            {PRESET_LABELS[preset]}{(override.background || override.foreground) ? '*' : ''} <DownOutlined style={{ fontSize: 7 }} />
+          </Tag>
+        </Dropdown>
+        </Popover>
         <Tooltip title={followTail ? '已跟随新输出（点击暂停）' : '已暂停跟随（点击恢复）'}>
           <Tag
             color={followTail ? 'green' : 'default'}
