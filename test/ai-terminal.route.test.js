@@ -391,33 +391,6 @@ describe('routes/ai-terminal', () => {
     expect(notify).toHaveBeenCalledTimes(1)
   })
 
-  it('set_auto_mode bypass auto-confirms an existing pending prompt', async () => {
-    vi.useFakeTimers()
-    ctx = makeApp({
-      notifier: {
-        detectConfirmMatch: () => 'Press Enter to confirm',
-        detectKeywordMatch: () => null,
-        canNotifyPendingConfirm: () => false,
-        notify: vi.fn(),
-      },
-    })
-    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
-    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
-      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
-
-    const sent = []
-    const ws = { readyState: 1, OPEN: 1, send: (d) => sent.push(JSON.parse(d)) }
-    ctx.ait.addBrowser(body.sessionId, ws)
-    ctx.pty.emit('output', { sessionId: body.sessionId, data: 'Press Enter to confirm' })
-
-    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'set_auto_mode', autoMode: 'bypass' })
-    vi.advanceTimersByTime(250)
-
-    expect(ctx.pty.writes).toContainEqual({ id: body.sessionId, data: '\r' })
-    expect(sent.some(msg => msg.type === 'auto_mode' && msg.autoMode === 'bypass')).toBe(true)
-    vi.useRealTimers()
-  })
-
   describe('dashboard routes', () => {
     it('GET /sessions lists active sessions with todo metadata', async () => {
       const todo = ctx.db.createTodo({ title: 'Hello', quadrant: 2 })

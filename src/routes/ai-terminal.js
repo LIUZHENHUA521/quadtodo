@@ -7,9 +7,6 @@ import { createNotifier } from '../notifier.js'
 
 const MAX_OUTPUT_BUFFER = 512 * 1024
 const CLEANUP_MS = 30 * 60_000
-const AUTO_CONFIRM_COOLDOWN_MS = 3000
-const AUTO_CONFIRM_BYPASS_COOLDOWN_MS = 1500
-const EDIT_CONFIRM_RE = /Do you want to (make this edit|create|write|apply)/i
 
 export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, getWebhookConfig, notifier: injectedNotifier }) {
   /** @type {Map<string, any>} */
@@ -56,30 +53,6 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     }
   }
 
-  function shouldAutoConfirm(session, confirmMatch) {
-    if (!confirmMatch || !session.autoMode) return false
-    if (session.autoMode === 'bypass') return true
-    if (session.autoMode === 'acceptEdits') {
-      return EDIT_CONFIRM_RE.test(session.recentOutput || '')
-    }
-    return false
-  }
-
-  function maybeAutoConfirm(session, confirmMatch) {
-    if (!shouldAutoConfirm(session, confirmMatch)) return false
-    const now = Date.now()
-    const cooldown = session.autoMode === 'bypass' ? AUTO_CONFIRM_BYPASS_COOLDOWN_MS : AUTO_CONFIRM_COOLDOWN_MS
-    if (now - (session.lastAutoConfirmAt || 0) < cooldown) return false
-    session.lastAutoConfirmAt = now
-    session.recentOutput = ''
-    session.status = 'running'
-    setTimeout(() => {
-      pty.write(session.sessionId, '\r')
-    }, 200)
-    broadcastToSession(session, { type: 'auto_mode', autoMode: session.autoMode || null })
-    return true
-  }
-
   async function writeFullLog(sessionId, fullLog) {
     if (!logDir || !fullLog) return
     try {
@@ -102,9 +75,6 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     session.outputBytesTotal = (session.outputBytesTotal || 0) + data.length
 
     const confirmMatch = notifier.detectConfirmMatch(session.recentOutput)
-    if (confirmMatch && maybeAutoConfirm(session, confirmMatch)) {
-      return
-    }
     if (confirmMatch && session.status !== 'pending_confirm') {
       session.status = 'pending_confirm'
       const todo = db.getTodo(session.todoId)
@@ -283,7 +253,6 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
         recentOutput: '',
         cwd: sessionCwd,
         autoMode: permissionMode && permissionMode !== 'default' ? permissionMode : null,
-        lastAutoConfirmAt: 0,
         lastOutputAt: null,
         outputBytesTotal: 0,
         completedAt: null,
@@ -472,10 +441,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
       const session = sessions.get(sessionId)
       if (!session) return
       session.autoMode = msg.autoMode || null
-      session.lastAutoConfirmAt = 0
       broadcastToSession(session, { type: 'auto_mode', autoMode: session.autoMode || null })
-      const confirmMatch = notifier.detectConfirmMatch(session.recentOutput || '')
-      maybeAutoConfirm(session, confirmMatch)
     }
   }
 
@@ -531,7 +497,6 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
         recentOutput: '',
         cwd,
         autoMode: null,
-        lastAutoConfirmAt: 0,
         lastOutputAt: null,
         outputBytesTotal: 0,
         completedAt: null,
