@@ -98,6 +98,27 @@ CREATE TABLE IF NOT EXISTS prompt_templates (
   updated_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pt_sort ON prompt_templates(sort_order);
+
+CREATE TABLE IF NOT EXISTS wiki_runs (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  started_at    INTEGER NOT NULL,
+  completed_at  INTEGER,
+  todo_count    INTEGER NOT NULL DEFAULT 0,
+  dry_run       INTEGER NOT NULL DEFAULT 0,
+  exit_code     INTEGER,
+  error         TEXT,
+  note          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_wiki_runs_started ON wiki_runs(started_at DESC);
+
+CREATE TABLE IF NOT EXISTS wiki_todo_coverage (
+  wiki_run_id   INTEGER NOT NULL,
+  todo_id       TEXT NOT NULL,
+  source_path   TEXT,
+  llm_applied   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (wiki_run_id, todo_id)
+);
+CREATE INDEX IF NOT EXISTS idx_wiki_cov_todo ON wiki_todo_coverage(todo_id, llm_applied);
 `
 
 const UNFINISHED = ['todo', 'ai_running', 'ai_pending', 'ai_done']
@@ -773,6 +794,79 @@ export function openDb(file = ':memory:') {
   }
   seedBuiltinTemplatesIfEmpty()
 
+  const wikiStmts = {
+    insertRun: db.prepare(`
+      INSERT INTO wiki_runs (started_at, todo_count, dry_run)
+      VALUES (?, ?, ?)
+    `),
+    completeRun: db.prepare(`
+      UPDATE wiki_runs SET completed_at = ?, exit_code = ?, note = ?
+      WHERE id = ?
+    `),
+    failRun: db.prepare(`
+      UPDATE wiki_runs SET completed_at = ?, exit_code = ?, error = ?
+      WHERE id = ?
+    `),
+    listRuns: db.prepare(`
+      SELECT * FROM wiki_runs ORDER BY started_at DESC LIMIT ?
+    `),
+    orphanRuns: db.prepare(`
+      SELECT * FROM wiki_runs WHERE completed_at IS NULL
+    `),
+    upsertCoverage: db.prepare(`
+      INSERT INTO wiki_todo_coverage (wiki_run_id, todo_id, source_path, llm_applied)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(wiki_run_id, todo_id) DO UPDATE SET
+        source_path = excluded.source_path,
+        llm_applied = excluded.llm_applied
+    `),
+    markApplied: db.prepare(`
+      UPDATE wiki_todo_coverage SET llm_applied = 1 WHERE wiki_run_id = ?
+    `),
+    coverageForTodo: db.prepare(`
+      SELECT * FROM wiki_todo_coverage WHERE todo_id = ? ORDER BY wiki_run_id DESC
+    `),
+    unappliedDoneTodos: db.prepare(`
+      SELECT t.* FROM todos t
+      WHERE t.status = 'done'
+        AND NOT EXISTS (
+          SELECT 1 FROM wiki_todo_coverage c
+          WHERE c.todo_id = t.id AND c.llm_applied = 1
+        )
+      ORDER BY t.updated_at DESC
+    `),
+  }
+
+  function createWikiRun({ todoCount = 0, dryRun = 0 } = {}) {
+    const now = Date.now()
+    const info = wikiStmts.insertRun.run(now, Number(todoCount) || 0, dryRun ? 1 : 0)
+    return { id: info.lastInsertRowid, started_at: now, completed_at: null }
+  }
+  function completeWikiRun(id, { exitCode = 0, note = '' } = {}) {
+    wikiStmts.completeRun.run(Date.now(), exitCode, note || '', id)
+  }
+  function failWikiRun(id, errorMsg) {
+    wikiStmts.failRun.run(Date.now(), -1, String(errorMsg || 'unknown'), id)
+  }
+  function listWikiRuns({ limit = 20 } = {}) {
+    return wikiStmts.listRuns.all(Math.max(1, Math.min(200, limit)))
+  }
+  function findOrphanWikiRuns() {
+    return wikiStmts.orphanRuns.all()
+  }
+  function upsertWikiCoverage(runId, todoId, sourcePath, llmApplied) {
+    wikiStmts.upsertCoverage.run(runId, todoId, sourcePath || null, llmApplied ? 1 : 0)
+  }
+  function markCoverageApplied(runId) {
+    wikiStmts.markApplied.run(runId)
+  }
+  function listCoverageForTodo(todoId) {
+    return wikiStmts.coverageForTodo.all(todoId)
+  }
+  function listUnappliedDoneTodos() {
+    return wikiStmts.unappliedDoneTodos.all().map(rowToTodo)
+  }
+
   const ruleStmts = {
     insert: db.prepare(`
       INSERT INTO recurring_rules
@@ -1015,6 +1109,15 @@ export function openDb(file = ':memory:') {
     setRecurringRuleActive,
     deleteRecurringRule,
     sweepRecurring,
+    createWikiRun,
+    completeWikiRun,
+    failWikiRun,
+    listWikiRuns,
+    findOrphanWikiRuns,
+    upsertWikiCoverage,
+    markCoverageApplied,
+    listCoverageForTodo,
+    listUnappliedDoneTodos,
     close: () => db.close(),
   }
 }
