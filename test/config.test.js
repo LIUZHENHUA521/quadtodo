@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("config", () => {
 	let tmpRoot;
@@ -44,6 +44,55 @@ describe("config", () => {
 
 		const reloaded = loadConfig({ rootDir: tmpRoot });
 		expect(reloaded.port).toBe(9999);
+	});
+
+	it("loadConfig splits inline tool command into command and args", async () => {
+		writeFileSync(
+			join(tmpRoot, "config.json"),
+			JSON.stringify({
+				port: 5677,
+				defaultTool: "claude",
+				defaultCwd: "/tmp",
+				tools: {
+					claude: {
+						command: "claude-w --model gpt-5.4 --debug",
+						bin: "",
+						args: [],
+					},
+				},
+			}),
+		);
+		const { loadConfig } = await import("../src/config.js");
+		const cfg = loadConfig({ rootDir: tmpRoot });
+		expect(cfg.tools.claude.command).toBe("claude-w");
+		expect(cfg.tools.claude.args).toEqual(["--model", "gpt-5.4", "--debug"]);
+	});
+
+	it("saveConfig normalizes inline tool command before writing", async () => {
+		const { saveConfig } = await import("../src/config.js");
+		saveConfig(
+			{
+				port: 5677,
+				defaultTool: "claude",
+				defaultCwd: "/tmp",
+				tools: {
+					claude: {
+						command: 'claude-w --model "gpt 5.4"',
+						bin: "",
+						args: ["--dangerously-skip"],
+					},
+					codex: { command: "codex", bin: "", args: [] },
+				},
+			},
+			{ rootDir: tmpRoot },
+		);
+		const raw = JSON.parse(readFileSync(join(tmpRoot, "config.json"), "utf8"));
+		expect(raw.tools.claude.command).toBe("claude-w");
+		expect(raw.tools.claude.args).toEqual([
+			"--model",
+			"gpt 5.4",
+			"--dangerously-skip",
+		]);
 	});
 
 	it("setConfigValue supports dot paths", async () => {

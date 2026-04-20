@@ -61,9 +61,74 @@ function detectBinary(name) {
 	}
 }
 
+function splitCommandLine(input = "") {
+	const tokens = [];
+	let current = "";
+	let quote = null;
+	let escaping = false;
+
+	for (const ch of String(input)) {
+		if (escaping) {
+			current += ch;
+			escaping = false;
+			continue;
+		}
+		if (ch === "\\") {
+			escaping = true;
+			continue;
+		}
+		if (quote) {
+			if (ch === quote) {
+				quote = null;
+			} else {
+				current += ch;
+			}
+			continue;
+		}
+		if (ch === "'" || ch === '"') {
+			quote = ch;
+			continue;
+		}
+		if (/\s/.test(ch)) {
+			if (current) {
+				tokens.push(current);
+				current = "";
+			}
+			continue;
+		}
+		current += ch;
+	}
+
+	if (escaping) current += "\\";
+	if (current) tokens.push(current);
+	return tokens;
+}
+
 function defaultToolCommand(name) {
 	if (name === "claude") return "claude-w";
 	return name;
+}
+
+function normalizeToolConfig(name, tool = {}, { applyDefaultCommand = true } = {}) {
+	const rawCommand =
+		typeof tool?.command === "string" ? tool.command.trim() : "";
+	const parsedTokens = splitCommandLine(rawCommand);
+	const parsedCommand = parsedTokens[0] || "";
+	const explicitArgs = Array.isArray(tool?.args)
+		? tool.args.map((item) => String(item))
+		: [];
+
+	return {
+		...tool,
+		command:
+			parsedCommand ||
+			(applyDefaultCommand ? defaultToolCommand(name) : ""),
+		args: [...parsedTokens.slice(1), ...explicitArgs],
+		bin:
+			typeof tool?.bin === "string"
+				? tool.bin.trim()
+				: (tool?.bin ?? null),
+	};
 }
 
 function runtimeBinOverride(name) {
@@ -77,9 +142,12 @@ function isStaleLegacyBin(name, configuredCommand, configuredBin, detectedBin) {
 }
 
 function getToolMetadata(name, tools = {}) {
+	const normalizedTool = normalizeToolConfig(name, tools?.[name], {
+		applyDefaultCommand: false,
+	});
 	const envBin = runtimeBinOverride(name);
-	const configuredCommand = tools?.[name]?.command || "";
-	const configuredBin = tools?.[name]?.bin || null;
+	const configuredCommand = normalizedTool.command || "";
+	const configuredBin = normalizedTool.bin || null;
 	const effectiveCommand = configuredCommand || defaultToolCommand(name);
 	const detectedBin = detectBinary(effectiveCommand);
 	const staleLegacyBin = isStaleLegacyBin(
@@ -105,7 +173,7 @@ function getToolMetadata(name, tools = {}) {
 		configuredBin,
 		effectiveBin:
 			envBin || (staleLegacyBin ? detectedBin : configuredBin) || detectedBin,
-		args: tools?.[name]?.args || [],
+		args: normalizedTool.args,
 		source,
 		installHint: TOOL_INSTALL_HINTS[name] || null,
 		missing: source === "missing",
@@ -113,17 +181,25 @@ function getToolMetadata(name, tools = {}) {
 }
 
 export function resolveToolsConfig(tools = {}) {
-	const claudeMeta = getToolMetadata("claude", tools);
-	const codexMeta = getToolMetadata("codex", tools);
+	const normalizedClaude = normalizeToolConfig("claude", tools.claude);
+	const normalizedCodex = normalizeToolConfig("codex", tools.codex);
+	const claudeMeta = getToolMetadata("claude", {
+		...tools,
+		claude: normalizedClaude,
+	});
+	const codexMeta = getToolMetadata("codex", {
+		...tools,
+		codex: normalizedCodex,
+	});
 	return {
 		claude: {
-			...(tools.claude || {}),
+			...normalizedClaude,
 			command: claudeMeta.effectiveCommand,
 			bin: claudeMeta.effectiveBin,
 			args: claudeMeta.args,
 		},
 		codex: {
-			...(tools.codex || {}),
+			...normalizedCodex,
 			command: codexMeta.effectiveCommand,
 			bin: codexMeta.effectiveBin,
 			args: codexMeta.args,
@@ -173,20 +249,25 @@ function defaultConfig() {
 
 function normalizeConfig(cfg = {}) {
 	const defaults = defaultConfig();
+	const mergedTools = {
+		...defaults.tools,
+		...(cfg.tools || {}),
+		claude: {
+			...defaults.tools.claude,
+			...(cfg.tools?.claude || {}),
+		},
+		codex: {
+			...defaults.tools.codex,
+			...(cfg.tools?.codex || {}),
+		},
+	};
 	return {
 		...defaults,
 		...cfg,
 		tools: {
-			...defaults.tools,
-			...(cfg.tools || {}),
-			claude: {
-				...defaults.tools.claude,
-				...(cfg.tools?.claude || {}),
-			},
-			codex: {
-				...defaults.tools.codex,
-				...(cfg.tools?.codex || {}),
-			},
+			...mergedTools,
+			claude: normalizeToolConfig("claude", mergedTools.claude),
+			codex: normalizeToolConfig("codex", mergedTools.codex),
 		},
 		webhook: {
 			...DEFAULT_WEBHOOK_CONFIG,
@@ -265,7 +346,10 @@ export function loadConfig({ rootDir = DEFAULT_ROOT_DIR } = {}) {
 
 export function saveConfig(cfg, { rootDir = DEFAULT_ROOT_DIR } = {}) {
 	ensureRoot(rootDir);
-	writeFileSync(join(rootDir, "config.json"), JSON.stringify(cfg, null, 2));
+	writeFileSync(
+		join(rootDir, "config.json"),
+		JSON.stringify(normalizeConfig(cfg), null, 2),
+	);
 }
 
 export function getConfigValue(path, { rootDir = DEFAULT_ROOT_DIR } = {}) {

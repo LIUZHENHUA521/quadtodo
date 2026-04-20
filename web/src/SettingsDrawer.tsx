@@ -9,6 +9,56 @@ interface Props {
   onClose: () => void
 }
 
+function splitCommandLine(input: string): string[] {
+  const tokens: string[] = []
+  let current = ''
+  let quote: '"' | "'" | null = null
+  let escaping = false
+
+  for (const ch of String(input || '')) {
+    if (escaping) {
+      current += ch
+      escaping = false
+      continue
+    }
+    if (ch === '\\') {
+      escaping = true
+      continue
+    }
+    if (quote) {
+      if (ch === quote) {
+        quote = null
+      } else {
+        current += ch
+      }
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      continue
+    }
+    if (/\s/.test(ch)) {
+      if (current) {
+        tokens.push(current)
+        current = ''
+      }
+      continue
+    }
+    current += ch
+  }
+
+  if (escaping) current += '\\'
+  if (current) tokens.push(current)
+  return tokens
+}
+
+function joinCommandLine(command: string, args: string[] = []): string {
+  const parts = [command, ...args].filter(Boolean)
+  return parts
+    .map((part) => (/[\s"]/u.test(part) ? `"${part.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : part))
+    .join(' ')
+}
+
 export default function SettingsDrawer({ open, onClose }: Props) {
   const [status, setStatus] = useState<{ version: string; activeSessions: number } | null>(null)
   const [config, setConfig] = useState<AppConfig | null>(null)
@@ -26,23 +76,27 @@ export default function SettingsDrawer({ open, onClose }: Props) {
 
   const buildToolPatch = (tool: 'claude' | 'codex', nextCommandValue: string, nextBinValue: string) => {
     const meta = toolDiagnostics?.[tool]
-    const trimmedCommand = nextCommandValue.trim()
+    const parsedCommand = splitCommandLine(nextCommandValue.trim())
+    const baseCommand = parsedCommand[0] || ''
+    const nextArgs = parsedCommand.length > 1
+      ? parsedCommand.slice(1)
+      : (config?.tools[tool].args || [])
     const trimmedBin = nextBinValue.trim()
     if (!meta) {
       return {
-        command: trimmedCommand || config?.tools[tool].command || tool,
+        command: baseCommand || config?.tools[tool].command || tool,
         bin: trimmedBin,
-        args: config?.tools[tool].args || [],
+        args: nextArgs,
       }
     }
-    const nextCommand = trimmedCommand || tool
+    const nextCommand = baseCommand || tool
     const nextBin = trimmedBin === meta.bin && meta.source !== 'config'
       ? (meta.configuredBin || '')
       : trimmedBin
     return {
       command: nextCommand,
       bin: nextBin,
-      args: config?.tools[tool].args || [],
+      args: nextArgs,
     }
   }
 
@@ -57,9 +111,9 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           port: result.config.port,
           defaultTool: result.config.defaultTool,
           defaultCwd: result.config.defaultCwd,
-          claudeCommand: result.config.tools.claude.command,
+          claudeCommand: joinCommandLine(result.config.tools.claude.command, result.config.tools.claude.args),
           claudeBin: result.config.tools.claude.bin,
-          codexCommand: result.config.tools.codex.command,
+          codexCommand: joinCommandLine(result.config.tools.codex.command, result.config.tools.codex.args),
           codexBin: result.config.tools.codex.bin,
           webhookEnabled: result.config.webhook.enabled,
           webhookProvider: result.config.webhook.provider,
@@ -102,9 +156,9 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       setConfig(result.config)
       setToolDiagnostics(result.toolDiagnostics)
       form.setFieldsValue({
-        claudeCommand: result.config.tools.claude.command,
+        claudeCommand: joinCommandLine(result.config.tools.claude.command, result.config.tools.claude.args),
         claudeBin: result.config.tools.claude.bin,
-        codexCommand: result.config.tools.codex.command,
+        codexCommand: joinCommandLine(result.config.tools.codex.command, result.config.tools.codex.args),
         codexBin: result.config.tools.codex.bin,
       })
       message.success('设置已保存。默认目录和工具对新会话立即生效，端口需重启后生效。')
@@ -160,7 +214,10 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       })
       setConfig(result.config)
       setToolDiagnostics(result.toolDiagnostics)
-      form.setFieldValue(tool === 'claude' ? 'claudeCommand' : 'codexCommand', result.config.tools[tool].command)
+      form.setFieldValue(
+        tool === 'claude' ? 'claudeCommand' : 'codexCommand',
+        joinCommandLine(result.config.tools[tool].command, result.config.tools[tool].args),
+      )
       form.setFieldValue(tool === 'claude' ? 'claudeBin' : 'codexBin', result.config.tools[tool].bin)
       message.success(`${tool} 已重新检测`)
     } catch (e: any) {
