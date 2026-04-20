@@ -391,6 +391,73 @@ describe('routes/ai-terminal', () => {
     expect(notify).toHaveBeenCalledTimes(1)
   })
 
+  it('user input clears pending_confirm state and broadcasts pending_cleared', async () => {
+    ctx = makeApp({
+      notifier: {
+        detectConfirmMatch: () => 'Press Enter to confirm',
+        detectKeywordMatch: () => null,
+        canNotifyPendingConfirm: () => false,
+        notify: vi.fn(),
+      },
+      getWebhookConfig: () => ({ enabled: true }),
+    })
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+
+    const sent = []
+    const ws = { readyState: 1, OPEN: 1, send: (d) => sent.push(JSON.parse(d)) }
+    ctx.ait.addBrowser(body.sessionId, ws)
+
+    // Trigger pending_confirm
+    ctx.pty.emit('output', { sessionId: body.sessionId, data: 'Press Enter to confirm' })
+    expect(ctx.db.getTodo(todo.id).status).toBe('ai_pending')
+    expect(ctx.ait.sessions.get(body.sessionId).status).toBe('pending_confirm')
+
+    // Simulate user interaction
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'input', data: '\r' })
+
+    // Session + todo should transition back to running
+    const session = ctx.ait.sessions.get(body.sessionId)
+    expect(session.status).toBe('running')
+    expect(session.recentOutput).toBe('')
+    const after = ctx.db.getTodo(todo.id)
+    expect(after.status).toBe('ai_running')
+    expect(after.aiSession.status).toBe('running')
+    // Browser should receive pending_cleared broadcast
+    expect(sent.some(m => m.type === 'pending_cleared')).toBe(true)
+    // Input should still be forwarded to PTY
+    expect(ctx.pty.writes).toEqual([{ id: body.sessionId, data: '\r' }])
+  })
+
+  it('pending_confirm can re-trigger after user has cleared it', async () => {
+    ctx = makeApp({
+      notifier: {
+        detectConfirmMatch: () => 'Press Enter to confirm',
+        detectKeywordMatch: () => null,
+        canNotifyPendingConfirm: () => false,
+        notify: vi.fn(),
+      },
+      getWebhookConfig: () => ({ enabled: true }),
+    })
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+
+    const sent = []
+    const ws = { readyState: 1, OPEN: 1, send: (d) => sent.push(JSON.parse(d)) }
+    ctx.ait.addBrowser(body.sessionId, ws)
+
+    ctx.pty.emit('output', { sessionId: body.sessionId, data: 'Press Enter to confirm' })
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'input', data: '\r' })
+
+    // Second pending prompt should re-broadcast
+    ctx.pty.emit('output', { sessionId: body.sessionId, data: 'Press Enter to confirm' })
+    expect(ctx.ait.sessions.get(body.sessionId).status).toBe('pending_confirm')
+    const pendingEvents = sent.filter(m => m.type === 'pending_confirm')
+    expect(pendingEvents.length).toBe(2)
+  })
+
   describe('dashboard routes', () => {
     it('GET /sessions lists active sessions with todo metadata', async () => {
       const todo = ctx.db.createTodo({ title: 'Hello', quadrant: 2 })

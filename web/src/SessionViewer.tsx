@@ -22,11 +22,11 @@ type ViewMode = 'live' | 'transcript'
 export default function SessionViewer(props: Props) {
   const { status, sessionId, todoId, onFork, fillHeight } = props
   const isRunning = status === 'ai_running' || status === 'ai_pending'
-  const [mode, setMode] = useState<ViewMode>(isRunning ? 'live' : 'transcript')
+  const [mode, setMode] = useState<ViewMode>('live')
 
   // 会话切换时重置默认 Tab
   useEffect(() => {
-    setMode(isRunning ? 'live' : 'transcript')
+    setMode('live')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 

@@ -2,7 +2,8 @@
 const BASE = ''
 
 export type Quadrant = 1 | 2 | 3 | 4
-export type TodoStatus = 'todo' | 'ai_running' | 'ai_pending' | 'ai_done' | 'done'
+export type TodoStatus = 'todo' | 'ai_running' | 'ai_pending' | 'ai_done' | 'done' | 'missed'
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly'
 export type AiTool = 'claude' | 'codex'
 export type AiStatus = 'running' | 'done' | 'failed' | 'stopped' | 'pending_confirm'
 
@@ -32,8 +33,46 @@ export interface Todo {
   sortOrder: number
   aiSession: AiSession | null
   aiSessions: AiSession[]
+  recurringRuleId: string | null
+  instanceDate: string | null
   createdAt: number
   updatedAt: number
+}
+
+export interface RecurringSubtodoTemplate {
+  title: string
+  description?: string
+}
+
+export interface RecurringRule {
+  id: string
+  title: string
+  description: string
+  quadrant: Quadrant
+  workDir: string | null
+  brainstorm: boolean
+  appliedTemplateIds: string[]
+  subtodos: RecurringSubtodoTemplate[]
+  frequency: RecurringFrequency
+  weekdays: number[]
+  monthDays: number[]
+  active: boolean
+  lastGeneratedDate: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export interface CreateRecurringRuleInput {
+  title: string
+  description?: string
+  quadrant: Quadrant
+  workDir?: string | null
+  brainstorm?: boolean
+  appliedTemplateIds?: string[]
+  subtodos?: RecurringSubtodoTemplate[]
+  frequency: RecurringFrequency
+  weekdays?: number[]
+  monthDays?: number[]
 }
 
 export interface Comment {
@@ -173,6 +212,38 @@ export async function updateTodo(id: string, patch: Partial<Todo>): Promise<Todo
 
 export async function deleteTodo(id: string): Promise<void> {
   await jsonFetch(`/api/todos/${id}`, { method: 'DELETE' })
+}
+
+export async function createRecurringRule(data: CreateRecurringRuleInput): Promise<{ rule: RecurringRule; firstInstance: Todo | null }> {
+  const body = await jsonFetch<{ ok: true; rule: RecurringRule; firstInstance: Todo | null }>('/api/recurring-rules', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+  return { rule: body.rule, firstInstance: body.firstInstance }
+}
+
+export async function getRecurringRule(id: string): Promise<RecurringRule> {
+  const body = await jsonFetch<{ ok: true; rule: RecurringRule }>(`/api/recurring-rules/${id}`)
+  return body.rule
+}
+
+export async function updateRecurringRule(id: string, patch: Partial<CreateRecurringRuleInput>): Promise<RecurringRule> {
+  const body = await jsonFetch<{ ok: true; rule: RecurringRule }>(`/api/recurring-rules/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  })
+  return body.rule
+}
+
+export async function deactivateRecurringRule(id: string): Promise<RecurringRule> {
+  const body = await jsonFetch<{ ok: true; rule: RecurringRule }>(`/api/recurring-rules/${id}/deactivate`, {
+    method: 'POST',
+  })
+  return body.rule
+}
+
+export async function deleteRecurringRule(id: string): Promise<void> {
+  await jsonFetch(`/api/recurring-rules/${id}`, { method: 'DELETE' })
 }
 
 export async function listComments(todoId: string): Promise<Comment[]> {

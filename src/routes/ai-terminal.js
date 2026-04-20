@@ -432,8 +432,35 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     session.browsers.delete(ws)
   }
 
+  function clearPendingConfirm(session) {
+    if (!session || session.status !== 'pending_confirm') return
+    session.status = 'running'
+    // 清空 recentOutput，避免旧的 confirm 文本残留导致下次 output 再次匹配
+    session.recentOutput = ''
+    const todo = db.getTodo(session.todoId)
+    if (todo) {
+      const current = (todo.aiSessions || []).find(item => item.sessionId === session.sessionId) || todo.aiSession || {}
+      db.updateTodo(session.todoId, {
+        status: 'ai_running',
+        aiSessions: mergeTodoAiSessions(todo, {
+          ...current,
+          sessionId: session.sessionId,
+          tool: session.tool,
+          nativeSessionId: session.nativeSessionId || current.nativeSessionId || null,
+          status: 'running',
+          startedAt: session.startedAt,
+          completedAt: null,
+          prompt: session.prompt,
+        }),
+      })
+    }
+    broadcastToSession(session, { type: 'pending_cleared' })
+  }
+
   function handleBrowserMessage(sessionId, msg) {
     if (msg.type === 'input') {
+      const session = sessions.get(sessionId)
+      clearPendingConfirm(session)
       pty.write(sessionId, msg.data)
     } else if (msg.type === 'resize') {
       pty.resize(sessionId, msg.cols, msg.rows)

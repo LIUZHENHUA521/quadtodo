@@ -17,8 +17,6 @@ CREATE TABLE IF NOT EXISTS todos (
   updated_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_todos_quadrant_sort ON todos(quadrant, sort_order);
-CREATE INDEX IF NOT EXISTS idx_todos_parent_sort   ON todos(parent_id, sort_order);
-CREATE INDEX IF NOT EXISTS idx_todos_quad_parent_sort ON todos(quadrant, parent_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_todos_status        ON todos(status);
 
 CREATE TABLE IF NOT EXISTS comments (
@@ -70,6 +68,25 @@ CREATE INDEX IF NOT EXISTS idx_tf_native ON transcript_files(native_id);
 CREATE INDEX IF NOT EXISTS idx_tf_bound  ON transcript_files(bound_todo_id);
 CREATE INDEX IF NOT EXISTS idx_tf_tool_cwd_started ON transcript_files(tool, cwd, started_at);
 
+CREATE TABLE IF NOT EXISTS recurring_rules (
+  id                    TEXT PRIMARY KEY,
+  title                 TEXT NOT NULL,
+  description           TEXT NOT NULL DEFAULT '',
+  quadrant              INTEGER NOT NULL CHECK(quadrant IN (1,2,3,4)),
+  work_dir              TEXT,
+  brainstorm            INTEGER NOT NULL DEFAULT 0,
+  applied_template_ids  TEXT,
+  subtodos              TEXT,
+  frequency             TEXT NOT NULL CHECK(frequency IN ('daily','weekly','monthly')),
+  weekdays              TEXT,
+  month_days            TEXT,
+  active                INTEGER NOT NULL DEFAULT 1,
+  last_generated_date   TEXT,
+  created_at            INTEGER NOT NULL,
+  updated_at            INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rr_active ON recurring_rules(active);
+
 CREATE TABLE IF NOT EXISTS prompt_templates (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
@@ -113,9 +130,68 @@ function rowToTodo(row) {
     sortOrder: row.sort_order,
     aiSession: currentAiSession(aiSessions),
     aiSessions,
+    recurringRuleId: row.recurring_rule_id ?? null,
+    instanceDate: row.instance_date ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+function todayStr(now = Date.now()) {
+  const d = new Date(now)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function endOfDayMs(now = Date.now()) {
+  const d = new Date(now)
+  d.setHours(23, 59, 59, 999)
+  return d.getTime()
+}
+
+function parseJsonArray(value) {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : null
+  } catch { return null }
+}
+
+function rowToRule(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    quadrant: row.quadrant,
+    workDir: row.work_dir ?? null,
+    brainstorm: !!row.brainstorm,
+    appliedTemplateIds: parseJsonArray(row.applied_template_ids) || [],
+    subtodos: parseJsonArray(row.subtodos) || [],
+    frequency: row.frequency,
+    weekdays: parseJsonArray(row.weekdays) || [],
+    monthDays: parseJsonArray(row.month_days) || [],
+    active: !!row.active,
+    lastGeneratedDate: row.last_generated_date ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function ruleShouldProduceOn(rule, dateStr) {
+  const d = new Date(`${dateStr}T12:00:00`)
+  if (rule.frequency === 'daily') return true
+  if (rule.frequency === 'weekly') {
+    const wd = d.getDay()
+    return (rule.weekdays || []).includes(wd)
+  }
+  if (rule.frequency === 'monthly') {
+    const dom = d.getDate()
+    return (rule.monthDays || []).includes(dom)
+  }
+  return false
 }
 
 export function openDb(file = ':memory:') {
@@ -151,6 +227,13 @@ export function openDb(file = ':memory:') {
   if (!columns.some(col => col.name === 'applied_template_ids')) {
     db.exec(`ALTER TABLE todos ADD COLUMN applied_template_ids TEXT`)
   }
+  if (!columns.some(col => col.name === 'recurring_rule_id')) {
+    db.exec(`ALTER TABLE todos ADD COLUMN recurring_rule_id TEXT`)
+  }
+  if (!columns.some(col => col.name === 'instance_date')) {
+    db.exec(`ALTER TABLE todos ADD COLUMN instance_date TEXT`)
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_recurring ON todos(recurring_rule_id, instance_date)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_parent_sort ON todos(parent_id, sort_order)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_quad_parent_sort ON todos(quadrant, parent_id, sort_order)`)
 
@@ -168,8 +251,8 @@ export function openDb(file = ':memory:') {
 
   const stmts = {
     insert: db.prepare(`
-      INSERT INTO todos (id, parent_id, title, description, quadrant, status, due_date, work_dir, brainstorm, applied_template_ids, sort_order, ai_session, created_at, updated_at)
-      VALUES (@id, @parent_id, @title, @description, @quadrant, @status, @due_date, @work_dir, @brainstorm, @applied_template_ids, @sort_order, @ai_session, @created_at, @updated_at)
+      INSERT INTO todos (id, parent_id, title, description, quadrant, status, due_date, work_dir, brainstorm, applied_template_ids, sort_order, ai_session, recurring_rule_id, instance_date, created_at, updated_at)
+      VALUES (@id, @parent_id, @title, @description, @quadrant, @status, @due_date, @work_dir, @brainstorm, @applied_template_ids, @sort_order, @ai_session, @recurring_rule_id, @instance_date, @created_at, @updated_at)
     `),
     getById: db.prepare(`SELECT * FROM todos WHERE id = ?`),
     listChildrenByParent: db.prepare(`SELECT id FROM todos WHERE parent_id = ? ORDER BY sort_order ASC, created_at ASC`),
@@ -211,6 +294,8 @@ export function openDb(file = ':memory:') {
       applied_template_ids: Array.isArray(data.appliedTemplateIds) ? JSON.stringify(data.appliedTemplateIds) : null,
       sort_order: data.sortOrder != null ? data.sortOrder : nextSortOrder(quadrant, parent?.id ?? null),
       ai_session: JSON.stringify(normalizeAiSessions(data.aiSessions ?? data.aiSession)),
+      recurring_rule_id: data.recurringRuleId ?? null,
+      instance_date: data.instanceDate ?? null,
       created_at: now,
       updated_at: now,
     }
@@ -309,6 +394,8 @@ export function openDb(file = ':memory:') {
     } else if (status === 'done') {
       where.push('status = ?')
       params.push('done')
+    } else {
+      where.push(`status != 'missed'`)
     }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
     const rows = db.prepare(`
@@ -655,6 +742,206 @@ export function openDb(file = ':memory:') {
   }
   seedBuiltinTemplatesIfEmpty()
 
+  const ruleStmts = {
+    insert: db.prepare(`
+      INSERT INTO recurring_rules
+        (id, title, description, quadrant, work_dir, brainstorm, applied_template_ids, subtodos, frequency, weekdays, month_days, active, last_generated_date, created_at, updated_at)
+      VALUES
+        (@id, @title, @description, @quadrant, @work_dir, @brainstorm, @applied_template_ids, @subtodos, @frequency, @weekdays, @month_days, @active, @last_generated_date, @created_at, @updated_at)
+    `),
+    get: db.prepare(`SELECT * FROM recurring_rules WHERE id = ?`),
+    list: db.prepare(`SELECT * FROM recurring_rules ORDER BY created_at DESC`),
+    listActive: db.prepare(`SELECT * FROM recurring_rules WHERE active = 1`),
+    update: db.prepare(`
+      UPDATE recurring_rules SET
+        title = @title,
+        description = @description,
+        quadrant = @quadrant,
+        work_dir = @work_dir,
+        brainstorm = @brainstorm,
+        applied_template_ids = @applied_template_ids,
+        subtodos = @subtodos,
+        frequency = @frequency,
+        weekdays = @weekdays,
+        month_days = @month_days,
+        updated_at = @updated_at
+      WHERE id = @id
+    `),
+    setActive: db.prepare(`UPDATE recurring_rules SET active = ?, updated_at = ? WHERE id = ?`),
+    setLastGenerated: db.prepare(`UPDATE recurring_rules SET last_generated_date = ?, updated_at = ? WHERE id = ?`),
+    delete: db.prepare(`DELETE FROM recurring_rules WHERE id = ?`),
+    unlinkInstances: db.prepare(`UPDATE todos SET recurring_rule_id = NULL WHERE recurring_rule_id = ?`),
+  }
+
+  function normalizeRuleInput(data) {
+    const frequency = data.frequency
+    if (!['daily', 'weekly', 'monthly'].includes(frequency)) {
+      throw new Error('invalid_frequency')
+    }
+    let weekdays = null
+    let monthDays = null
+    if (frequency === 'weekly') {
+      const arr = Array.isArray(data.weekdays) ? data.weekdays.filter(n => Number.isInteger(n) && n >= 0 && n <= 6) : []
+      if (!arr.length) throw new Error('weekdays_required')
+      weekdays = [...new Set(arr)].sort((a, b) => a - b)
+    }
+    if (frequency === 'monthly') {
+      const arr = Array.isArray(data.monthDays) ? data.monthDays.filter(n => Number.isInteger(n) && n >= 1 && n <= 31) : []
+      if (!arr.length) throw new Error('month_days_required')
+      monthDays = [...new Set(arr)].sort((a, b) => a - b)
+    }
+    const q = Number(data.quadrant)
+    if (![1, 2, 3, 4].includes(q)) throw new Error('invalid_quadrant')
+    return { frequency, weekdays, monthDays, quadrant: q }
+  }
+
+  function instantiateRule(rule, now) {
+    const today = todayStr(now)
+    const due = endOfDayMs(now)
+    const parent = createTodo({
+      title: rule.title,
+      description: rule.description,
+      quadrant: rule.quadrant,
+      status: 'todo',
+      dueDate: due,
+      workDir: rule.workDir ?? null,
+      brainstorm: !!rule.brainstorm,
+      appliedTemplateIds: rule.appliedTemplateIds || [],
+      recurringRuleId: rule.id,
+      instanceDate: today,
+    })
+    for (const st of (rule.subtodos || [])) {
+      if (!st || !st.title) continue
+      createTodo({
+        title: st.title,
+        description: st.description || '',
+        status: 'todo',
+        dueDate: due,
+        parentId: parent.id,
+        recurringRuleId: rule.id,
+        instanceDate: today,
+      })
+    }
+    return parent
+  }
+
+  function createRecurringRule(data) {
+    const { frequency, weekdays, monthDays, quadrant } = normalizeRuleInput(data)
+    if (!data.title || typeof data.title !== 'string') throw new Error('title_required')
+    const now = Date.now()
+    const today = todayStr(now)
+    const rule = {
+      id: randomUUID(),
+      title: data.title.trim(),
+      description: data.description || '',
+      quadrant,
+      work_dir: data.workDir || null,
+      brainstorm: data.brainstorm ? 1 : 0,
+      applied_template_ids: JSON.stringify(Array.isArray(data.appliedTemplateIds) ? data.appliedTemplateIds : []),
+      subtodos: JSON.stringify(Array.isArray(data.subtodos) ? data.subtodos.map(s => ({
+        title: String(s.title || '').trim(),
+        description: String(s.description || ''),
+      })).filter(s => s.title) : []),
+      frequency,
+      weekdays: weekdays ? JSON.stringify(weekdays) : null,
+      month_days: monthDays ? JSON.stringify(monthDays) : null,
+      active: 1,
+      last_generated_date: today,
+      created_at: now,
+      updated_at: now,
+    }
+    ruleStmts.insert.run(rule)
+    const ruleObj = rowToRule(ruleStmts.get.get(rule.id))
+    let firstInstance = null
+    if (ruleShouldProduceOn(ruleObj, today)) {
+      firstInstance = instantiateRule(ruleObj, now)
+    }
+    return { rule: ruleObj, firstInstance }
+  }
+
+  function updateRecurringRule(id, patch) {
+    const existing = rowToRule(ruleStmts.get.get(id))
+    if (!existing) return null
+    const merged = {
+      title: patch.title ?? existing.title,
+      description: patch.description ?? existing.description,
+      quadrant: patch.quadrant ?? existing.quadrant,
+      workDir: patch.workDir !== undefined ? patch.workDir : existing.workDir,
+      brainstorm: patch.brainstorm !== undefined ? !!patch.brainstorm : existing.brainstorm,
+      appliedTemplateIds: patch.appliedTemplateIds !== undefined ? patch.appliedTemplateIds : existing.appliedTemplateIds,
+      subtodos: patch.subtodos !== undefined ? patch.subtodos : existing.subtodos,
+      frequency: patch.frequency ?? existing.frequency,
+      weekdays: patch.frequency === 'weekly' || (patch.frequency === undefined && existing.frequency === 'weekly')
+        ? (patch.weekdays ?? existing.weekdays)
+        : undefined,
+      monthDays: patch.frequency === 'monthly' || (patch.frequency === undefined && existing.frequency === 'monthly')
+        ? (patch.monthDays ?? existing.monthDays)
+        : undefined,
+    }
+    const { frequency, weekdays, monthDays, quadrant } = normalizeRuleInput(merged)
+    ruleStmts.update.run({
+      id,
+      title: merged.title,
+      description: merged.description,
+      quadrant,
+      work_dir: merged.workDir || null,
+      brainstorm: merged.brainstorm ? 1 : 0,
+      applied_template_ids: JSON.stringify(Array.isArray(merged.appliedTemplateIds) ? merged.appliedTemplateIds : []),
+      subtodos: JSON.stringify(Array.isArray(merged.subtodos) ? merged.subtodos.map(s => ({
+        title: String(s.title || '').trim(),
+        description: String(s.description || ''),
+      })).filter(s => s.title) : []),
+      frequency,
+      weekdays: weekdays ? JSON.stringify(weekdays) : null,
+      month_days: monthDays ? JSON.stringify(monthDays) : null,
+      updated_at: Date.now(),
+    })
+    return rowToRule(ruleStmts.get.get(id))
+  }
+
+  function getRecurringRule(id) {
+    return rowToRule(ruleStmts.get.get(id))
+  }
+
+  function setRecurringRuleActive(id, active) {
+    ruleStmts.setActive.run(active ? 1 : 0, Date.now(), id)
+    return rowToRule(ruleStmts.get.get(id))
+  }
+
+  function deleteRecurringRule(id) {
+    ruleStmts.unlinkInstances.run(id)
+    ruleStmts.delete.run(id)
+  }
+
+  function sweepRecurring(now = Date.now()) {
+    const today = todayStr(now)
+    const startOfToday = new Date(now)
+    startOfToday.setHours(0, 0, 0, 0)
+    const startOfTodayMs = startOfToday.getTime()
+
+    db.prepare(`
+      UPDATE todos
+      SET status = 'missed', updated_at = ?
+      WHERE recurring_rule_id IS NOT NULL
+        AND instance_date IS NOT NULL
+        AND instance_date < ?
+        AND status IN ('todo', 'ai_done')
+    `).run(now, today)
+
+    const rules = ruleStmts.listActive.all().map(rowToRule)
+    const tx = db.transaction(() => {
+      for (const rule of rules) {
+        if (rule.lastGeneratedDate === today) continue
+        if (ruleShouldProduceOn(rule, today)) {
+          instantiateRule(rule, now)
+        }
+        ruleStmts.setLastGenerated.run(today, now, rule.id)
+      }
+    })
+    tx()
+    return { today, startOfTodayMs }
+  }
+
   return {
     raw: db,
     listTemplates,
@@ -686,6 +973,12 @@ export function openDb(file = ':memory:') {
     findTranscriptByNative: (nativeId, tool) => tfStmts.findByNative.get(nativeId, tool),
     setTranscriptBound: (id, todoId) => tfStmts.setBound.run(todoId, id),
     countUnboundTranscripts: () => tfStmts.countUnbound.get().n,
+    createRecurringRule,
+    updateRecurringRule,
+    getRecurringRule,
+    setRecurringRuleActive,
+    deleteRecurringRule,
+    sweepRecurring,
     close: () => db.close(),
   }
 }

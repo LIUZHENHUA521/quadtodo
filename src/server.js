@@ -18,6 +18,7 @@ import { createTranscriptsRouter } from "./routes/transcripts.js";
 import { createTranscriptsService } from "./transcripts/index.js";
 import { createTodosRouter } from "./routes/todos.js";
 import { createTemplatesRouter } from "./routes/templates.js";
+import { createRecurringRulesRouter } from "./routes/recurringRules.js";
 import { createStatsRouter } from "./routes/stats.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -382,6 +383,7 @@ export function createServer(opts = {}) {
 		getPricing: () => loadConfig({ rootDir: configRootDir }).pricing,
 	}));
 	app.use("/api/templates", createTemplatesRouter({ db }));
+	app.use("/api/recurring-rules", createRecurringRulesRouter({ db }));
 	app.use("/api/ai-terminal", ait.router);
 
 	const transcriptsService = createTranscriptsService({

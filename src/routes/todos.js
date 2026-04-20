@@ -8,6 +8,7 @@ export function createTodosRouter({ db, logDir, getPricing }) {
 
   router.get('/', (req, res) => {
     try {
+      try { db.sweepRecurring(Date.now()) } catch (e) { console.warn('[sweepRecurring]', e?.message) }
       const { quadrant, status, keyword } = req.query
       const list = db.listTodos({ quadrant, status, keyword })
       res.json({ ok: true, list })

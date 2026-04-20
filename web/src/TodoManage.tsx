@@ -27,6 +27,8 @@ import {
   listComments, addComment, deleteComment,
   listLiveSessions, stopAiExec,
   listTemplates, PromptTemplate,
+  createRecurringRule, getRecurringRule, updateRecurringRule, deactivateRecurringRule,
+  RecurringFrequency, RecurringRule,
   Todo, Quadrant, AiTool, Comment,
 } from './api'
 import { renderAppliedTemplates } from './promptRender'
@@ -156,7 +158,7 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
   const isAiActive = todo.status === 'ai_running' || todo.status === 'ai_pending'
   const terminalOpen = expandedTerminal?.todoId === todo.id
   const hasChildren = children.length > 0
-  const showChildren = hasChildren && (!childHitIds || childHitIds.size === 0 || childrenExpanded)
+  const showChildren = hasChildren && (childrenExpanded || (!!childHitIds && childHitIds.size > 0))
   const cardClassName = `todo-card quadrant-${todo.quadrant} ${isDragging ? 'dragging' : ''} ${todo.status === 'done' ? 'done' : ''} ${isSubtodo ? 'subtodo-card' : ''}`
   const sessionId = terminalOpen ? expandedTerminal!.sessionId : todo.aiSession?.sessionId
   const historySessions = todo.aiSessions || []
@@ -720,6 +722,12 @@ export default function TodoManage() {
   // 详情
   const [detailTodo, setDetailTodo] = useState<Todo | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [detailRule, setDetailRule] = useState<RecurringRule | null>(null)
+
+  // 重复规则编辑 Modal
+  const [ruleModalOpen, setRuleModalOpen] = useState(false)
+  const [ruleEditing, setRuleEditing] = useState<RecurringRule | null>(null)
+  const [ruleForm] = Form.useForm()
   const [comments, setComments] = useState<Comment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentText, setCommentText] = useState('')
@@ -888,7 +896,14 @@ export default function TodoManage() {
     setEditingTodo(null)
     setParentForCreate(null)
     form.resetFields()
-    form.setFieldsValue({ quadrant: 1, workDir: undefined })
+    form.setFieldsValue({
+      quadrant: 1,
+      workDir: undefined,
+      recurring: false,
+      recurringFrequency: 'daily',
+      recurringWeekdays: [1, 2, 3, 4, 5],
+      recurringMonthDays: [1],
+    })
     setDrawerOpen(true)
   }
 
@@ -969,6 +984,32 @@ export default function TodoManage() {
         setDrawerOpen(false)
         setParentForCreate(null)
         fetchTodos()
+      } else if (values.recurring && !parentForCreate) {
+        const frequency = values.recurringFrequency as RecurringFrequency
+        if (frequency === 'weekly' && !(values.recurringWeekdays || []).length) {
+          message.error('请至少选择一个星期几')
+          return
+        }
+        if (frequency === 'monthly' && !(values.recurringMonthDays || []).length) {
+          message.error('请至少选择一个月内日期')
+          return
+        }
+        await createRecurringRule({
+          title: data.title,
+          description: data.description,
+          quadrant: data.quadrant,
+          workDir: data.workDir,
+          brainstorm: data.brainstorm,
+          appliedTemplateIds: data.appliedTemplateIds,
+          frequency,
+          weekdays: frequency === 'weekly' ? values.recurringWeekdays : undefined,
+          monthDays: frequency === 'monthly' ? values.recurringMonthDays : undefined,
+          subtodos: [],
+        })
+        message.success('已创建每日待办规则')
+        setDrawerOpen(false)
+        setParentForCreate(null)
+        fetchTodos()
       } else {
         await createTodo(data)
         message.success(parentForCreate ? '子待办已创建' : '已创建')
@@ -1028,6 +1069,73 @@ export default function TodoManage() {
     }
   }, [fetchTodos])
 
+  // ─── 重复规则 ───
+
+  const describeRule = useCallback((r: RecurringRule) => {
+    if (r.frequency === 'daily') return '每天重复'
+    if (r.frequency === 'weekly') {
+      const names = ['日', '一', '二', '三', '四', '五', '六']
+      return '每周 ' + (r.weekdays || []).map(w => names[w]).join('、')
+    }
+    if (r.frequency === 'monthly') {
+      return '每月 ' + (r.monthDays || []).join('、') + ' 号'
+    }
+    return '重复'
+  }, [])
+
+  const openRuleEdit = useCallback((rule: RecurringRule) => {
+    setRuleEditing(rule)
+    ruleForm.resetFields()
+    ruleForm.setFieldsValue({
+      title: rule.title,
+      description: rule.description,
+      frequency: rule.frequency,
+      weekdays: rule.weekdays.length ? rule.weekdays : [1, 2, 3, 4, 5],
+      monthDays: rule.monthDays.length ? rule.monthDays : [1],
+    })
+    setRuleModalOpen(true)
+  }, [ruleForm])
+
+  const handleRuleSave = useCallback(async () => {
+    if (!ruleEditing) return
+    try {
+      const values = await ruleForm.validateFields()
+      const frequency = values.frequency as RecurringFrequency
+      if (frequency === 'weekly' && !(values.weekdays || []).length) {
+        message.error('请至少选择一个星期几')
+        return
+      }
+      if (frequency === 'monthly' && !(values.monthDays || []).length) {
+        message.error('请至少选择一个月内日期')
+        return
+      }
+      const next = await updateRecurringRule(ruleEditing.id, {
+        title: values.title,
+        description: values.description || '',
+        frequency,
+        weekdays: frequency === 'weekly' ? values.weekdays : [],
+        monthDays: frequency === 'monthly' ? values.monthDays : [],
+      })
+      message.success('规则已更新（仅影响未来生成的实例）')
+      setRuleModalOpen(false)
+      setRuleEditing(null)
+      if (detailRule && detailRule.id === next.id) setDetailRule(next)
+    } catch (e: any) {
+      if (e?.errorFields) return
+      message.error(e?.message || '保存失败')
+    }
+  }, [ruleEditing, ruleForm, detailRule])
+
+  const handleStopRule = useCallback(async (ruleId: string) => {
+    try {
+      await deactivateRecurringRule(ruleId)
+      message.success('已停止重复，明天起不再生成')
+      setDetailRule(prev => prev && prev.id === ruleId ? { ...prev, active: false } : prev)
+    } catch (e: any) {
+      message.error(e?.message || '停止失败')
+    }
+  }, [])
+
   // ─── 详情 ───
 
   const openDetail = (todo: Todo) => {
@@ -1036,6 +1144,10 @@ export default function TodoManage() {
     setCommentText('')
     setComments([])
     setCommentsLoading(true)
+    setDetailRule(null)
+    if (todo.recurringRuleId) {
+      getRecurringRule(todo.recurringRuleId).then(setDetailRule).catch(() => {})
+    }
     listComments(todo.id).then(setComments).catch(() => {}).finally(() => setCommentsLoading(false))
   }
 
@@ -1609,6 +1721,63 @@ export default function TodoManage() {
               ))}
             </Radio.Group>
           </Form.Item>
+          {!editingTodo && !parentForCreate && (
+            <>
+              <Form.Item
+                name="recurring"
+                label="重复"
+                valuePropName="checked"
+                extra="开启后会按规则每天生成一条当天待办；未完成的旧实例会自动标记为错过"
+              >
+                <Switch />
+              </Form.Item>
+              <Form.Item noStyle shouldUpdate={(p, n) => p.recurring !== n.recurring || p.recurringFrequency !== n.recurringFrequency}>
+                {({ getFieldValue }) => {
+                  if (!getFieldValue('recurring')) return null
+                  const freq = getFieldValue('recurringFrequency') as RecurringFrequency
+                  return (
+                    <>
+                      <Form.Item name="recurringFrequency" label="频率">
+                        <Segmented
+                          options={[
+                            { label: '每天', value: 'daily' },
+                            { label: '每周', value: 'weekly' },
+                            { label: '每月', value: 'monthly' },
+                          ]}
+                        />
+                      </Form.Item>
+                      {freq === 'weekly' && (
+                        <Form.Item name="recurringWeekdays" label="星期几">
+                          <Select
+                            mode="multiple"
+                            placeholder="选择星期几"
+                            options={[
+                              { value: 1, label: '一' },
+                              { value: 2, label: '二' },
+                              { value: 3, label: '三' },
+                              { value: 4, label: '四' },
+                              { value: 5, label: '五' },
+                              { value: 6, label: '六' },
+                              { value: 0, label: '日' },
+                            ]}
+                          />
+                        </Form.Item>
+                      )}
+                      {freq === 'monthly' && (
+                        <Form.Item name="recurringMonthDays" label="每月几号">
+                          <Select
+                            mode="multiple"
+                            placeholder="选择日期"
+                            options={Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: String(i + 1) }))}
+                          />
+                        </Form.Item>
+                      )}
+                    </>
+                  )
+                }}
+              </Form.Item>
+            </>
+          )}
           <Form.Item name="dueDate" label="截止日期">
             <DatePicker showTime style={{ width: '100%' }} />
           </Form.Item>
@@ -1619,7 +1788,7 @@ export default function TodoManage() {
       <Drawer
         title={detailTodo?.title || '待办详情'}
         open={detailOpen}
-        onClose={() => { setDetailOpen(false); setDetailTodo(null) }}
+        onClose={() => { setDetailOpen(false); setDetailTodo(null); setDetailRule(null) }}
         width={640}
         extra={
           <Space>
@@ -1641,6 +1810,22 @@ export default function TodoManage() {
         {detailTodo && (
           <div>
             <p style={{ color: '#666' }}>{detailTodo.description || '无描述'}</p>
+            {detailRule && (
+              <div style={{ marginBottom: 12, padding: '8px 12px', background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                <Space size="small">
+                  <Tag color={detailRule.active ? 'green' : 'default'}>{detailRule.active ? '重复中' : '已停止'}</Tag>
+                  <span style={{ fontSize: 13, color: '#555' }}>{describeRule(detailRule)}</span>
+                </Space>
+                {detailRule.active && (
+                  <Space size="small">
+                    <Button size="small" onClick={() => openRuleEdit(detailRule)}>编辑规则</Button>
+                    <Popconfirm title="停止后今天的待办保留，明天起不再重复" onConfirm={() => handleStopRule(detailRule.id)}>
+                      <Button size="small" danger>停止重复</Button>
+                    </Popconfirm>
+                  </Space>
+                )}
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13, marginBottom: 16 }}>
               <div><strong>象限：</strong>{QUADRANT_CONFIG.find(c => c.q === detailTodo.quadrant)?.label}</div>
               <div><strong>状态：</strong>{detailTodo.status === 'done' ? '已完成' : '待办'}</div>
@@ -1699,6 +1884,69 @@ export default function TodoManage() {
           </div>
         )}
       </Drawer>
+
+      <Modal
+        title="编辑重复规则"
+        open={ruleModalOpen}
+        onCancel={() => { setRuleModalOpen(false); setRuleEditing(null) }}
+        onOk={handleRuleSave}
+        okText="保存"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Form form={ruleForm} layout="vertical" size="small">
+          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
+            <Input placeholder="未来生成的实例会用这个标题" />
+          </Form.Item>
+          <Form.Item name="description" label="描述">
+            <TextArea rows={2} placeholder="可选" />
+          </Form.Item>
+          <Form.Item name="frequency" label="频率">
+            <Segmented
+              options={[
+                { label: '每天', value: 'daily' },
+                { label: '每周', value: 'weekly' },
+                { label: '每月', value: 'monthly' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(p, n) => p.frequency !== n.frequency}>
+            {({ getFieldValue }) => {
+              const freq = getFieldValue('frequency') as RecurringFrequency
+              if (freq === 'weekly') {
+                return (
+                  <Form.Item name="weekdays" label="星期几">
+                    <Select
+                      mode="multiple"
+                      options={[
+                        { value: 1, label: '一' },
+                        { value: 2, label: '二' },
+                        { value: 3, label: '三' },
+                        { value: 4, label: '四' },
+                        { value: 5, label: '五' },
+                        { value: 6, label: '六' },
+                        { value: 0, label: '日' },
+                      ]}
+                    />
+                  </Form.Item>
+                )
+              }
+              if (freq === 'monthly') {
+                return (
+                  <Form.Item name="monthDays" label="每月几号">
+                    <Select
+                      mode="multiple"
+                      options={Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: String(i + 1) }))}
+                    />
+                  </Form.Item>
+                )
+              }
+              return null
+            }}
+          </Form.Item>
+          <div style={{ color: '#999', fontSize: 12 }}>保存后只影响未来新生成的实例，不会回写已存在的待办。</div>
+        </Form>
+      </Modal>
 
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <StatsDrawer open={statsOpen} onClose={() => setStatsOpen(false)} />

@@ -306,6 +306,9 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             case 'pending_confirm':
               setSessionStatus('ai_pending')
               break
+            case 'pending_cleared':
+              setSessionStatus('ai_running')
+              break
             case 'auto_mode':
               setAutoMode(msg.autoMode || null)
               break
