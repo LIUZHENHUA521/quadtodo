@@ -20,6 +20,8 @@ import { createTodosRouter } from "./routes/todos.js";
 import { createTemplatesRouter } from "./routes/templates.js";
 import { createRecurringRulesRouter } from "./routes/recurringRules.js";
 import { createStatsRouter } from "./routes/stats.js";
+import { createWikiRouter } from "./routes/wiki.js";
+import { createWikiService } from "./wiki/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -396,6 +398,39 @@ export function createServer(opts = {}) {
 		db,
 		getPricing: () => loadConfig({ rootDir: configRootDir }).pricing,
 	}));
+
+	const wikiConfig = (initialConfig && initialConfig.wiki) || {
+		wikiDir: join(process.env.HOME || process.cwd(), ".quadtodo", "wiki"),
+		maxTailTurns: 20,
+		tool: "claude",
+		timeoutMs: 600_000,
+		redact: true,
+	};
+	const wikiService = createWikiService({
+		db,
+		logDir,
+		wikiDir: wikiConfig.wikiDir,
+		getTools: () => runtimeConfig.tools || {},
+		maxTailTurns: wikiConfig.maxTailTurns ?? 20,
+		timeoutMs: wikiConfig.timeoutMs ?? 600_000,
+		redactEnabled: wikiConfig.redact !== false,
+	});
+	app.use("/api/wiki", createWikiRouter({ service: wikiService }));
+
+	// kick off wiki init in background (non-blocking)
+	Promise.resolve()
+		.then(() => wikiService.init())
+		.then((r) => console.log(`[wiki] init state=${r.state} dir=${r.wikiDir}`))
+		.catch((e) => console.warn(`[wiki] init failed:`, e.message));
+
+	// sweep orphan wiki_runs left over from prior crashes
+	try {
+		const swept = wikiService.markOrphansAsFailed();
+		if (swept > 0) console.log(`[wiki] marked ${swept} orphan run(s) as failed`);
+	} catch (e) {
+		console.warn(`[wiki] orphan sweep failed:`, e.message);
+	}
+
 	// async startup scan (non-blocking)
 	Promise.resolve().then(() => transcriptsService.scanFull())
 		.then(r => console.log(`[transcripts] full scan done newFiles=${r.newFiles} indexed=${r.indexed} autoBound=${r.autoBound} unbound=${r.unbound}`))
