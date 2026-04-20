@@ -35,6 +35,7 @@ import { renderAppliedTemplates } from './promptRender'
 import SessionViewer from './SessionViewer'
 import SettingsDrawer from './SettingsDrawer'
 import StatsDrawer from './StatsDrawer'
+import WikiDrawer from './WikiDrawer'
 import ExportDialog from './ExportDialog'
 import TemplateDrawer from './TemplateDrawer'
 import ForkDialog from './ForkDialog'
@@ -736,6 +737,7 @@ export default function TodoManage() {
   // 设置
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [statsOpen, setStatsOpen] = useState(false)
+  const [wikiOpen, setWikiOpen] = useState(false)
   const [templateDrawerOpen, setTemplateDrawerOpen] = useState(false)
   const [dashboardOpen, setDashboardOpen] = useState(false)
   const [transcriptDrawerOpen, setTranscriptDrawerOpen] = useState(false)
@@ -1438,6 +1440,7 @@ export default function TodoManage() {
           onClick={() => setSettingsOpen(true)}
           title="设置"
         />
+        <Button size="small" onClick={() => setWikiOpen(true)}>🧠 记忆</Button>
         <Button size="small" onClick={() => setStatsOpen(true)}>📊 统计</Button>
       </div>
 
@@ -1950,6 +1953,7 @@ export default function TodoManage() {
 
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <StatsDrawer open={statsOpen} onClose={() => setStatsOpen(false)} />
+      <WikiDrawer open={wikiOpen} onClose={() => setWikiOpen(false)} />
       <ExportDialog
         todo={exportTarget}
         open={!!exportTarget}
