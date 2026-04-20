@@ -78,10 +78,13 @@ export default function WikiDrawer({
 
   useEffect(() => {
     if (!activePath) { setContent(''); return }
+    let cancelled = false
     setLoadingContent(true)
-    getWikiFile(activePath).then((c) => { setContent(c) }).catch((e) => {
-      message.error(`读取文件失败：${e.message}`); setContent('')
-    }).finally(() => setLoadingContent(false))
+    getWikiFile(activePath)
+      .then((c) => { if (!cancelled) setContent(c) })
+      .catch((e) => { if (!cancelled) { message.error(`读取文件失败：${e.message}`); setContent('') } })
+      .finally(() => { if (!cancelled) setLoadingContent(false) })
+    return () => { cancelled = true }
   }, [activePath])
 
   const handleRun = async (dryRun: boolean) => {
