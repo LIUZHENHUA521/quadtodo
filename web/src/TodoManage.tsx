@@ -30,6 +30,7 @@ import {
   createRecurringRule, getRecurringRule, updateRecurringRule, deactivateRecurringRule,
   RecurringFrequency, RecurringRule,
   Todo, Quadrant, AiTool, Comment,
+  runWiki, getWikiPending,
 } from './api'
 import { renderAppliedTemplates } from './promptRender'
 import SessionViewer from './SessionViewer'
@@ -724,6 +725,8 @@ export default function TodoManage() {
   const [detailTodo, setDetailTodo] = useState<Todo | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailRule, setDetailRule] = useState<RecurringRule | null>(null)
+  const [memorizing, setMemorizing] = useState(false)
+  const [todoCoverage, setTodoCoverage] = useState<Record<string, boolean>>({})  // todoId → already applied
 
   // 重复规则编辑 Modal
   const [ruleModalOpen, setRuleModalOpen] = useState(false)
@@ -1152,6 +1155,35 @@ export default function TodoManage() {
     }
     listComments(todo.id).then(setComments).catch(() => {}).finally(() => setCommentsLoading(false))
   }
+
+  const handleMemorize = useCallback(async (todo: Todo, force = false) => {
+    if (memorizing) return
+    const already = todoCoverage[todo.id]
+    if (already && !force) {
+      Modal.confirm({
+        title: '这条已经沉淀过',
+        content: '重新沉淀会再跑一次 claude（消耗 token）。确认吗？',
+        onOk: () => handleMemorize(todo, true),
+      })
+      return
+    }
+    setMemorizing(true)
+    try {
+      const res = await runWiki({ todoIds: [todo.id], dryRun: false })
+      message.success(`已沉淀到记忆：写了 ${res.sourcesWritten} 个 source`)
+      setTodoCoverage((prev) => ({ ...prev, [todo.id]: true }))
+    } catch (e: any) {
+      message.error(`沉淀失败：${e.message}`)
+    } finally { setMemorizing(false) }
+  }, [memorizing, todoCoverage])
+
+  useEffect(() => {
+    if (!detailTodo) return
+    getWikiPending().then((list) => {
+      const isPending = list.some((p) => p.id === detailTodo.id)
+      setTodoCoverage((prev) => ({ ...prev, [detailTodo.id]: !isPending && detailTodo.status === 'done' }))
+    }).catch(() => { /* silent */ })
+  }, [detailTodo?.id])
 
   const handleAddComment = async () => {
     if (!detailTodo || !commentText.trim()) return
@@ -1803,6 +1835,15 @@ export default function TodoManage() {
                 setDetailOpen(false)
                 fetchTodos()
               }}>验收通过</Button>
+            )}
+            {detailTodo && (
+              <Button
+                size="small"
+                onClick={() => handleMemorize(detailTodo)}
+                loading={memorizing}
+              >
+                {todoCoverage[detailTodo.id] ? '已沉淀 · 重新沉淀' : '沉淀到记忆'}
+              </Button>
             )}
             {detailTodo && (
               <Button size="small" onClick={() => { setDetailOpen(false); handleEdit(detailTodo) }}>编辑</Button>
