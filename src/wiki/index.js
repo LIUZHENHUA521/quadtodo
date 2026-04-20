@@ -217,9 +217,12 @@ export function createWikiService({
   }
 
   function markOrphansAsFailed() {
+    let n = 0
     for (const orphan of db.findOrphanWikiRuns()) {
       db.failWikiRun(orphan.id, 'quadtodo process died mid-run')
+      n++
     }
+    return n
   }
 
   return {
