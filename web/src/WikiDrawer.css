@@ -1,0 +1,24 @@
+.wiki-drawer-body { display: flex; height: calc(100vh - 120px); gap: 12px; }
+.wiki-tree-pane {
+  width: 260px; flex-shrink: 0; overflow: auto;
+  border-right: 1px solid #f0f0f0; padding-right: 8px;
+}
+.wiki-tree-section { margin-bottom: 12px; }
+.wiki-tree-section-title { font-weight: 600; font-size: 12px; color: #888; margin-bottom: 4px; text-transform: uppercase; }
+.wiki-tree-item {
+  padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wiki-tree-item:hover { background: #f0f0f0; }
+.wiki-tree-item.active { background: #e6f4ff; color: #1677ff; }
+
+.wiki-content-pane { flex: 1; overflow: auto; padding: 0 8px; }
+.wiki-content-empty { color: #aaa; padding: 24px 0; text-align: center; }
+.wiki-content-md pre { background: #f6f8fa; padding: 12px; border-radius: 4px; overflow: auto; }
+.wiki-content-md code { background: #f6f8fa; padding: 2px 4px; border-radius: 3px; font-size: 90%; }
+
+.wiki-pending-section { margin-bottom: 12px; border: 1px solid #f0f0f0; border-radius: 4px; padding: 8px; }
+.wiki-pending-title { font-weight: 600; margin-bottom: 8px; }
+.wiki-pending-row { padding: 4px 0; border-top: 1px solid #fafafa; }
+.wiki-pending-row:first-child { border-top: none; }
+.wiki-pending-meta { font-size: 12px; color: #888; margin-left: 8px; }
