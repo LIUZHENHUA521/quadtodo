@@ -32,6 +32,21 @@ describe('db', () => {
     expect(b.sortOrder).toBe(a.sortOrder + 1024)
   })
 
+  it('subtodos inherit parent quadrant and track parentId', () => {
+    const parent = db.createTodo({ title: 'Parent', quadrant: 2 })
+    const child = db.createTodo({ title: 'Child', quadrant: 4, parentId: parent.id })
+    expect(child.parentId).toBe(parent.id)
+    expect(child.quadrant).toBe(2)
+    expect(child.sortOrder).toBe(1024)
+  })
+
+  it('subtodos sort within the same parent', () => {
+    const parent = db.createTodo({ title: 'Parent', quadrant: 1 })
+    const a = db.createTodo({ title: 'A', quadrant: 1, parentId: parent.id })
+    const b = db.createTodo({ title: 'B', quadrant: 1, parentId: parent.id })
+    expect(b.sortOrder).toBe(a.sortOrder + 1024)
+  })
+
   it('listTodos filters by quadrant', () => {
     db.createTodo({ title: 'Q1', quadrant: 1 })
     db.createTodo({ title: 'Q2', quadrant: 2 })
@@ -130,6 +145,13 @@ describe('db', () => {
     expect(db.listTodos({})).toHaveLength(0)
   })
 
+  it('deleteTodo cascades to subtodos', () => {
+    const parent = db.createTodo({ title: 'Parent', quadrant: 1 })
+    db.createTodo({ title: 'Child', quadrant: 1, parentId: parent.id })
+    db.deleteTodo(parent.id)
+    expect(db.listTodos({})).toHaveLength(0)
+  })
+
   it('getTodo returns null for unknown id', () => {
     expect(db.getTodo('nope')).toBeNull()
   })
@@ -139,6 +161,13 @@ describe('db', () => {
     db.createTodo({ title: 'B', quadrant: 1 })
     expect(db.nextSortOrder(1)).toBe(3 * 1024)
     expect(db.nextSortOrder(2)).toBe(1024)
+  })
+
+  it('updateTodo syncs child quadrant when parent moves', () => {
+    const parent = db.createTodo({ title: 'Parent', quadrant: 1 })
+    const child = db.createTodo({ title: 'Child', quadrant: 1, parentId: parent.id })
+    db.updateTodo(parent.id, { quadrant: 3 })
+    expect(db.getTodo(child.id)?.quadrant).toBe(3)
   })
 
   describe('ai_session_log', () => {

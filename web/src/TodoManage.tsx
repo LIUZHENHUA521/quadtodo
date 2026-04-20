@@ -9,7 +9,7 @@ import {
   ClockCircleOutlined, SearchOutlined,
   PlayCircleOutlined, SettingOutlined, CopyOutlined,
   CodeOutlined, DesktopOutlined, SendOutlined, EditOutlined,
-  DownOutlined, UpOutlined, CloseOutlined,
+  DownOutlined, UpOutlined, CloseOutlined, RightOutlined,
   DashboardOutlined, FileTextOutlined, ExportOutlined,
 } from '@ant-design/icons'
 import {
@@ -97,10 +97,25 @@ function currentStatusLabel(status: Todo['status']) {
   return { text: '待办', className: 'status-chip-idle' }
 }
 
+function todoDndId(todo: Todo) {
+  return todo.parentId ? `subtodo:${todo.id}` : todo.id
+}
+
+function parseTodoDndId(id: string) {
+  if (id.startsWith('subtodo:')) {
+    return { todoId: id.slice('subtodo:'.length), kind: 'subtodo' as const }
+  }
+  return { todoId: id, kind: 'todo' as const }
+}
+
 // ─── 可拖拽任务卡片 ───
 
 interface SortableTodoCardProps {
   todo: Todo
+  children?: Todo[]
+  childHitIds?: Set<string>
+  isSubtodo?: boolean
+  onCreateSubtodo?: (todo: Todo) => void
   onClick: (t: Todo) => void
   onToggleDone: (t: Todo) => void
   onAiExec: (todo: Todo, tool: AiTool, session?: Todo['aiSessions'][number]) => void
@@ -115,27 +130,34 @@ interface SortableTodoCardProps {
   expandedTerminal: { todoId: string; sessionId: string } | null
   setExpandedTerminal: (v: { todoId: string; sessionId: string } | null) => void
   hiddenTerminalSessionId?: string | null
+  hiddenTerminalSessionIdByTodo?: Record<string, string | null>
   onHideTerminal: (todoId: string, sessionId: string) => void
   onShowTerminal: (todoId: string) => void
   terminalCollapsed: boolean
+  collapsedTerminalByTodo?: Record<string, boolean>
   onToggleTerminalCollapsed: (todoId: string) => void
   sideBySideSessionId: string | null
+  sideBySideByTodo?: Record<string, string | null>
   onSetSideBySide: (todoId: string, secondSessionId: string | null) => void
   isNarrow: boolean
   onRequestFork: (todo: Todo, sessionId: string) => void
   onRefresh: () => void
 }
 
-function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onCopyPrompt, onExport, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionId, onHideTerminal, onShowTerminal, terminalCollapsed, onToggleTerminalCollapsed, sideBySideSessionId, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: SortableTodoCardProps) {
+function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false, onCreateSubtodo, onClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onCopyPrompt, onExport, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionId, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, terminalCollapsed, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideSessionId, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: SortableTodoCardProps) {
   const [editingLabelSessionId, setEditingLabelSessionId] = useState<string | null>(null)
   const [editingLabelText, setEditingLabelText] = useState('')
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todo.id })
+  const [childrenExpanded, setChildrenExpanded] = useState(true)
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todoDndId(todo) })
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
   }
   const isAiActive = todo.status === 'ai_running' || todo.status === 'ai_pending'
   const terminalOpen = expandedTerminal?.todoId === todo.id
+  const hasChildren = children.length > 0
+  const showChildren = hasChildren && (!childHitIds || childHitIds.size === 0 || childrenExpanded)
+  const cardClassName = `todo-card quadrant-${todo.quadrant} ${isDragging ? 'dragging' : ''} ${todo.status === 'done' ? 'done' : ''} ${isSubtodo ? 'subtodo-card' : ''}`
   const sessionId = terminalOpen ? expandedTerminal!.sessionId : todo.aiSession?.sessionId
   const historySessions = todo.aiSessions || []
   const hasHistory = historySessions.length > 0
@@ -161,7 +183,7 @@ function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onAiExecBoth,
       style={style}
       {...finalAttributes}
       tabIndex={terminalOpen ? -1 : undefined}
-      className={`todo-card quadrant-${todo.quadrant} ${isDragging ? 'dragging' : ''} ${todo.status === 'done' ? 'done' : ''}`}
+      className={cardClassName}
     >
       <div className="todo-card-shell">
         <div
@@ -264,6 +286,11 @@ function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onAiExecBoth,
             <Tag className="todo-toolbar-tag" color={todo.status === 'ai_pending' ? 'error' : todo.status === 'ai_done' ? 'warning' : 'processing'}>
               {todo.status === 'ai_pending' ? '待交互' : todo.status === 'ai_done' ? '待验收' : '运行中'}
             </Tag>
+          )}
+          {!isSubtodo && onCreateSubtodo && (
+            <Tooltip title="添加子待办">
+              <Button size="small" icon={<PlusOutlined />} onClick={() => onCreateSubtodo(todo)} className="todo-primary-action" />
+            </Tooltip>
           )}
           <Tooltip title="导出 Markdown / 推送到飞书">
             <Button size="small" icon={<ExportOutlined />} onClick={() => onExport(todo)} className="todo-primary-action" />
@@ -417,6 +444,58 @@ function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onAiExecBoth,
             </div>
           </div>
         )}
+
+        {!isSubtodo && hasChildren && (
+          <div className="subtodo-group" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="subtodo-group-toggle"
+              onClick={() => setChildrenExpanded(v => !v)}
+            >
+              {childrenExpanded ? <DownOutlined /> : <RightOutlined />}
+              <span>子待办 {children.length}</span>
+            </button>
+            {showChildren && (
+              <SortableContext items={children.map(child => todoDndId(child))} strategy={verticalListSortingStrategy}>
+                <div className="subtodo-list">
+                  {children.map(child => (
+                    <SortableTodoCard
+                      key={child.id}
+                      todo={child}
+                      isSubtodo
+                      onClick={onClick}
+                      onToggleDone={onToggleDone}
+                      onAiExec={onAiExec}
+                      onRequestFork={onRequestFork}
+                      onAiExecBoth={onAiExecBoth}
+                      onDeleteAiSession={onDeleteAiSession}
+                      onUpdateSessionLabel={onUpdateSessionLabel}
+                      onDelete={onDelete}
+                      onOpenTrae={onOpenTrae}
+                      onOpenTerminal={onOpenTerminal}
+                      onCopyPrompt={onCopyPrompt}
+                      onExport={onExport}
+                      expandedTerminal={expandedTerminal}
+                      setExpandedTerminal={setExpandedTerminal}
+                      hiddenTerminalSessionId={hiddenTerminalSessionIdByTodo?.[child.id] || null}
+                      hiddenTerminalSessionIdByTodo={hiddenTerminalSessionIdByTodo}
+                      onHideTerminal={onHideTerminal}
+                      onShowTerminal={onShowTerminal}
+                      terminalCollapsed={!!collapsedTerminalByTodo?.[child.id]}
+                      collapsedTerminalByTodo={collapsedTerminalByTodo}
+                      onToggleTerminalCollapsed={onToggleTerminalCollapsed}
+                      sideBySideSessionId={sideBySideByTodo?.[child.id] || null}
+                      sideBySideByTodo={sideBySideByTodo}
+                      onSetSideBySide={onSetSideBySide}
+                      isNarrow={isNarrow}
+                      onRefresh={onRefresh}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 内嵌 AI 终端 */}
@@ -525,6 +604,9 @@ function SortableTodoCard({ todo, onClick, onToggleDone, onAiExec, onAiExecBoth,
 interface QuadrantZoneProps {
   config: typeof QUADRANT_CONFIG[0]
   todos: Todo[]
+  childrenByParentId: Record<string, Todo[]>
+  childHitIdsByParentId: Record<string, Set<string>>
+  onCreateSubtodo: (todo: Todo) => void
   onCardClick: (t: Todo) => void
   onToggleDone: (t: Todo) => void
   onAiExec: (todo: Todo, tool: AiTool, session?: Todo['aiSessions'][number]) => void
@@ -551,7 +633,7 @@ interface QuadrantZoneProps {
   onRefresh: () => void
 }
 
-function QuadrantZone({ config, todos, onCardClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onCopyPrompt, onExport, style, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: QuadrantZoneProps) {
+function QuadrantZone({ config, todos, childrenByParentId, childHitIdsByParentId, onCreateSubtodo, onCardClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onCopyPrompt, onExport, style, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: QuadrantZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `quadrant-${config.q}` })
 
   const header = (
@@ -563,12 +645,15 @@ function QuadrantZone({ config, todos, onCardClick, onToggleDone, onAiExec, onAi
   )
 
   const content = (
-    <SortableContext items={todos.map(t => t.id)} strategy={verticalListSortingStrategy}>
+    <SortableContext items={todos.map(t => todoDndId(t))} strategy={verticalListSortingStrategy}>
       <div ref={setNodeRef} className="todo-quadrant-list" style={{ minHeight: 60 }}>
         {todos.map((t) => (
           <SortableTodoCard
             key={t.id}
             todo={t}
+            children={childrenByParentId[t.id] || []}
+            childHitIds={childHitIdsByParentId[t.id]}
+            onCreateSubtodo={onCreateSubtodo}
             onClick={onCardClick}
             onToggleDone={onToggleDone}
             onAiExec={onAiExec}
@@ -628,6 +713,7 @@ export default function TodoManage() {
   // Drawer
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingTodo, setEditingTodo] = useState<Todo | null>(null)
+  const [parentForCreate, setParentForCreate] = useState<Todo | null>(null)
   const [form] = Form.useForm()
   const selectedWorkDir = Form.useWatch('workDir', form)
 
@@ -754,6 +840,31 @@ export default function TodoManage() {
     setLoading(false)
   }, [filterStatus, keyword])
 
+  const childrenByParentId = useMemo(() => {
+    const groups: Record<string, Todo[]> = {}
+    for (const t of todos) {
+      if (!t.parentId) continue
+      if (!groups[t.parentId]) groups[t.parentId] = []
+      groups[t.parentId].push(t)
+    }
+    for (const key of Object.keys(groups)) {
+      groups[key].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    }
+    return groups
+  }, [todos])
+
+  const childHitIdsByParentId = useMemo(() => {
+    if (!keyword.trim()) return {}
+    const groups: Record<string, Set<string>> = {}
+    for (const t of todos) {
+      if (!t.parentId) continue
+      if (!t.title.toLowerCase().includes(keyword.toLowerCase())) continue
+      if (!groups[t.parentId]) groups[t.parentId] = new Set<string>()
+      groups[t.parentId].add(t.id)
+    }
+    return groups
+  }, [todos, keyword])
+
   useEffect(() => { fetchTodos() }, [fetchTodos])
 
   // ─── 按象限分组 ───
@@ -761,6 +872,7 @@ export default function TodoManage() {
   const todosByQuadrant = useMemo(() => {
     const groups: Record<number, Todo[]> = { 1: [], 2: [], 3: [], 4: [] }
     for (const t of todos) {
+      if (t.parentId) continue
       const q = t.quadrant || 4
       if (groups[q]) groups[q].push(t)
     }
@@ -774,12 +886,22 @@ export default function TodoManage() {
 
   const handleCreate = () => {
     setEditingTodo(null)
+    setParentForCreate(null)
     form.resetFields()
     form.setFieldsValue({ quadrant: 1, workDir: undefined })
     setDrawerOpen(true)
   }
 
+  const handleCreateSubtodo = (todo: Todo) => {
+    setEditingTodo(null)
+    setParentForCreate(todo)
+    form.resetFields()
+    form.setFieldsValue({ quadrant: todo.quadrant, workDir: todo.workDir || undefined })
+    setDrawerOpen(true)
+  }
+
   const handleEdit = (todo: Todo) => {
+    setParentForCreate(null)
     setEditingTodo(todo)
     form.setFieldsValue({
       title: todo.title,
@@ -838,17 +960,20 @@ export default function TodoManage() {
         workDir: values.workDir || null,
         brainstorm: !!values.brainstorm,
         appliedTemplateIds: values.useTemplates ? (values.appliedTemplateIds || []) : [],
+        parentId: parentForCreate?.id ?? undefined,
       }
 
       if (editingTodo) {
-        await updateTodo(editingTodo.id, data)
+        await updateTodo(editingTodo.id, { ...data, parentId: editingTodo.parentId })
         message.success('已更新')
         setDrawerOpen(false)
+        setParentForCreate(null)
         fetchTodos()
       } else {
         await createTodo(data)
-        message.success('已创建')
+        message.success(parentForCreate ? '子待办已创建' : '已创建')
         setDrawerOpen(false)
+        setParentForCreate(null)
         fetchTodos()
       }
     } catch (e: any) {
@@ -1025,7 +1150,8 @@ export default function TodoManage() {
   // ─── 拖拽 ───
 
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(String(event.active.id))
+    const { todoId } = parseTodoDndId(String(event.active.id))
+    setActiveId(todoId)
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -1033,70 +1159,90 @@ export default function TodoManage() {
     const { active, over } = event
     if (!over) return
 
-    const todoId = String(active.id)
-    const overId = String(over.id)
-    if (todoId === overId) return
+    const activeParsed = parseTodoDndId(String(active.id))
+    const overRawId = String(over.id)
+    const overParsed = overRawId.startsWith('quadrant-') ? null : parseTodoDndId(overRawId)
+    if (activeParsed.todoId === overParsed?.todoId) return
 
-    // 判断目标象限
+    const draggedTodo = todos.find(t => t.id === activeParsed.todoId)
+    if (!draggedTodo) return
+
+    if (draggedTodo.parentId) {
+      if (!overParsed) return
+      const overTodo = todos.find(t => t.id === overParsed.todoId)
+      if (!overTodo || overTodo.parentId !== draggedTodo.parentId) return
+      const siblings = (childrenByParentId[draggedTodo.parentId] || []).slice()
+      const oldIdx = siblings.findIndex(t => t.id === draggedTodo.id)
+      const newIdx = siblings.findIndex(t => t.id === overTodo.id)
+      if (oldIdx === -1 || newIdx === -1 || oldIdx === newIdx) return
+      const reordered = arrayMove(siblings, oldIdx, newIdx)
+      const updates = reordered.map((t, i) => ({ id: t.id, sortOrder: (i + 1) * 1024 }))
+      setTodos(prev => {
+        const soMap = new Map(updates.map(u => [u.id, u.sortOrder]))
+        return prev.map(t => soMap.has(t.id) ? { ...t, sortOrder: soMap.get(t.id)! } : t)
+      })
+      try {
+        await Promise.all(updates.map(u => updateTodo(u.id, { sortOrder: u.sortOrder, parentId: draggedTodo.parentId })))
+      } catch (e: any) {
+        message.error(e?.message || '子待办排序失败')
+        fetchTodos()
+      }
+      return
+    }
+
     let targetQuadrant: Quadrant | null = null
-    if (overId.startsWith('quadrant-')) {
-      targetQuadrant = Number(overId.replace('quadrant-', '')) as Quadrant
-    } else {
-      const overTodo = todos.find(t => t.id === overId)
-      if (overTodo) targetQuadrant = overTodo.quadrant
+    if (overRawId.startsWith('quadrant-')) {
+      targetQuadrant = Number(overRawId.replace('quadrant-', '')) as Quadrant
+    } else if (overParsed) {
+      const overTodo = todos.find(t => t.id === overParsed.todoId)
+      if (!overTodo || overTodo.parentId) return
+      targetQuadrant = overTodo.quadrant
     }
 
     if (!targetQuadrant) return
 
-    const draggedTodo = todos.find(t => t.id === todoId)
-    if (!draggedTodo) return
-
     if (draggedTodo.quadrant !== targetQuadrant) {
-      // 跨象限：更新象限，放到目标象限末尾
-      const qTodos = todos.filter(t => t.quadrant === targetQuadrant)
+      const qTodos = todos.filter(t => t.quadrant === targetQuadrant && !t.parentId)
       const maxSort = qTodos.length > 0 ? Math.max(...qTodos.map(t => t.sortOrder || 0)) : 0
       const newSort = maxSort + 1024
-      setTodos(prev => prev.map(t => t.id === todoId ? { ...t, quadrant: targetQuadrant!, sortOrder: newSort } : t))
+      setTodos(prev => prev.map(t => t.id === draggedTodo.id ? { ...t, quadrant: targetQuadrant!, sortOrder: newSort } : t))
       try {
-        await updateTodo(todoId, { quadrant: targetQuadrant, sortOrder: newSort })
+        await updateTodo(draggedTodo.id, { quadrant: targetQuadrant, sortOrder: newSort })
       } catch (e: any) {
         message.error(e?.message || '移动失败')
         fetchTodos()
       }
+      return
+    }
+
+    if (!overParsed) return
+    const qTodos = todos.filter(t => t.quadrant === targetQuadrant && !t.parentId).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    const oldIdx = qTodos.findIndex(t => t.id === draggedTodo.id)
+    const newIdx = qTodos.findIndex(t => t.id === overParsed.todoId)
+    if (oldIdx === -1 || newIdx === -1 || oldIdx === newIdx) return
+
+    const reordered = arrayMove(qTodos, oldIdx, newIdx)
+    const prev = newIdx > 0 ? (reordered[newIdx - 1].sortOrder || 0) : 0
+    const next = newIdx < reordered.length - 1 ? (reordered[newIdx + 1].sortOrder || 0) : prev + 2048
+    const newSort = Math.round((prev + next) / 2)
+
+    if (newSort === prev || newSort === next) {
+      const updates: { id: string; sortOrder: number }[] = []
+      reordered.forEach((t, i) => {
+        updates.push({ id: t.id, sortOrder: (i + 1) * 1024 })
+      })
+      setTodos(prevTodos => {
+        const soMap = new Map(updates.map(u => [u.id, u.sortOrder]))
+        return prevTodos.map(t => soMap.has(t.id) ? { ...t, sortOrder: soMap.get(t.id)! } : t)
+      })
+      await Promise.all(updates.map(u => updateTodo(u.id, { sortOrder: u.sortOrder })))
     } else {
-      // 同象限内排序
-      const qTodos = todos.filter(t => t.quadrant === targetQuadrant).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
-      const oldIdx = qTodos.findIndex(t => t.id === todoId)
-      const newIdx = qTodos.findIndex(t => t.id === overId)
-      if (oldIdx === -1 || newIdx === -1 || oldIdx === newIdx) return
-
-      const reordered = arrayMove(qTodos, oldIdx, newIdx)
-
-      // 计算新 sortOrder：取新位置前后邻居的中间值
-      const prev = newIdx > 0 ? (reordered[newIdx - 1].sortOrder || 0) : 0
-      const next = newIdx < reordered.length - 1 ? (reordered[newIdx + 1].sortOrder || 0) : prev + 2048
-      const newSort = Math.round((prev + next) / 2)
-
-      // 如果和邻居重合（间距 < 1），重新编号整个象限
-      if (newSort === prev || newSort === next) {
-        const updates: { id: string; sortOrder: number }[] = []
-        reordered.forEach((t, i) => {
-          const so = (i + 1) * 1024
-          updates.push({ id: t.id, sortOrder: so })
-        })
-        setTodos(prevTodos => {
-          const soMap = new Map(updates.map(u => [u.id, u.sortOrder]))
-          return prevTodos.map(t => soMap.has(t.id) ? { ...t, sortOrder: soMap.get(t.id)! } : t)
-        })
-        await Promise.all(updates.map(u => updateTodo(u.id, { sortOrder: u.sortOrder })))
-      } else {
-        setTodos(prevTodos => prevTodos.map(t => t.id === todoId ? { ...t, sortOrder: newSort } : t))
-        try {
-          await updateTodo(todoId, { sortOrder: newSort })
-        } catch (e: any) {
-          message.error(e?.message || '排序失败')
-          fetchTodos()
-        }
+      setTodos(prevTodos => prevTodos.map(t => t.id === draggedTodo.id ? { ...t, sortOrder: newSort } : t))
+      try {
+        await updateTodo(draggedTodo.id, { sortOrder: newSort })
+      } catch (e: any) {
+        message.error(e?.message || '排序失败')
+        fetchTodos()
       }
     }
   }
@@ -1235,6 +1381,9 @@ export default function TodoManage() {
             <div className="todo-board-row" style={{ flex: splitH }}>
               <QuadrantZone
                 config={QUADRANT_CONFIG[0]} todos={todosByQuadrant[1] || []}
+                childrenByParentId={childrenByParentId}
+                childHitIdsByParentId={childHitIdsByParentId}
+                onCreateSubtodo={handleCreateSubtodo}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
                 onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
                 onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
@@ -1274,6 +1423,9 @@ export default function TodoManage() {
               />
               <QuadrantZone
                 config={QUADRANT_CONFIG[1]} todos={todosByQuadrant[2] || []}
+                childrenByParentId={childrenByParentId}
+                childHitIdsByParentId={childHitIdsByParentId}
+                onCreateSubtodo={handleCreateSubtodo}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
                 onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
                 onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
@@ -1319,6 +1471,9 @@ export default function TodoManage() {
             <div className="todo-board-row" style={{ flex: 100 - splitH }}>
               <QuadrantZone
                 config={QUADRANT_CONFIG[2]} todos={todosByQuadrant[3] || []}
+                childrenByParentId={childrenByParentId}
+                childHitIdsByParentId={childHitIdsByParentId}
+                onCreateSubtodo={handleCreateSubtodo}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
                 onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
                 onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
@@ -1358,6 +1513,9 @@ export default function TodoManage() {
               />
               <QuadrantZone
                 config={QUADRANT_CONFIG[3]} todos={todosByQuadrant[4] || []}
+                childrenByParentId={childrenByParentId}
+                childHitIdsByParentId={childHitIdsByParentId}
+                onCreateSubtodo={handleCreateSubtodo}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
                 onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
                 onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
@@ -1389,9 +1547,9 @@ export default function TodoManage() {
 
       {/* 新建/编辑 Drawer */}
       <Drawer
-        title={editingTodo ? '编辑待办' : '新建待办'}
+        title={editingTodo ? '编辑待办' : parentForCreate ? `新建子待办 · ${parentForCreate.title}` : '新建待办'}
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => { setDrawerOpen(false); setParentForCreate(null) }}
         width={640}
         extra={
           <Button type="primary" onClick={handleSave}>保存</Button>
@@ -1443,7 +1601,7 @@ export default function TodoManage() {
             </div>
           </Form.Item>
           <Form.Item name="quadrant" label="象限">
-            <Radio.Group>
+            <Radio.Group disabled={!!parentForCreate}>
               {QUADRANT_CONFIG.map(c => (
                 <Radio.Button key={c.q} value={c.q} style={{ fontSize: 12 }}>
                   {c.label}
@@ -1486,6 +1644,7 @@ export default function TodoManage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13, marginBottom: 16 }}>
               <div><strong>象限：</strong>{QUADRANT_CONFIG.find(c => c.q === detailTodo.quadrant)?.label}</div>
               <div><strong>状态：</strong>{detailTodo.status === 'done' ? '已完成' : '待办'}</div>
+              <div><strong>层级：</strong>{detailTodo.parentId ? '子待办' : '顶级待办'}</div>
               <div><strong>截止：</strong>{formatDate(detailTodo.dueDate) || '无'}</div>
               <div><strong>工作目录：</strong>{detailTodo.workDir || '默认目录'}</div>
             </div>

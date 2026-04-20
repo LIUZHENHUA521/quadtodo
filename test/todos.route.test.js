@@ -34,6 +34,16 @@ describe('routes/todos', () => {
     expect(res.body.todo.id).toBeTruthy()
   })
 
+  it('POST /api/todos can create a subtodo under a parent', async () => {
+    const parent = await request(app).post('/api/todos').send({ title: 'Parent', quadrant: 2 })
+    const res = await request(app)
+      .post('/api/todos')
+      .send({ title: 'Child', quadrant: 4, parentId: parent.body.todo.id })
+    expect(res.status).toBe(200)
+    expect(res.body.todo.parentId).toBe(parent.body.todo.id)
+    expect(res.body.todo.quadrant).toBe(2)
+  })
+
   it('POST /api/todos rejects missing title', async () => {
     const res = await request(app).post('/api/todos').send({ quadrant: 1 })
     expect(res.status).toBe(400)
@@ -51,6 +61,15 @@ describe('routes/todos', () => {
     expect(res.body.todo.workDir).toBe('/tmp/project-b')
   })
 
+  it('PUT /api/todos/:id prevents reparenting a subtodo', async () => {
+    const parentA = await request(app).post('/api/todos').send({ title: 'Parent A', quadrant: 1 })
+    const parentB = await request(app).post('/api/todos').send({ title: 'Parent B', quadrant: 1 })
+    const child = await request(app).post('/api/todos').send({ title: 'Child', quadrant: 1, parentId: parentA.body.todo.id })
+    const res = await request(app).put(`/api/todos/${child.body.todo.id}`).send({ parentId: parentB.body.todo.id })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toBe('reparent_not_allowed')
+  })
+
   it('PUT /api/todos/:id returns 404 for unknown id', async () => {
     const res = await request(app).put('/api/todos/nope').send({ title: 'x' })
     expect(res.status).toBe(404)
@@ -59,6 +78,15 @@ describe('routes/todos', () => {
   it('DELETE /api/todos/:id removes the row', async () => {
     const create = await request(app).post('/api/todos').send({ title: 'A', quadrant: 1 })
     const del = await request(app).delete(`/api/todos/${create.body.todo.id}`)
+    expect(del.status).toBe(200)
+    const list = await request(app).get('/api/todos')
+    expect(list.body.list).toHaveLength(0)
+  })
+
+  it('DELETE /api/todos/:id cascades to subtodos', async () => {
+    const parent = await request(app).post('/api/todos').send({ title: 'Parent', quadrant: 1 })
+    await request(app).post('/api/todos').send({ title: 'Child', quadrant: 1, parentId: parent.body.todo.id })
+    const del = await request(app).delete(`/api/todos/${parent.body.todo.id}`)
     expect(del.status).toBe(200)
     const list = await request(app).get('/api/todos')
     expect(list.body.list).toHaveLength(0)
@@ -94,5 +122,13 @@ describe('routes/todos', () => {
     await request(app).post('/api/todos').send({ title: 'Write docs', quadrant: 2 })
     const res = await request(app).get('/api/todos?keyword=login')
     expect(res.body.list).toHaveLength(1)
+  })
+
+  it('GET /api/todos?keyword= includes parent and child context', async () => {
+    const parent = await request(app).post('/api/todos').send({ title: 'Build feature', quadrant: 1 })
+    await request(app).post('/api/todos').send({ title: 'Fix login child', quadrant: 1, parentId: parent.body.todo.id })
+    const res = await request(app).get('/api/todos?keyword=login')
+    expect(res.body.list).toHaveLength(2)
+    expect(res.body.list.some(item => item.id === parent.body.todo.id)).toBe(true)
   })
 })

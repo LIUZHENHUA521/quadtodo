@@ -30,6 +30,7 @@ export async function buildTodoExport(db, todoId, { turns = 'summary', turnLimit
 	if (!todo) return null
 	const comments = db.listComments(todoId)
 	const aiSessions = Array.isArray(todo.aiSessions) ? todo.aiSessions : []
+	const subtodos = todo.parentId ? [] : db.listTodos({ quadrant: todo.quadrant }).filter(item => item.parentId === todo.id)
 
 	const sessionRows = []
 	for (const s of aiSessions) {
@@ -68,7 +69,7 @@ export async function buildTodoExport(db, todoId, { turns = 'summary', turnLimit
 		})
 	}
 
-	return { todo, comments, sessions: sessionRows, generatedAt: Date.now(), turnsMode: turns, turnLimit }
+	return { todo, comments, sessions: sessionRows, subtodos, generatedAt: Date.now(), turnsMode: turns, turnLimit }
 }
 
 function fmtTokens(n) {
@@ -116,7 +117,7 @@ function pickHighlightTurns(turns, limit) {
 
 export function renderTodoMarkdown(report) {
 	if (!report) return ''
-	const { todo, comments, sessions, turnsMode, turnLimit } = report
+	const { todo, comments, sessions, subtodos = [], turnsMode, turnLimit } = report
 	const lines = []
 	lines.push(`# ${todo.title}`)
 	lines.push('')
@@ -143,6 +144,15 @@ export function renderTodoMarkdown(report) {
 		lines.push('')
 		for (const c of comments) {
 			lines.push(`- **${fmtDateTime(c.createdAt)}** ${c.content.replace(/\n/g, ' ')}`)
+		}
+		lines.push('')
+	}
+
+	if (subtodos.length) {
+		lines.push('## 子待办')
+		lines.push('')
+		for (const subtodo of subtodos) {
+			lines.push(`- [${subtodo.status === 'done' ? 'x' : ' '}] ${subtodo.title}`)
 		}
 		lines.push('')
 	}

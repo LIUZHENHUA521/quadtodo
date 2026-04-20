@@ -20,6 +20,7 @@ export interface AiSession {
 
 export interface Todo {
   id: string
+  parentId: string | null
   title: string
   description: string
   quadrant: Quadrant
@@ -153,6 +154,7 @@ export async function createTodo(data: {
   workDir?: string | null
   brainstorm?: boolean
   appliedTemplateIds?: string[]
+  parentId?: string | null
 }): Promise<Todo> {
   const body = await jsonFetch<{ ok: true; todo: Todo }>('/api/todos', {
     method: 'POST',

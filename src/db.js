@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS todos (
   id          TEXT PRIMARY KEY,
+  parent_id   TEXT,
   title       TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   quadrant    INTEGER NOT NULL CHECK(quadrant IN (1,2,3,4)),
@@ -16,6 +17,8 @@ CREATE TABLE IF NOT EXISTS todos (
   updated_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_todos_quadrant_sort ON todos(quadrant, sort_order);
+CREATE INDEX IF NOT EXISTS idx_todos_parent_sort   ON todos(parent_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_todos_quad_parent_sort ON todos(quadrant, parent_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_todos_status        ON todos(status);
 
 CREATE TABLE IF NOT EXISTS comments (
@@ -98,6 +101,7 @@ function rowToTodo(row) {
   const aiSessions = normalizeAiSessions(row.ai_session ? JSON.parse(row.ai_session) : null)
   return {
     id: row.id,
+    parentId: row.parent_id ?? null,
     title: row.title,
     description: row.description,
     quadrant: row.quadrant,
@@ -135,6 +139,9 @@ export function openDb(file = ':memory:') {
   }
 
   const columns = db.prepare(`PRAGMA table_info(todos)`).all()
+  if (!columns.some(col => col.name === 'parent_id')) {
+    db.exec(`ALTER TABLE todos ADD COLUMN parent_id TEXT`)
+  }
   if (!columns.some(col => col.name === 'work_dir')) {
     db.exec(`ALTER TABLE todos ADD COLUMN work_dir TEXT`)
   }
@@ -144,6 +151,8 @@ export function openDb(file = ':memory:') {
   if (!columns.some(col => col.name === 'applied_template_ids')) {
     db.exec(`ALTER TABLE todos ADD COLUMN applied_template_ids TEXT`)
   }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_parent_sort ON todos(parent_id, sort_order)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_quad_parent_sort ON todos(quadrant, parent_id, sort_order)`)
 
   const tfCols = db.prepare(`PRAGMA table_info(transcript_files)`).all().map(c => c.name)
   for (const [name, type] of [
@@ -159,25 +168,39 @@ export function openDb(file = ':memory:') {
 
   const stmts = {
     insert: db.prepare(`
-      INSERT INTO todos (id, title, description, quadrant, status, due_date, work_dir, brainstorm, applied_template_ids, sort_order, ai_session, created_at, updated_at)
-      VALUES (@id, @title, @description, @quadrant, @status, @due_date, @work_dir, @brainstorm, @applied_template_ids, @sort_order, @ai_session, @created_at, @updated_at)
+      INSERT INTO todos (id, parent_id, title, description, quadrant, status, due_date, work_dir, brainstorm, applied_template_ids, sort_order, ai_session, created_at, updated_at)
+      VALUES (@id, @parent_id, @title, @description, @quadrant, @status, @due_date, @work_dir, @brainstorm, @applied_template_ids, @sort_order, @ai_session, @created_at, @updated_at)
     `),
     getById: db.prepare(`SELECT * FROM todos WHERE id = ?`),
-    maxSortInQuadrant: db.prepare(`SELECT MAX(sort_order) AS m FROM todos WHERE quadrant = ?`),
+    listChildrenByParent: db.prepare(`SELECT id FROM todos WHERE parent_id = ? ORDER BY sort_order ASC, created_at ASC`),
+    maxSortInQuadrant: db.prepare(`SELECT MAX(sort_order) AS m FROM todos WHERE quadrant = ? AND parent_id IS NULL`),
+    maxSortInParent: db.prepare(`SELECT MAX(sort_order) AS m FROM todos WHERE parent_id = ?`),
     deleteById: db.prepare(`DELETE FROM todos WHERE id = ?`),
   }
 
-  function nextSortOrder(quadrant) {
-    const row = stmts.maxSortInQuadrant.get(quadrant)
+  function nextSortOrder(quadrant, parentId = null) {
+    const row = parentId
+      ? stmts.maxSortInParent.get(parentId)
+      : stmts.maxSortInQuadrant.get(quadrant)
     const m = row?.m
     return (m == null ? 0 : m) + 1024
   }
 
+  function resolveParent(parentId) {
+    if (parentId == null) return null
+    const parent = rowToTodo(stmts.getById.get(parentId))
+    if (!parent) throw new Error('parent_not_found')
+    if (parent.parentId) throw new Error('nested_subtodo_not_allowed')
+    return parent
+  }
+
   function createTodo(data) {
     const now = Date.now()
-    const quadrant = Number(data.quadrant) || 4
+    const parent = resolveParent(data.parentId ?? null)
+    const quadrant = parent ? parent.quadrant : (Number(data.quadrant) || 4)
     const row = {
       id: randomUUID(),
+      parent_id: parent?.id ?? null,
       title: data.title,
       description: data.description || '',
       quadrant,
@@ -186,7 +209,7 @@ export function openDb(file = ':memory:') {
       work_dir: data.workDir ?? null,
       brainstorm: data.brainstorm ? 1 : 0,
       applied_template_ids: Array.isArray(data.appliedTemplateIds) ? JSON.stringify(data.appliedTemplateIds) : null,
-      sort_order: data.sortOrder != null ? data.sortOrder : nextSortOrder(quadrant),
+      sort_order: data.sortOrder != null ? data.sortOrder : nextSortOrder(quadrant, parent?.id ?? null),
       ai_session: JSON.stringify(normalizeAiSessions(data.aiSessions ?? data.aiSession)),
       created_at: now,
       updated_at: now,
@@ -200,7 +223,7 @@ export function openDb(file = ':memory:') {
   }
 
   function updateTodo(id, patch) {
-    const existing = stmts.getById.get(id)
+    const existing = rowToTodo(stmts.getById.get(id))
     if (!existing) return null
     const fields = []
     const bind = { id }
@@ -214,11 +237,31 @@ export function openDb(file = ':memory:') {
       brainstorm: 'brainstorm',
       sortOrder: 'sort_order',
     }
+
+    let nextParentId = existing.parentId
+    if (patch.parentId !== undefined) {
+      nextParentId = patch.parentId
+    }
+    const parent = resolveParent(nextParentId)
+    if (parent && parent.id === id) throw new Error('parent_cycle')
+    const nextQuadrant = parent ? parent.quadrant : (patch.quadrant !== undefined ? Number(patch.quadrant) || 4 : existing.quadrant)
+    if (parent && patch.quadrant !== undefined && parent.quadrant !== nextQuadrant) {
+      throw new Error('parent_quadrant_mismatch')
+    }
+
     for (const [k, col] of Object.entries(map)) {
       if (patch[k] !== undefined) {
         fields.push(`${col} = @${col}`)
         bind[col] = k === 'brainstorm' ? (patch[k] ? 1 : 0) : patch[k]
       }
+    }
+    if (parent && patch.quadrant === undefined && existing.quadrant !== parent.quadrant) {
+      fields.push(`quadrant = @quadrant`)
+      bind.quadrant = parent.quadrant
+    }
+    if (patch.parentId !== undefined) {
+      fields.push(`parent_id = @parent_id`)
+      bind.parent_id = parent?.id ?? null
     }
     if (patch.appliedTemplateIds !== undefined) {
       fields.push(`applied_template_ids = @applied_template_ids`)
@@ -233,14 +276,23 @@ export function openDb(file = ':memory:') {
       fields.push(`ai_session = @ai_session`)
       bind.ai_session = JSON.stringify(normalizeAiSessions(patch.aiSessions))
     }
+    if (!fields.length) return existing
+    const now = Date.now()
     fields.push(`updated_at = @updated_at`)
-    bind.updated_at = Date.now()
+    bind.updated_at = now
     const sql = `UPDATE todos SET ${fields.join(', ')} WHERE id = @id`
     db.prepare(sql).run(bind)
+    if (!existing.parentId && nextQuadrant !== existing.quadrant) {
+      db.prepare(`UPDATE todos SET quadrant = ?, updated_at = ? WHERE parent_id = ?`).run(nextQuadrant, now, id)
+    }
     return rowToTodo(stmts.getById.get(id))
   }
 
   function deleteTodo(id) {
+    const children = stmts.listChildrenByParent.all(id)
+    for (const child of children) {
+      deleteTodo(child.id)
+    }
     stmts.deleteById.run(id)
   }
 
@@ -258,13 +310,29 @@ export function openDb(file = ':memory:') {
       where.push('status = ?')
       params.push('done')
     }
-    if (keyword) {
-      where.push('LOWER(title) LIKE ?')
-      params.push(`%${keyword.toLowerCase()}%`)
-    }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    const rows = db.prepare(`SELECT * FROM todos ${whereSql} ORDER BY quadrant ASC, sort_order ASC`).all(...params)
-    return rows.map(rowToTodo)
+    const rows = db.prepare(`
+      SELECT * FROM todos
+      ${whereSql}
+      ORDER BY quadrant ASC, COALESCE(parent_id, id) ASC, CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END ASC, sort_order ASC, created_at ASC
+    `).all(...params)
+    const todos = rows.map(rowToTodo)
+    if (!keyword) return todos
+
+    const needle = keyword.toLowerCase()
+    const byId = new Map(todos.map(todo => [todo.id, todo]))
+    const matched = todos.filter(todo => todo.title.toLowerCase().includes(needle))
+    const includeIds = new Set(matched.map(todo => todo.id))
+    for (const todo of matched) {
+      if (todo.parentId) {
+        includeIds.add(todo.parentId)
+      } else {
+        for (const child of todos) {
+          if (child.parentId === todo.id) includeIds.add(child.id)
+        }
+      }
+    }
+    return todos.filter(todo => includeIds.has(todo.id) || (todo.parentId && includeIds.has(todo.parentId)))
   }
 
   const commentStmts = {

@@ -18,12 +18,21 @@ export function createTodosRouter({ db, logDir, getPricing }) {
 
   router.post('/', (req, res) => {
     try {
-      const { title, description, quadrant, dueDate, workDir, brainstorm, appliedTemplateIds } = req.body || {}
+      const { title, description, quadrant, dueDate, workDir, brainstorm, appliedTemplateIds, parentId } = req.body || {}
       if (!title || typeof title !== 'string') {
         res.status(400).json({ ok: false, error: 'missing title' })
         return
       }
-      const q = Number(quadrant) || 4
+      const parent = parentId ? db.getTodo(parentId) : null
+      if (parentId && !parent) {
+        res.status(400).json({ ok: false, error: 'parent_not_found' })
+        return
+      }
+      if (parent?.parentId) {
+        res.status(400).json({ ok: false, error: 'nested_subtodo_not_allowed' })
+        return
+      }
+      const q = parent ? parent.quadrant : (Number(quadrant) || 4)
       if (![1, 2, 3, 4].includes(q)) {
         res.status(400).json({ ok: false, error: 'invalid quadrant' })
         return
@@ -36,9 +45,14 @@ export function createTodosRouter({ db, logDir, getPricing }) {
         workDir: workDir || null,
         brainstorm: !!brainstorm,
         appliedTemplateIds: Array.isArray(appliedTemplateIds) ? appliedTemplateIds : [],
+        parentId: parent?.id ?? null,
       })
       res.json({ ok: true, todo })
     } catch (e) {
+      if (['parent_not_found', 'nested_subtodo_not_allowed', 'parent_quadrant_mismatch'].includes(e.message)) {
+        res.status(400).json({ ok: false, error: e.message })
+        return
+      }
       res.status(500).json({ ok: false, error: e.message })
     }
   })
@@ -50,9 +64,42 @@ export function createTodosRouter({ db, logDir, getPricing }) {
         res.status(404).json({ ok: false, error: 'not_found' })
         return
       }
-      const todo = db.updateTodo(req.params.id, req.body || {})
+      const patch = req.body || {}
+      if (patch.parentId !== undefined) {
+        if (existing.parentId && patch.parentId !== existing.parentId) {
+          res.status(400).json({ ok: false, error: 'reparent_not_allowed' })
+          return
+        }
+        if (existing.parentId && patch.parentId === null) {
+          res.status(400).json({ ok: false, error: 'promote_not_allowed' })
+          return
+        }
+        if (!existing.parentId && patch.parentId !== null && patch.parentId !== existing.parentId) {
+          res.status(400).json({ ok: false, error: 'reparent_not_allowed' })
+          return
+        }
+      }
+      const targetParentId = patch.parentId !== undefined ? patch.parentId : existing.parentId
+      const parent = targetParentId ? db.getTodo(targetParentId) : null
+      if (targetParentId && !parent) {
+        res.status(400).json({ ok: false, error: 'parent_not_found' })
+        return
+      }
+      if (parent?.parentId) {
+        res.status(400).json({ ok: false, error: 'nested_subtodo_not_allowed' })
+        return
+      }
+      if (parent && patch.quadrant !== undefined && Number(patch.quadrant) !== parent.quadrant) {
+        res.status(400).json({ ok: false, error: 'parent_quadrant_mismatch' })
+        return
+      }
+      const todo = db.updateTodo(req.params.id, patch)
       res.json({ ok: true, todo })
     } catch (e) {
+      if (['parent_not_found', 'nested_subtodo_not_allowed', 'parent_quadrant_mismatch', 'parent_cycle'].includes(e.message)) {
+        res.status(400).json({ ok: false, error: e.message })
+        return
+      }
       res.status(500).json({ ok: false, error: e.message })
     }
   })
