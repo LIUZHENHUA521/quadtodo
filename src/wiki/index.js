@@ -222,5 +222,8 @@ export function createWikiService({
     }
   }
 
-  return { init, status, pending, runOnce, markOrphansAsFailed }
+  return {
+    init, status, pending, runOnce, markOrphansAsFailed,
+    listRuns: (limit = 20) => db.listWikiRuns({ limit }),
+  }
 }
