@@ -550,3 +550,86 @@ export async function bindTranscript(fileId: number, todoId: string, force = fal
 export async function unbindTranscript(fileId: number): Promise<void> {
   await jsonFetch(`/api/transcripts/${fileId}/unbind`, { method: 'POST' })
 }
+
+// ─── Wiki ───
+
+export interface WikiRun {
+  id: number
+  started_at: number
+  completed_at: number | null
+  todo_count: number
+  dry_run: 0 | 1
+  exit_code: number | null
+  error: string | null
+  note: string | null
+}
+
+export interface WikiStatus {
+  wikiDir: string
+  initState: 'ready' | 'exists-not-git' | 'git-failed' | 'unknown'
+  lastRun: WikiRun | null
+  pendingTodoCount: number
+  running: boolean
+}
+
+export interface WikiPendingTodo {
+  id: string
+  title: string
+  workDir: string | null
+  quadrant: Quadrant
+  completedAt: number
+}
+
+export interface WikiFile {
+  path: string
+  type: 'file' | 'dir'
+  size?: number
+}
+
+export async function getWikiStatus(): Promise<WikiStatus> {
+  const body = await jsonFetch<{ ok: true; status: WikiStatus }>('/api/wiki/status')
+  return body.status
+}
+
+export async function getWikiPending(): Promise<WikiPendingTodo[]> {
+  const body = await jsonFetch<{ ok: true; list: WikiPendingTodo[] }>('/api/wiki/pending')
+  return body.list
+}
+
+export async function getWikiTree(): Promise<WikiFile[]> {
+  const body = await jsonFetch<{ ok: true; files: WikiFile[] }>('/api/wiki/tree')
+  return body.files
+}
+
+export async function getWikiFile(path: string): Promise<string> {
+  const qs = new URLSearchParams({ path })
+  const body = await jsonFetch<{ ok: true; content: string }>(`/api/wiki/file?${qs.toString()}`)
+  return body.content
+}
+
+export async function listWikiRuns(limit = 20): Promise<WikiRun[]> {
+  const body = await jsonFetch<{ ok: true; list: WikiRun[] }>(`/api/wiki/runs?limit=${limit}`)
+  return body.list
+}
+
+export interface WikiRunResult {
+  dryRun: boolean
+  runId: number
+  sourcesWritten: number
+  exitCode: number
+}
+
+export async function runWiki(input: { todoIds: string[]; dryRun?: boolean }): Promise<WikiRunResult> {
+  const body = await jsonFetch<{ ok: true } & WikiRunResult>('/api/wiki/run', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return body
+}
+
+export async function initWiki(): Promise<{ state: string; wikiDir: string; error?: string }> {
+  const body = await jsonFetch<{ ok: true; state: string; wikiDir: string; error?: string }>('/api/wiki/init', {
+    method: 'POST',
+  })
+  return body
+}
