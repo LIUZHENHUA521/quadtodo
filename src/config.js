@@ -244,6 +244,13 @@ function defaultConfig() {
 		// leak back into the module-level constant.
 		pricing: cloneDefaultPricing(),
 		stats: { idleThresholdMs: 120_000 },
+		wiki: {
+			wikiDir: join(homedir(), ".quadtodo", "wiki"),
+			maxTailTurns: 20,
+			tool: "claude",
+			timeoutMs: 600_000,
+			redact: true,
+		},
 	};
 }
 
@@ -290,6 +297,10 @@ function normalizeConfig(cfg = {}) {
 			models: { ...defaults.pricing.models, ...(cfg.pricing?.models || {}) },
 		},
 		stats: { ...defaults.stats, ...(cfg.stats || {}) },
+		wiki: {
+			...defaults.wiki,
+			...(cfg.wiki || {}),
+		},
 	};
 }
 

@@ -199,3 +199,17 @@ describe("config", () => {
 		expect(cfg.webhook.keywords).toEqual(["hello", "world"]);
 	});
 });
+
+describe('config wiki defaults', () => {
+	it('loadConfig returns wiki section with defaults', async () => {
+		const { loadConfig } = await import('../src/config.js');
+		const dir = mkdtempSync(join(tmpdir(), 'qt-wiki-'));
+		const cfg = loadConfig({ rootDir: dir });
+		expect(cfg.wiki).toBeTruthy();
+		expect(cfg.wiki.wikiDir).toBeTruthy();
+		expect(cfg.wiki.maxTailTurns).toBe(20);
+		expect(cfg.wiki.tool).toBe('claude');
+		expect(cfg.wiki.timeoutMs).toBe(600_000);
+		expect(cfg.wiki.redact).toBe(true);
+	});
+});
