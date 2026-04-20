@@ -50,25 +50,38 @@ Karpathy 原文的关键观察：LLM 不是"查一次就走"，而是**增量维
 
 ## 四、触发
 
-### 定时（默认开启）
-- cron 表达式默认 `0 23 * * *`（每天 23:00 本地时间）
-- 实现用 node 的定时轮（`setTimeout` + 计算下次触发时间），不引入 `node-cron` 新依赖
-- 进程重启时检查"上次运行时间"：如果离上次超过间隔 1.5x 就**立即补跑一次**
+**只有手动，没有定时。** 沉淀是"我现在想整理一下"的动作，不是后台任务。不自动跑还有一个好处：永远不会在你不知情的情况下烧 token。
 
-### 手动
-- 顶栏新增 **🧠 记忆** 按钮 → 打开 Wiki 抽屉
-- 抽屉顶部："立即更新"按钮（处理所有未沉淀的 done todo）
-- todo 详情抽屉 / 右键菜单：「沉淀到记忆」（只处理这一条）
+三个入口：
 
-### 首跑强制 dry-run
-- 首次跑（`wiki_runs` 表为空）时，默认 `dryRun=true`：只生成 `sources/`、不 spawn claude
-- 前端展示："生成了 N 个 source 文件，预计 X 万 token，确认后点击正式运行"
-- 避免第一次就不知情地烧掉很多 token
+1. **todo 详情抽屉 → 「沉淀到记忆」按钮**
+   - 单条 todo 立刻走一次流程（生成 source → 调 claude → commit）
+   - 这条 todo 不必是 `done`；任何状态都能沉淀（但按钮在 `done` 状态更显眼）
+   - 如果这条已经被沉淀过：按钮变成「重新沉淀」，点击前弹确认
+
+2. **顶栏 🧠 记忆 → Wiki 抽屉 → 「批量沉淀」按钮**
+   - 打开后默认展示「未沉淀的 done todo」列表，每条带 checkbox
+   - 我勾选一批 → 点「沉淀选中」→ 合并成一个 wiki_run
+   - 也能选已沉淀过的重跑
+
+3. **Wiki 抽屉 → 「只生成 sources（预览）」**
+   - 可选的 dry-run 按钮；不默认不强制
+   - 用途：我不确定要不要烧 token，先看 sources 组装出来的素材有没有料
+
+### init 时机
+`quadtodo start` 时检查 `wikiDir`：
+- 不存在 → 创建目录 + 写 `WIKI_GUIDE.md` + 空 `index.md` / `log.md` + `git init`
+- 存在且已经是 git 仓库 → 什么都不做
+- 存在但非 git 仓库 → **不自动 init**，前端 wiki 抽屉顶部挂红色横幅：「检测到 ~/.quadtodo/wiki 已存在但非 git 仓库，为避免覆盖你的数据拒绝自动初始化。请手动处理（mv 走或进去 git init）」
+
+init 不触发任何 LLM 调用，无费用。
 
 ## 五、批处理执行流程（一次）
 
+入参：`{ todoIds: string[], dryRun?: boolean }`。`todoIds` 由前端明确传入（哪怕是单条"沉淀到记忆"按钮也传一个 id 的数组）——后端不做"默认处理所有未沉淀 done todo"的隐式行为，避免误触。
+
 ```
-1. 查 DB：status='done' AND updated_at > wiki_runs.last_completed_at 的 todo 列表
+1. 校验 todoIds 非空；每个 id 能在 DB 查到；否则 400
 2. 对每条 todo：
    a. loadTranscript 每个关联 ai_session（走现有 src/transcript.js）
    b. 每个会话取最后 maxTailTurns 轮原始对话
@@ -91,7 +104,7 @@ Karpathy 原文的关键观察：LLM 不是"查一次就走"，而是**增量维
 10. 追加一行到 log.md（程序加，独立于 LLM 加的段落）
 11. 前端收 SSE/WS 推送"批处理完成"事件
 
-dry-run 下仍会写 `wiki_todo_coverage`——这样前端能告诉你"N 个 source 已生成、X token 预估"；但确认后"正式运行"时，这批 todo 不算"已覆盖"，需要重新跑 LLM。因此 `wiki_todo_coverage` 额外有一列 `llm_applied INTEGER NOT NULL DEFAULT 0`（dry-run=0，正式跑完=1），"未沉淀 done todo"的判断条件是 `todo.status='done' AND NOT EXISTS (coverage with llm_applied=1)`。
+dry-run 下仍会写 `wiki_todo_coverage`——方便前端展示"当前已经生成 sources 但未正式沉淀的 todo 有哪些"。但确认后"正式运行"时，这批 todo 不算"已覆盖"，需要重新跑 LLM。因此 `wiki_todo_coverage` 额外有一列 `llm_applied INTEGER NOT NULL DEFAULT 0`（dry-run=0，正式跑完=1），"未沉淀 done todo"的判断条件是 `todo.status='done' AND NOT EXISTS (coverage with llm_applied=1)`。
 ```
 
 ## 六、WIKI_GUIDE.md 内容（程序首次写入，用户可后续手工改）
@@ -140,13 +153,20 @@ dry-run 下仍会写 `wiki_todo_coverage`——这样前端能告诉你"N 个 so
   - 如果项目已有 markdown 渲染能力（检查 `TranscriptView.tsx`），复用；否则加 `react-markdown` + `remark-gfm`
   - markdown 中相对链接能点击跳转到树里对应文件
 - **顶部工具条**：
-  - 上次批处理时间 / 下次计划时间 / 状态徽标（绿=成功 / 红=失败 / 黄=dry-run 待确认）
-  - 「立即更新」按钮 → `POST /api/wiki/run`
+  - 上次批处理时间 / 状态徽标（绿=成功 / 红=失败 / 灰=从未跑过）
   - 「打开目录」按钮 → `window.open('file://' + wikiDir)`（macOS 能打开 Finder）
-- **v1 不做**：wiki 内搜索、编辑页面（先用 Ctrl+F 顶住）
+- **未沉淀列表区**（抽屉顶部下方）：
+  - 展示"已 done 但未沉淀"的 todo，每条一行，带 checkbox + title + workDir + 完成时间
+  - 按钮：「沉淀选中」→ 传 todoIds 调 `POST /api/wiki/run`
+  - 次要按钮：「只生成 sources（预览）」→ 同接口，带 `dryRun: true`
+  - 次要按钮：「全选」/「清空选择」
+- **v1 不做**：wiki 内搜索、编辑页面、定时任务开关（先用 Ctrl+F 顶住）
 
-todo 卡片 / 详情增量：
-- todo 状态是 `done` 时，详情抽屉底部多一行「沉淀到记忆」按钮，disable 的条件：这条 todo 已经被最近一次 wiki_run 涵盖（查 `wiki_runs.last_completed_at` vs `todo.updated_at`）
+todo 详情抽屉增量：
+- 每条 todo 详情底部加一行「沉淀到记忆」按钮
+  - 未沉淀：显示「沉淀到记忆」
+  - 已沉淀：显示「已沉淀 · 重新沉淀」（点击前弹确认）
+  - 点击都走 `POST /api/wiki/run { todoIds: [thisId] }`
 
 ## 八、后端
 
@@ -155,21 +175,22 @@ todo 卡片 / 详情增量：
 src/wiki/
 ├── index.js         # createWikiService：导出 runOnce(opts) / status() / init()
 ├── sources.js       # 把 todo + transcripts → source markdown 的字符串
-├── scheduler.js     # 定时轮
 ├── redact.js        # 简单正则脱敏
 └── guide.js         # WIKI_GUIDE.md 的字符串常量（init 时写入）
 
 src/routes/wiki.js   # express 路由
 ```
+（不需要 `scheduler.js`——没有定时任务）
 
 ### API
 | Method | Path | Body / Query | 说明 |
 |---|---|---|---|
-| GET | `/api/wiki/status` | — | 返回 `{ lastRun, nextRun, enabled, wikiDir, pendingTodoCount }` |
+| GET | `/api/wiki/status` | — | 返回 `{ lastRun, wikiDir, initState, pendingTodoIds }`；`initState` ∈ `"ready" / "missing" / "exists-not-git"` |
+| GET | `/api/wiki/pending` | — | 未沉淀 done todo 的详细列表（id/title/workDir/completedAt） |
 | GET | `/api/wiki/tree` | — | wiki 目录的文件树 |
 | GET | `/api/wiki/file` | `?path=topics/foo.md` | 单文件内容；严格校验 path 不越出 wikiDir |
-| POST | `/api/wiki/run` | `{ dryRun?: bool, todoIds?: string[] }` | 触发一次批处理；`todoIds` 不给时处理所有"未沉淀 done" |
-| POST | `/api/wiki/init` | — | 手动初始化 wiki（正常启动时会自动 init） |
+| POST | `/api/wiki/run` | `{ todoIds: string[], dryRun?: bool }` | 触发一次批处理；`todoIds` 必传非空 |
+| POST | `/api/wiki/init` | — | 手动初始化 wiki（start 阶段自动尝试；非 git 情况需要手动调） |
 | GET | `/api/wiki/runs` | `?limit=20` | 批处理历史 |
 
 所有 `path` 参数用 `path.resolve(wikiDir, p)` + `startsWith(wikiDir)` 防目录穿越。
@@ -201,16 +222,14 @@ CREATE TABLE wiki_todo_coverage (
 ### 配置（`~/.quadtodo/config.json` 新段）
 ```json
 "wiki": {
-  "enabled": true,
-  "autoRunCron": "0 23 * * *",
   "wikiDir": "~/.quadtodo/wiki",
   "maxTailTurns": 20,
   "tool": "claude",
   "timeoutMs": 600000,
-  "redact": true,
-  "dryRunOnFirstRun": true
+  "redact": true
 }
 ```
+没有 `enabled` / `autoRunCron` / `dryRunOnFirstRun`——全部是手动触发，不需要总开关。不想用就别点「沉淀到记忆」按钮。
 
 ## 九、脱敏规则（`src/wiki/redact.js`）
 
@@ -267,27 +286,30 @@ durationHours: 3.2
 
 | 风险 | 缓解 |
 |---|---|
-| LLM token 成本不可控 | 定时每日 1 次 + 首跑 dry-run + 可单独手动触发 + config.wiki.enabled 一键关 |
-| claude CLI 未安装 / 网络故障 | 捕获 spawn 错误，wiki_runs 记失败；下次运行仍处理同批 sources（幂等） |
+| LLM token 成本不可控 | 全手动触发，不点就不跑；提供"只生成 sources（预览）"入口让你先看素材再决定 |
+| claude CLI 未安装 / 网络故障 | 捕获 spawn 错误，wiki_runs 记失败；sources 已生成可下次用（llm_applied=0） |
 | LLM 把 wiki 改乱 | git 自动 commit；人可 `cd ~/.quadtodo/wiki && git reset --hard HEAD~1` 回滚 |
 | 路径穿越（前端请求任意文件） | `GET /api/wiki/file` 用 resolve + startsWith 校验 |
 | transcript 含密钥泄漏到 wiki | §九 的脱敏正则；可关闭（明确知情） |
-| 并发触发（定时跑一半，手动又点） | `runOnce` 内部加互斥锁；第二次调用直接返回 "already running" |
-| wiki 目录已存在但非 git | 首次 init 时检测：是目录且非空且非 git → 拒绝自动 init，报错让用户处理 |
+| 并发触发（连点两次按钮） | `runOnce` 内部加互斥锁；第二次调用直接返回 "already running" |
+| wiki 目录已存在但非 git | init 时检测到就拒绝，前端横幅提示用户手动处理 |
 
 ## 十二、验收标准
 
 - [ ] 全新环境 `quadtodo start` → `~/.quadtodo/wiki/` 自动创建，含 `WIKI_GUIDE.md`（内容非空）、空 `index.md`、已 `git init`
-- [ ] 配置里 `tools.claude.bin = /usr/local/bin/claude-w` 时，wiki 批处理也能走这个命令（不是硬编码 `claude`）
+- [ ] 不点任何按钮，LLM 永远不会被调用（验证"纯手动"）
+- [ ] 配置里 `tools.claude.bin = /usr/local/bin/claude-w` 时，wiki 批处理走这个命令（不是硬编码 `claude`）
 - [ ] 把一条挂有 AI 会话的 todo 改成 done → 详情抽屉能看到「沉淀到记忆」按钮 → 点击后 claude 跑完 → wiki 里有新/更新页面
+- [ ] 打开 wiki 抽屉 → 看到"未沉淀 done todo"列表 → 全选 → 点「沉淀选中」走一次批处理 → 成功
 - [ ] 批处理 5 条相关 todo（比如都是"云函数部署"类），产出的 `topics/` 不应是 5 个分开文件，应合并到 1 个主题页（验证 LLM 在做"抽象"而不是"翻译"）
 - [ ] 每次成功批处理后，`~/.quadtodo/wiki/` 里 `git log` 多一条 commit
-- [ ] 配置 `wiki.enabled=false` 后定时不跑；手动按钮仍能用
+- [ ] 「只生成 sources（预览）」按钮能用，生成后 todo 仍然显示在"未沉淀"列表里（因为 llm_applied=0）
+- [ ] 已沉淀过的 todo 再次点击「重新沉淀」会有确认弹窗
 - [ ] 批处理失败时，前端 wiki 抽屉顶部红色横幅显示错误摘要；重试能成功
 - [ ] `sources/` 里的 markdown 不含明文 API key（脱敏生效）
-- [ ] 并发触发（两次快速点「立即更新」）第二次得到 "already running" 响应，不重复 spawn
-- [ ] 首次启动（`wiki_runs` 为空）时，自动 dry-run 模式；前端显示"生成了 N 个 source，确认后才正式调 LLM"
-- [ ] 杀掉 quadtodo 进程中途断电（模拟 kill -9 在 claude 运行期间）→ 下次启动能检测到孤儿 run 并标记为 failed；下次定时正常运行
+- [ ] 并发触发（两次快速点「沉淀选中」）第二次得到 "already running" 响应，不重复 spawn
+- [ ] `~/.quadtodo/wiki/` 已存在但非 git 仓库时，启动不自动覆盖，前端横幅提示
+- [ ] 杀掉 quadtodo 进程中途断电（模拟 kill -9 在 claude 运行期间）→ 下次启动能检测到孤儿 run（`wiki_runs.completed_at IS NULL`）并标记为 failed
 
 ## 十三、开发阶段（简略，详细拆分留给 writing-plans）
 
@@ -297,11 +319,11 @@ durationHours: 3.2
 2. `src/wiki/sources.js` + 单测（给假 todo/transcript 固定输入，断言输出）
 3. `src/wiki/guide.js`（常量）
 4. DB schema 迁移（`wiki_runs` / `wiki_todo_coverage`）
-5. `src/wiki/index.js`：init / runOnce（先支持 dryRun）+ 单测
+5. `src/wiki/index.js`：init / runOnce（支持 dryRun）/ status / pending + 单测
 6. `src/routes/wiki.js` + 路由集成到 `server.js`
-7. `src/wiki/scheduler.js` 定时轮；启动流程里挂上
-8. 前端 `WikiDrawer.tsx` + markdown 渲染
-9. 顶栏按钮 + todo 详情「沉淀到记忆」按钮
+7. 启动流程里挂 init（失败不影响主进程）
+8. 前端 `WikiDrawer.tsx` + markdown 渲染 + 未沉淀列表
+9. todo 详情「沉淀到记忆」按钮
 10. 端到端联调（需要真实的 claude 命令可用）
 
 ## 十四、开放问题（实现时需要再决定）
