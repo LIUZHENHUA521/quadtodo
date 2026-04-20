@@ -201,12 +201,19 @@ export function openDb(file = ':memory:') {
 
   let ftsAvailable = false
   try {
+    const existing = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='transcript_fts'`).get()
+    const usesTrigram = existing && /tokenize\s*=\s*['"]?trigram/i.test(existing.sql || '')
+    if (existing && !usesTrigram) {
+      db.exec(`DROP TABLE transcript_fts`)
+      // 旧 tokenizer 下的 FTS 已清空；把 transcript_files.size 置 -1 让下一次 scan 视为脏，触发重建
+      try { db.exec(`UPDATE transcript_files SET size = -1`) } catch {}
+    }
     db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(
         content,
         role UNINDEXED,
         file_id UNINDEXED,
-        tokenize = "unicode61 remove_diacritics 2"
+        tokenize = "trigram"
       );
     `)
     ftsAvailable = true
@@ -467,6 +474,11 @@ export function openDb(file = ':memory:') {
         (@id, @todo_id, @tool, @quadrant, @status, @exit_code, @started_at, @completed_at, @duration_ms)
     `),
     listSince: db.prepare(`SELECT * FROM ai_session_log WHERE completed_at >= ? AND completed_at < ? ORDER BY completed_at DESC`),
+    listInWindow: db.prepare(`
+      SELECT id, todo_id, tool, started_at, completed_at, duration_ms
+      FROM ai_session_log
+      WHERE tool = ? AND started_at BETWEEN ? AND ?
+    `),
   }
 
   function insertSessionLog(row) {
@@ -600,6 +612,25 @@ export function openDb(file = ':memory:') {
     if (unboundOnly) where.push('tf.bound_todo_id IS NULL')
 
     if (q && ftsAvailable) {
+      // trigram tokenizer 要求 ≥3 字才能走 MATCH；<3 字用 LIKE 兜底扫 FTS 的 content 列
+      if (q.length < 3) {
+        const like = `%${q.replace(/[\\%_]/g, s => '\\' + s)}%`
+        where.push(`tf.id IN (SELECT file_id FROM transcript_fts WHERE content LIKE ? ESCAPE '\\')`)
+        params.push(like)
+        const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+        const total = db.prepare(`SELECT COUNT(*) AS n FROM transcript_files tf ${whereSql}`).get(...params).n
+        const rows = db.prepare(`
+          SELECT tf.*, (
+            SELECT SUBSTR(content, MAX(1, INSTR(content, ?) - 16), 64)
+            FROM transcript_fts WHERE file_id = tf.id AND content LIKE ? ESCAPE '\\' LIMIT 1
+          ) AS snippet
+          FROM transcript_files tf
+          ${whereSql}
+          ORDER BY tf.started_at DESC
+          LIMIT ? OFFSET ?
+        `).all(q, like, ...params, limit, offset)
+        return { total, items: rows }
+      }
       const ftsQuery = q.replace(/"/g, '""')
       where.push('tf.id IN (SELECT file_id FROM transcript_fts WHERE transcript_fts MATCH ?)')
       params.push(`"${ftsQuery}"`)
@@ -961,6 +992,11 @@ export function openDb(file = ':memory:') {
     getComment,
     insertSessionLog,
     querySessionStats,
+    listSessionLogsInWindow: (tool, startedAt, windowMs) => {
+      const lo = startedAt - windowMs
+      const hi = startedAt + windowMs
+      return aiLogStmts.listInWindow.all(tool, lo, hi)
+    },
     ftsAvailable,
     transcriptFilesStmts: tfStmts,
     upsertTranscriptFile,

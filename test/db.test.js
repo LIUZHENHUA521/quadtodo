@@ -195,6 +195,21 @@ describe('db', () => {
       const stats = db.querySessionStats({ since: now + 1000, until: now + 2000 })
       expect(stats.total).toBe(0)
     })
+
+    it('listSessionLogsInWindow 返回同 tool 且 started_at 在窗口内的日志', () => {
+      db.insertSessionLog({ id: 'a', todoId: 't1', tool: 'claude', quadrant: 1, status: 'done', startedAt: 1_000_000, completedAt: 1_001_000 })
+      db.insertSessionLog({ id: 'b', todoId: 't2', tool: 'claude', quadrant: 1, status: 'done', startedAt: 1_000_030, completedAt: 1_001_030 })
+      db.insertSessionLog({ id: 'c', todoId: 't3', tool: 'codex',  quadrant: 1, status: 'done', startedAt: 1_000_010, completedAt: 1_001_010 })
+      db.insertSessionLog({ id: 'd', todoId: 't4', tool: 'claude', quadrant: 1, status: 'done', startedAt: 2_000_000, completedAt: 2_001_000 })
+
+      const out = db.listSessionLogsInWindow('claude', 1_000_020, 60_000)
+      // 期望：a 和 b 命中（claude 且在 ±60s 内），c 被 tool 过滤，d 在窗外
+      const ids = out.map(r => r.id).sort()
+      expect(ids).toEqual(['a', 'b'])
+      // 返回字段必须至少包含 id, todo_id, tool, started_at
+      expect(out[0]).toHaveProperty('todo_id')
+      expect(out[0]).toHaveProperty('started_at')
+    })
   })
 })
 
