@@ -91,6 +91,116 @@ function pickDirectoryNative({ defaultPath, prompt = "选择目录" } = {}) {
 	});
 }
 
+function shellEscape(arg) {
+	return `'${String(arg).replace(/'/g, `'\\''`)}'`;
+}
+
+function buildNativeResumeTitle(tool, nativeSessionId) {
+	return `quadtodo:${tool}:${nativeSessionId}`;
+}
+
+function openNativeTerminalNative({ cwd, command, title } = {}) {
+	if (process.platform !== "darwin") {
+		const error = new Error("native_terminal_unsupported");
+		error.code = "native_terminal_unsupported";
+		throw error;
+	}
+
+	const targetCwd =
+		cwd && existsSync(cwd) && statSync(cwd).isDirectory()
+			? cwd
+			: process.env.HOME || process.cwd();
+
+	const script = [
+		"on run argv",
+		"set targetDir to item 1 of argv",
+		"set launchCmd to item 2 of argv",
+		"set tabTitle to item 3 of argv",
+		'tell application "Terminal"',
+		"  activate",
+		"  set matchedWindow to missing value",
+		"  set matchedTab to missing value",
+		"  repeat with win in windows",
+		"    repeat with currentTab in tabs of win",
+		"      try",
+		"        if custom title of currentTab is tabTitle then",
+		"          set matchedWindow to win",
+		"          set matchedTab to currentTab",
+		"          exit repeat",
+		"        end if",
+		"      end try",
+		"    end repeat",
+		"    if matchedTab is not missing value then exit repeat",
+		"  end repeat",
+		"  if matchedTab is not missing value then",
+		"    set front window to matchedWindow",
+		"    set selected tab of matchedWindow to matchedTab",
+		'    return "reused"',
+		"  end if",
+		'  do script ""',
+		"  delay 0.1",
+		"  set newTab to selected tab of front window",
+		"  set custom title of newTab to tabTitle",
+		'  do script "cd " & quoted form of targetDir & "; " & launchCmd in newTab',
+		'  return "created"',
+		"end tell",
+		"end run",
+	];
+
+	return new Promise((resolve, reject) => {
+		execFile(
+			"osascript",
+			[
+				...script.flatMap((line) => ["-e", line]),
+				"--",
+				targetCwd,
+				String(command || ""),
+				String(title || ""),
+			],
+			(error, stdout, stderr) => {
+				if (error) {
+					reject(new Error(stderr || error.message || "open_native_terminal_failed"));
+					return;
+				}
+				const action = stdout.trim() === "reused" ? "reused" : "created";
+				resolve({
+					cwd: targetCwd,
+					command: String(command || ""),
+					title: String(title || ""),
+					action,
+					output: stdout.trim(),
+				});
+			},
+		);
+	});
+}
+
+function buildNativeResumeCommand(tool, nativeSessionId, tools = {}) {
+	if (!["claude", "codex"].includes(tool)) {
+		const error = new Error("invalid_tool");
+		error.code = "invalid_tool";
+		throw error;
+	}
+	if (!nativeSessionId) {
+		const error = new Error("missing_native_session_id");
+		error.code = "missing_native_session_id";
+		throw error;
+	}
+
+	const toolConfig = tools?.[tool];
+	const bin = toolConfig?.bin || toolConfig?.command;
+	if (!bin) {
+		const error = new Error("tool_not_configured");
+		error.code = "tool_not_configured";
+		throw error;
+	}
+	const baseArgs = Array.isArray(toolConfig?.args) ? toolConfig.args : [];
+	const resumeArgs = tool === "codex"
+		? [...baseArgs, "resume", nativeSessionId]
+		: [...baseArgs, "--resume", nativeSessionId];
+	return [bin, ...resumeArgs].map(shellEscape).join(" ");
+}
+
 function mergeToolConfig(currentTool = {}, nextTool = {}) {
 	const merged = {
 		...currentTool,
@@ -107,6 +217,91 @@ function mergeToolConfig(currentTool = {}, nextTool = {}) {
 	}
 
 	return merged;
+}
+
+function splitEditorPath(rawPath = "") {
+	const trimmed = String(rawPath || "").trim();
+	const match = trimmed.match(/^(.*?)(:\d+(?::\d+)?)?$/);
+	return {
+		fsPath: match?.[1] || trimmed,
+		locationSuffix: match?.[2] || "",
+	};
+}
+
+function findNestedPath(rootDir, relativePath, maxDepth = 3) {
+	const normalizedRelativePath = String(relativePath || "")
+		.replace(/^\.\/+/, "")
+		.replace(/^\/+/, "");
+	if (!normalizedRelativePath) return null;
+
+	const seen = new Set();
+	function visit(dir, depth) {
+		const directCandidate = join(dir, normalizedRelativePath);
+		if (existsSync(directCandidate)) return directCandidate;
+		if (depth >= maxDepth) return null;
+
+		let entries = [];
+		try {
+			entries = readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return null;
+		}
+
+		for (const entry of entries) {
+			if (!entry.isDirectory()) continue;
+			if (entry.name === ".git" || entry.name === "node_modules") continue;
+			const nextDir = join(dir, entry.name);
+			if (seen.has(nextDir)) continue;
+			seen.add(nextDir);
+			const result = visit(nextDir, depth + 1);
+			if (result) return result;
+		}
+		return null;
+	}
+
+	return visit(rootDir, 0);
+}
+
+function normalizeBaseDirs(baseDirs) {
+	const list = Array.isArray(baseDirs) ? baseDirs : [baseDirs];
+	return [...new Set(list.filter((item) => typeof item === "string" && item.trim()))];
+}
+
+export function resolveEditorTargetInfo(baseDirs, rawPath) {
+	const candidates = normalizeBaseDirs(baseDirs);
+	if (!candidates.length || !rawPath) return null;
+	const { fsPath, locationSuffix } = splitEditorPath(rawPath);
+	if (!fsPath) return null;
+	const normalizedFsPath = fsPath.replace(/^\.\/+/, "").replace(/^\/+/, "");
+
+	if (fsPath.startsWith("/")) {
+		return existsSync(fsPath)
+			? { resolvedPath: `${fsPath}${locationSuffix}`, baseDir: null }
+			: null;
+	}
+
+	for (const baseDir of candidates) {
+		const directPath = join(baseDir, normalizedFsPath);
+		if (existsSync(directPath)) {
+			return { resolvedPath: `${directPath}${locationSuffix}`, baseDir };
+		}
+	}
+
+	for (const baseDir of candidates) {
+		const nestedPath = findNestedPath(baseDir, normalizedFsPath, 3);
+		if (nestedPath) {
+			return {
+				resolvedPath: `${nestedPath}${locationSuffix}`,
+				baseDir: nestedPath.slice(0, -normalizedFsPath.length).replace(/\/$/, "") || baseDir,
+			};
+		}
+	}
+
+	return null;
+}
+
+export function resolveEditorTargetPath(baseDirs, rawPath) {
+	return resolveEditorTargetInfo(baseDirs, rawPath)?.resolvedPath || null;
 }
 
 /**
@@ -126,6 +321,7 @@ export function createServer(opts = {}) {
 		pty: injectedPty,
 		webDist,
 		pickDirectory = pickDirectoryNative,
+		openNativeTerminal = openNativeTerminalNative,
 	} = opts;
 
 	const db = openDb(dbFile);
@@ -276,18 +472,28 @@ export function createServer(opts = {}) {
 			// 始终把 cwd 作为 workspace folder 传入，再附带具体文件，让编辑器默认打开这个目录
 			const args = ["--new-window", cwd];
 			const rawPath = req.body?.path;
+			const sessionId =
+				typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
+			const terminalSession = sessionId ? ait.sessions.get(sessionId) : null;
 			if (typeof rawPath === "string" && rawPath.trim()) {
-				const resolved = rawPath.startsWith("/")
-					? rawPath
-					: `${cwd.replace(/\/+$/, "")}/${rawPath.replace(/^\/+/, "")}`;
-				// 去掉 :line:col 后缀做存在性校验
-				const fsPath = resolved.replace(/:\d+(:\d+)?$/, "");
-				if (!existsSync(fsPath)) {
+				const resolved = resolveEditorTargetInfo(
+					[
+						terminalSession?.currentCwd,
+						terminalSession?.cwd,
+						cwd,
+						runtimeConfig.defaultCwd,
+					],
+					rawPath,
+				);
+				if (!resolved) {
 					res.status(400).json({ ok: false, error: "path_not_found" });
 					return;
 				}
+				if (terminalSession && resolved.baseDir) {
+					terminalSession.currentCwd = resolved.baseDir;
+				}
 				// VSCode 系 CLI 支持 --goto file:line:col 精确跳转
-				args.push("--goto", resolved);
+				args.push("--goto", resolved.resolvedPath);
 			}
 			const child = spawn(bin, args, {
 				cwd,
@@ -360,6 +566,42 @@ export function createServer(opts = {}) {
 		}
 	});
 
+	app.post("/api/system/open-native-ai-resume", async (req, res) => {
+		try {
+			const cwd = req.body?.cwd || runtimeConfig.defaultCwd;
+			if (!cwd || !existsSync(cwd) || !statSync(cwd).isDirectory()) {
+				res.status(400).json({ ok: false, error: "cwd_not_found" });
+				return;
+			}
+			const tool = req.body?.tool;
+			const nativeSessionId = req.body?.nativeSessionId;
+			const title = buildNativeResumeTitle(tool, nativeSessionId);
+			const command = buildNativeResumeCommand(
+				tool,
+				nativeSessionId,
+				runtimeConfig.tools,
+			);
+			const result = await openNativeTerminal({ cwd, command, title });
+			res.json({
+				ok: true,
+				cwd: result?.cwd || cwd,
+				title: result?.title || title,
+				command: result?.command || command,
+				action: result?.action || "created",
+			});
+		} catch (e) {
+			const status = [
+				"native_terminal_unsupported",
+				"invalid_tool",
+				"missing_native_session_id",
+				"tool_not_configured",
+			].includes(e?.code)
+				? 400
+				: 500;
+			res.status(status).json({ ok: false, error: e.message });
+		}
+	});
+
 	app.post("/api/system/pick-directory", async (req, res) => {
 		try {
 			const result = await pickDirectory({
@@ -381,6 +623,7 @@ export function createServer(opts = {}) {
 		db,
 		logDir,
 		getPricing: () => loadConfig({ rootDir: configRootDir }).pricing,
+		getTools: () => runtimeConfig.tools,
 	}));
 	app.use("/api/templates", createTemplatesRouter({ db }));
 	app.use("/api/recurring-rules", createRecurringRulesRouter({ db }));

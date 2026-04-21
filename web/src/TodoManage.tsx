@@ -23,7 +23,7 @@ import dayjs from 'dayjs'
 import {
   listTodos, createTodo, updateTodo, deleteTodo,
   startAiExec, getWorkDirOptions, pickDirectory, deleteTodoAiSession,
-  openTraeCN, openTerminal, updateSessionLabel,
+  openTraeCN, openTerminal, openNativeAiResume, updateSessionLabel,
   listComments, addComment, deleteComment,
   listLiveSessions, stopAiExec,
   listTemplates, PromptTemplate,
@@ -127,6 +127,7 @@ interface SortableTodoCardProps {
   onDelete: (t: Todo) => void
   onOpenTrae: (todo: Todo, editor?: 'trae-cn' | 'trae' | 'cursor') => void
   onOpenTerminal: (todo: Todo) => void
+  onOpenNativeResume: (todo: Todo, session: Todo['aiSessions'][number]) => void
   onCopyPrompt: (todo: Todo) => void
   onExport: (todo: Todo) => void
   expandedTerminal: { todoId: string; sessionId: string } | null
@@ -146,7 +147,7 @@ interface SortableTodoCardProps {
   onRefresh: () => void
 }
 
-function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false, onCreateSubtodo, onClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onCopyPrompt, onExport, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionId, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, terminalCollapsed, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideSessionId, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: SortableTodoCardProps) {
+function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false, onCreateSubtodo, onClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionId, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, terminalCollapsed, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideSessionId, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: SortableTodoCardProps) {
   const [editingLabelSessionId, setEditingLabelSessionId] = useState<string | null>(null)
   const [editingLabelText, setEditingLabelText] = useState('')
   const [childrenExpanded, setChildrenExpanded] = useState(true)
@@ -404,6 +405,16 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                           >
                             恢复
                           </button>
+                          {session.nativeSessionId ? (
+                            <button
+                              type="button"
+                              className="todo-history-link"
+                              onClick={() => onOpenNativeResume(todo, session)}
+                              title="在本地 Terminal 中 resume 当前 AI 会话"
+                            >
+                              本地继续
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="todo-history-link"
@@ -475,6 +486,7 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                       onDelete={onDelete}
                       onOpenTrae={onOpenTrae}
                       onOpenTerminal={onOpenTerminal}
+                      onOpenNativeResume={onOpenNativeResume}
                       onCopyPrompt={onCopyPrompt}
                       onExport={onExport}
                       expandedTerminal={expandedTerminal}
@@ -618,6 +630,7 @@ interface QuadrantZoneProps {
   onDelete: (t: Todo) => void
   onOpenTrae: (todo: Todo, editor?: 'trae-cn' | 'trae' | 'cursor') => void
   onOpenTerminal: (todo: Todo) => void
+  onOpenNativeResume: (todo: Todo, session: Todo['aiSessions'][number]) => void
   onCopyPrompt: (todo: Todo) => void
   onExport: (todo: Todo) => void
   style?: React.CSSProperties
@@ -635,7 +648,7 @@ interface QuadrantZoneProps {
   onRefresh: () => void
 }
 
-function QuadrantZone({ config, todos, childrenByParentId, childHitIdsByParentId, onCreateSubtodo, onCardClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onCopyPrompt, onExport, style, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: QuadrantZoneProps) {
+function QuadrantZone({ config, todos, childrenByParentId, childHitIdsByParentId, onCreateSubtodo, onCardClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, style, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: QuadrantZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `quadrant-${config.q}` })
 
   const header = (
@@ -666,6 +679,7 @@ function QuadrantZone({ config, todos, childrenByParentId, childHitIdsByParentId
             onDelete={onDelete}
             onOpenTrae={onOpenTrae}
             onOpenTerminal={onOpenTerminal}
+            onOpenNativeResume={onOpenNativeResume}
             onCopyPrompt={onCopyPrompt}
             onExport={onExport}
             expandedTerminal={expandedTerminal}
@@ -1382,6 +1396,25 @@ export default function TodoManage() {
     }
   }, [])
 
+  const handleOpenNativeResume = useCallback(async (todo: Todo, session: Todo['aiSessions'][number]) => {
+    const cwd = session.cwd || todo.workDir || undefined
+    const nativeSessionId = session.nativeSessionId
+    if (!nativeSessionId) {
+      message.error('当前会话缺少原生 session ID，无法在本地继续')
+      return
+    }
+    try {
+      await openNativeAiResume({
+        cwd: cwd || '',
+        tool: session.tool,
+        nativeSessionId,
+      })
+      message.success('已在本地 Terminal 中继续当前会话')
+    } catch (e: any) {
+      message.error(e?.message || '本地继续失败')
+    }
+  }, [])
+
   const handleCopyPrompt = useCallback((todo: Todo) => {
     const text = buildTodoPrompt(todo, templates)
     navigator.clipboard.writeText(text).then(
@@ -1498,7 +1531,7 @@ export default function TodoManage() {
                 onCreateSubtodo={handleCreateSubtodo}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
                 onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
-                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
+                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onOpenNativeResume={handleOpenNativeResume} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
                 style={{ flex: splitV }}
                 expandedTerminal={expandedTerminal}
                 setExpandedTerminal={setExpandedTerminal}
@@ -1540,7 +1573,7 @@ export default function TodoManage() {
                 onCreateSubtodo={handleCreateSubtodo}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
                 onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
-                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
+                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onOpenNativeResume={handleOpenNativeResume} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
                 style={{ flex: 100 - splitV }}
                 expandedTerminal={expandedTerminal}
                 setExpandedTerminal={setExpandedTerminal}
@@ -1588,7 +1621,7 @@ export default function TodoManage() {
                 onCreateSubtodo={handleCreateSubtodo}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
                 onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
-                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
+                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onOpenNativeResume={handleOpenNativeResume} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
                 style={{ flex: splitV }}
                 expandedTerminal={expandedTerminal}
                 setExpandedTerminal={setExpandedTerminal}
@@ -1630,7 +1663,7 @@ export default function TodoManage() {
                 onCreateSubtodo={handleCreateSubtodo}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
                 onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
-                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
+                onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onOpenNativeResume={handleOpenNativeResume} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
                 style={{ flex: 100 - splitV }}
                 expandedTerminal={expandedTerminal}
                 setExpandedTerminal={setExpandedTerminal}

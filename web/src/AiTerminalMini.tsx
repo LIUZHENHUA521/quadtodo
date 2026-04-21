@@ -210,7 +210,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
                     const saved = localStorage.getItem('quadtodo.editor') as EditorKind | null
                     if (saved === 'trae' || saved === 'trae-cn' || saved === 'cursor') editor = saved
                   } catch {}
-                  openTraeCN(base, editor, hit).catch((err) => {
+                  openTraeCN(base, editor, hit, sessionId).catch((err) => {
                     console.warn('[AiTerminalMini] open link failed:', err)
                   })
                 },

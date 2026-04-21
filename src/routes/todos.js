@@ -3,7 +3,7 @@ import { loadTranscript } from '../transcript.js'
 import { summarizeTurns } from '../summarize.js'
 import { buildTodoExport, renderTodoMarkdown } from '../export/todoMarkdown.js'
 
-export function createTodosRouter({ db, logDir, getPricing }) {
+export function createTodosRouter({ db, logDir, getPricing, getTools }) {
   const router = Router()
 
   router.get('/', (req, res) => {
@@ -304,7 +304,10 @@ export function createTodosRouter({ db, logDir, getPricing }) {
       let summary = ''
       if (summarize && head.length > 0) {
         try {
-          summary = await summarizeTurns(head, { tool })
+          summary = await summarizeTurns(head, {
+            tool,
+            tools: typeof getTools === 'function' ? getTools() : undefined,
+          })
         } catch (e) {
           console.warn('[fork] summarize failed:', e.message)
           summary = `（自动摘要失败：${e.message}）`
