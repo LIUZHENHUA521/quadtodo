@@ -400,10 +400,10 @@ export async function pickDirectory(input: {
 
 export type EditorKind = 'trae-cn' | 'trae' | 'cursor'
 
-export async function openTraeCN(cwd: string, editor: EditorKind = 'trae-cn', path?: string): Promise<void> {
+export async function openTraeCN(cwd: string, editor: EditorKind = 'trae-cn', path?: string, sessionId?: string): Promise<void> {
   await jsonFetch('/api/system/open-trae', {
     method: 'POST',
-    body: JSON.stringify({ cwd, editor, path }),
+    body: JSON.stringify({ cwd, editor, path, sessionId }),
   })
 }
 
@@ -413,6 +413,14 @@ export async function openTerminal(cwd: string): Promise<{ sessionId: string }> 
     body: JSON.stringify({ cwd }),
   })
   return { sessionId: body.sessionId }
+}
+
+export async function openNativeAiResume(input: { cwd: string; tool: AiTool; nativeSessionId: string }): Promise<{ cwd: string; command: string }> {
+  const body = await jsonFetch<{ ok: true; cwd: string; command: string }>('/api/system/open-native-ai-resume', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return { cwd: body.cwd, command: body.command }
 }
 
 /** 浏览器 WS 地址：开发时走 vite proxy，生产同源 */

@@ -5,7 +5,11 @@ import { join } from "node:path";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
-import { createServer } from "../src/server.js";
+import {
+	createServer,
+	resolveEditorTargetInfo,
+	resolveEditorTargetPath,
+} from "../src/server.js";
 
 class FakePty extends EventEmitter {
 	constructor() {
@@ -42,11 +46,13 @@ describe("server", () => {
 	let configRootDir;
 	let workRootDir;
 	let pickDirectoryCalls;
+	let nativeTerminalCalls;
 	beforeEach(() => {
 		const logDir = mkdtempSync(join(tmpdir(), "quadtodo-srv-"));
 		configRootDir = mkdtempSync(join(tmpdir(), "quadtodo-cfg-"));
 		workRootDir = mkdtempSync(join(tmpdir(), "quadtodo-work-"));
 		pickDirectoryCalls = [];
+		nativeTerminalCalls = [];
 		mkdirSync(join(workRootDir, "client"));
 		mkdirSync(join(workRootDir, "server"));
 		loadConfig({ rootDir: configRootDir });
@@ -59,6 +65,10 @@ describe("server", () => {
 			pickDirectory: async (input) => {
 				pickDirectoryCalls.push(input);
 				return { path: join(workRootDir, "client"), cancelled: false };
+			},
+			openNativeTerminal: async (input) => {
+				nativeTerminalCalls.push(input);
+				return { cwd: input.cwd };
 			},
 		});
 	});
@@ -169,6 +179,62 @@ describe("server", () => {
 		expect(pickDirectoryCalls[0]).toEqual({
 			defaultPath: join(workRootDir, "server"),
 			prompt: "选择默认启动目录",
+		});
+	});
+
+	it("POST /api/system/open-native-ai-resume opens local Terminal with resume command and no web terminal session", async () => {
+		const before = srv.pty.started.length;
+		const r = await request(srv.app)
+			.post("/api/system/open-native-ai-resume")
+			.send({
+				cwd: join(workRootDir, "client"),
+				tool: "claude",
+				nativeSessionId: "native-123",
+			});
+
+		expect(r.status).toBe(200);
+		expect(r.body.ok).toBe(true);
+		expect(r.body.cwd).toBe(join(workRootDir, "client"));
+		expect(r.body.title).toBe("quadtodo:claude:native-123");
+		expect(r.body.action).toBe("created");
+		expect(nativeTerminalCalls).toHaveLength(1);
+		expect(nativeTerminalCalls[0].cwd).toBe(join(workRootDir, "client"));
+		expect(nativeTerminalCalls[0].title).toBe("quadtodo:claude:native-123");
+		expect(nativeTerminalCalls[0].command).toContain("--resume");
+		expect(nativeTerminalCalls[0].command).toContain("native-123");
+		expect(srv.pty.started.length).toBe(before);
+	});
+
+	it("resolveEditorTargetPath resolves repo-relative paths under cwd descendants", () => {
+		const repoRoot = join(workRootDir, "quadtodo");
+		const targetDir = join(repoRoot, "apps/workspace/src/context");
+		mkdirSync(targetDir, { recursive: true });
+		writeFileSync(join(targetDir, "WorkSpaceContext.tsx"), "export const demo = 1\n");
+
+		const resolved = resolveEditorTargetPath(
+			workRootDir,
+			"apps/workspace/src/context/WorkSpaceContext.tsx:8",
+		);
+
+		expect(resolved).toBe(
+			`${join(targetDir, "WorkSpaceContext.tsx")}:8`,
+		);
+	});
+
+	it("resolveEditorTargetInfo prefers remembered session cwd for shorter relative paths", () => {
+		const repoRoot = join(workRootDir, "quadtodo");
+		const targetDir = join(repoRoot, "src/context");
+		mkdirSync(targetDir, { recursive: true });
+		writeFileSync(join(targetDir, "WorkSpaceContext.tsx"), "export const demo = 1\n");
+
+		const resolved = resolveEditorTargetInfo(
+			[repoRoot, workRootDir],
+			"src/context/WorkSpaceContext.tsx:8",
+		);
+
+		expect(resolved).toEqual({
+			resolvedPath: `${join(targetDir, "WorkSpaceContext.tsx")}:8`,
+			baseDir: repoRoot,
 		});
 	});
 
