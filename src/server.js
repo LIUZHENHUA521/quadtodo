@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
+import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
@@ -20,6 +21,8 @@ import { createTodosRouter } from "./routes/todos.js";
 import { createTemplatesRouter } from "./routes/templates.js";
 import { createRecurringRulesRouter } from "./routes/recurringRules.js";
 import { createStatsRouter } from "./routes/stats.js";
+import { createReportsRouter } from "./routes/reports.js";
+import { createPipelinesRouter } from "./routes/pipelines.js";
 import { createWikiRouter } from "./routes/wiki.js";
 import { createWikiService } from "./wiki/index.js";
 
@@ -101,6 +104,23 @@ function buildNativeResumeTitle(tool, nativeSessionId) {
 	return `quadtodo:${tool}:${nativeSessionId}`;
 }
 
+export function buildNativeResumeMarker(title) {
+	return `__quadtodo_resume__:${String(title || "")}`;
+}
+
+export function buildNativeResumeLaunch({ cwd, command, title } = {}) {
+	const marker = buildNativeResumeMarker(title);
+	const launch = `printf '[quadtodo] session marker: %s\\n' ${shellEscape(marker)}; cd ${shellEscape(cwd)}; ${String(command || "")}`;
+	return { marker, launch };
+}
+
+// Why a marker-in-scrollback instead of `custom title`:
+//   macOS Terminal's `custom title` gets overwritten by OSC escape sequences that
+//   Claude Code / Codex emit to display their own live status (e.g. "✳ Claude Code",
+//   "⠂ Kill all Claude Code processes"). That made the original `custom title is tabTitle`
+//   check always fail, so each button click spawned a new tab. We now print a unique
+//   marker line into the tab's scrollback before launching the CLI, and match via
+//   `history contains markerText` — the scrollback persists regardless of OSC noise.
 function openNativeTerminalNative({ cwd, command, title } = {}) {
 	if (process.platform !== "darwin") {
 		const error = new Error("native_terminal_unsupported");
@@ -113,19 +133,28 @@ function openNativeTerminalNative({ cwd, command, title } = {}) {
 			? cwd
 			: process.env.HOME || process.cwd();
 
+	const { marker, launch } = buildNativeResumeLaunch({
+		cwd: targetCwd,
+		command,
+		title,
+	});
+
 	const script = [
 		"on run argv",
-		"set targetDir to item 1 of argv",
-		"set launchCmd to item 2 of argv",
+		"set launchCmd to item 1 of argv",
+		"set markerText to item 2 of argv",
 		"set tabTitle to item 3 of argv",
 		'tell application "Terminal"',
 		"  activate",
 		"  set matchedWindow to missing value",
 		"  set matchedTab to missing value",
-		"  repeat with win in windows",
-		"    repeat with currentTab in tabs of win",
+		"  repeat with winIdx from 1 to (count of windows)",
+		"    set win to window winIdx",
+		"    repeat with tabIdx from 1 to (count of tabs of win)",
+		"      set currentTab to tab tabIdx of win",
 		"      try",
-		"        if custom title of currentTab is tabTitle then",
+		"        set tabHistory to history of currentTab",
+		"        if tabHistory contains markerText then",
 		"          set matchedWindow to win",
 		"          set matchedTab to currentTab",
 		"          exit repeat",
@@ -135,15 +164,19 @@ function openNativeTerminalNative({ cwd, command, title } = {}) {
 		"    if matchedTab is not missing value then exit repeat",
 		"  end repeat",
 		"  if matchedTab is not missing value then",
-		"    set front window to matchedWindow",
+		"    try",
+		"      set index of matchedWindow to 1",
+		"    end try",
 		"    set selected tab of matchedWindow to matchedTab",
 		'    return "reused"',
 		"  end if",
 		'  do script ""',
 		"  delay 0.1",
 		"  set newTab to selected tab of front window",
-		"  set custom title of newTab to tabTitle",
-		'  do script "cd " & quoted form of targetDir & "; " & launchCmd in newTab',
+		"  try",
+		"    set custom title of newTab to tabTitle",
+		"  end try",
+		"  do script launchCmd in newTab",
 		'  return "created"',
 		"end tell",
 		"end run",
@@ -155,8 +188,8 @@ function openNativeTerminalNative({ cwd, command, title } = {}) {
 			[
 				...script.flatMap((line) => ["-e", line]),
 				"--",
-				targetCwd,
-				String(command || ""),
+				launch,
+				marker,
 				String(title || ""),
 			],
 			(error, stdout, stderr) => {
@@ -604,6 +637,91 @@ export function createServer(opts = {}) {
 		}
 	});
 
+	// 列出 Claude Code 可用 slash 命令，作为 Chat composer 的 / 自动补全来源
+	// 扫描：~/.claude/{commands,skills} + <cwd>/.claude/{commands,skills} + 已安装插件的同样目录
+	app.get("/api/claude-commands", (req, res) => {
+		const extractDescription = (filePath) => {
+			try {
+				const content = readFileSync(filePath, "utf8")
+				const fm = content.match(/^---\n([\s\S]*?)\n---/)
+				if (fm) {
+					const dm = fm[1].match(/^description:\s*(.+)$/m)
+					if (dm) return dm[1].trim().replace(/^['"]|['"]$/g, "")
+				}
+				const body = fm ? content.slice(fm[0].length) : content
+				const firstLine = body.split("\n").map(s => s.trim()).filter(Boolean)[0]
+				return firstLine ? firstLine.slice(0, 200) : ""
+			} catch { return "" }
+		}
+		// commands/*.md：name = 文件名
+		const readCommandDir = (dir, scope, source) => {
+			try {
+				if (!existsSync(dir)) return []
+				return readdirSync(dir).filter(f => f.endsWith(".md")).map(f => ({
+					name: basename(f, ".md"),
+					description: extractDescription(join(dir, f)),
+					scope, source,
+				}))
+			} catch { return [] }
+		}
+		// skills/<name>/SKILL.md：name = 子目录名
+		const readSkillDir = (dir, scope, source) => {
+			try {
+				if (!existsSync(dir)) return []
+				return readdirSync(dir, { withFileTypes: true })
+					.filter(d => d.isDirectory())
+					.map(d => {
+						const skillPath = join(dir, d.name, "SKILL.md")
+						if (!existsSync(skillPath)) return null
+						return {
+							name: d.name,
+							description: extractDescription(skillPath),
+							scope, source,
+						}
+					})
+					.filter(Boolean)
+			} catch { return [] }
+		}
+		try {
+			const cwd = typeof req.query.cwd === "string" && req.query.cwd.trim() ? req.query.cwd : null
+			const all = []
+			const home = homedir()
+			// 用户级
+			all.push(...readCommandDir(join(home, ".claude", "commands"), "global", "user"))
+			all.push(...readSkillDir(join(home, ".claude", "skills"), "global", "user"))
+			// 项目级
+			if (cwd) {
+				all.push(...readCommandDir(join(cwd, ".claude", "commands"), "local", "project"))
+				all.push(...readSkillDir(join(cwd, ".claude", "skills"), "local", "project"))
+			}
+			// 已安装插件
+			try {
+				const pluginsFile = join(home, ".claude", "plugins", "installed_plugins.json")
+				if (existsSync(pluginsFile)) {
+					const cfg = JSON.parse(readFileSync(pluginsFile, "utf8"))
+					for (const [pluginKey, installs] of Object.entries(cfg.plugins || {})) {
+						for (const inst of installs || []) {
+							if (!inst?.installPath || !existsSync(inst.installPath)) continue
+							all.push(...readCommandDir(join(inst.installPath, "commands"), "global", `plugin:${pluginKey}`))
+							all.push(...readSkillDir(join(inst.installPath, "skills"), "global", `plugin:${pluginKey}`))
+						}
+					}
+				}
+			} catch { /* ignore */ }
+			// 同名优先级：local > user > plugin（local 最后进也会覆盖前面）
+			const byName = new Map()
+			const priority = (source) => source === "project" ? 3 : source === "user" ? 2 : 1
+			for (const c of all) {
+				const existing = byName.get(c.name)
+				if (!existing || priority(c.source) >= priority(existing.source)) byName.set(c.name, c)
+			}
+			const commands = Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name))
+			res.json({ ok: true, commands })
+		} catch (e) {
+			res.status(500).json({ ok: false, error: e.message })
+		}
+	});
+
 	app.post("/api/system/pick-directory", async (req, res) => {
 		try {
 			const result = await pickDirectory({
@@ -642,6 +760,9 @@ export function createServer(opts = {}) {
 		db,
 		getPricing: () => loadConfig({ rootDir: configRootDir }).pricing,
 	}));
+	app.use("/api/reports", createReportsRouter({ db }));
+	// Phase A: pipelines router（orchestrator 会在 Phase C 接入；现在仅支持模板 CRUD）
+	app.use("/api/pipelines", createPipelinesRouter({ db, orchestrator: null }));
 
 	const wikiConfig = (initialConfig && initialConfig.wiki) || {
 		wikiDir: join(process.env.HOME || process.cwd(), ".quadtodo", "wiki"),

@@ -251,6 +251,9 @@ function defaultConfig() {
 			timeoutMs: 600_000,
 			redact: true,
 		},
+		pipeline: {
+			maxAgents: 3,
+		},
 	};
 }
 
@@ -301,6 +304,7 @@ function normalizeConfig(cfg = {}) {
 			...defaults.wiki,
 			...(cfg.wiki || {}),
 		},
+		pipeline: { ...defaults.pipeline, ...(cfg.pipeline || {}) },
 	};
 }
 

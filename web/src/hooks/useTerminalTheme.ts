@@ -8,15 +8,18 @@ import {
 } from '../terminalThemes'
 
 const STORAGE_KEY = 'quadtodo.terminalTheme'
+const CUSTOM_PRESETS_KEY = 'quadtodo.customTerminalPresets'
 const EVENT_NAME = 'quadtodo:terminalTheme'
+export const CUSTOM_PREFIX = 'custom:'
 
 export interface ThemeOverride {
   background?: string
   foreground?: string
 }
 
+/** preset 字段在 storage 中可能是 built-in key（'default' / 'light' / ...）或 `custom:<name>` */
 interface StoredTheme {
-  preset: TerminalPresetName
+  preset: string
   override: ThemeOverride
 }
 
@@ -27,7 +30,9 @@ function readStored(): StoredTheme {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return DEFAULT_STORED
     const parsed = JSON.parse(raw)
-    const preset: TerminalPresetName = isPresetName(parsed?.preset) ? parsed.preset : 'default'
+    const presetCandidate: string = typeof parsed?.preset === 'string' ? parsed.preset : 'default'
+    const preset = (isPresetName(presetCandidate) || presetCandidate.startsWith(CUSTOM_PREFIX))
+      ? presetCandidate : 'default'
     const override: ThemeOverride = {}
     if (parsed?.override && typeof parsed.override === 'object') {
       if (isValidColor(parsed.override.background)) override.background = parsed.override.background
@@ -39,6 +44,24 @@ function readStored(): StoredTheme {
   }
 }
 
+function readCustomPresets(): Record<string, ITheme> {
+  try {
+    const raw = localStorage.getItem(CUSTOM_PRESETS_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    const out: Record<string, ITheme> = {}
+    for (const [name, theme] of Object.entries(parsed)) {
+      if (theme && typeof theme === 'object'
+        && isValidColor((theme as ITheme).background)
+        && isValidColor((theme as ITheme).foreground)) {
+        out[name] = theme as ITheme
+      }
+    }
+    return out
+  } catch { return {} }
+}
+
 function writeStored(next: StoredTheme) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
@@ -48,9 +71,14 @@ function writeStored(next: StoredTheme) {
   } catch { /* ignore */ }
 }
 
+function writeCustomPresets(next: Record<string, ITheme>) {
+  try { localStorage.setItem(CUSTOM_PRESETS_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+  try { window.dispatchEvent(new CustomEvent(EVENT_NAME)) } catch { /* ignore */ }
+}
+
 function subscribe(callback: () => void) {
   const onStorage = (e: StorageEvent) => {
-    if (e.key === STORAGE_KEY || e.key === null) callback()
+    if (e.key === STORAGE_KEY || e.key === CUSTOM_PRESETS_KEY || e.key === null) callback()
   }
   const onCustom = () => callback()
   window.addEventListener('storage', onStorage)
@@ -61,19 +89,33 @@ function subscribe(callback: () => void) {
   }
 }
 
-let snapshotCache: { raw: string; value: StoredTheme } | null = null
+interface CombinedSnapshot {
+  stored: StoredTheme
+  customPresets: Record<string, ITheme>
+}
 
-function getStoredSnapshot(): StoredTheme {
-  let raw: string
-  try { raw = localStorage.getItem(STORAGE_KEY) || '' } catch { raw = '' }
-  if (snapshotCache && snapshotCache.raw === raw) return snapshotCache.value
-  const value = readStored()
-  snapshotCache = { raw, value }
+let combinedCache: { storedRaw: string; customRaw: string; value: CombinedSnapshot } | null = null
+
+function getCombinedSnapshot(): CombinedSnapshot {
+  let storedRaw: string, customRaw: string
+  try { storedRaw = localStorage.getItem(STORAGE_KEY) || '' } catch { storedRaw = '' }
+  try { customRaw = localStorage.getItem(CUSTOM_PRESETS_KEY) || '' } catch { customRaw = '' }
+  if (combinedCache && combinedCache.storedRaw === storedRaw && combinedCache.customRaw === customRaw) {
+    return combinedCache.value
+  }
+  const value: CombinedSnapshot = { stored: readStored(), customPresets: readCustomPresets() }
+  combinedCache = { storedRaw, customRaw, value }
   return value
 }
 
-function mergeTheme(stored: StoredTheme): ITheme {
-  const base = TERMINAL_PRESETS[stored.preset] || TERMINAL_PRESETS.default
+function mergeTheme(stored: StoredTheme, customPresets: Record<string, ITheme>): ITheme {
+  let base: ITheme = TERMINAL_PRESETS.default
+  if (stored.preset.startsWith(CUSTOM_PREFIX)) {
+    const name = stored.preset.slice(CUSTOM_PREFIX.length)
+    base = customPresets[name] || TERMINAL_PRESETS.default
+  } else if (isPresetName(stored.preset)) {
+    base = TERMINAL_PRESETS[stored.preset]
+  }
   if (!stored.override.background && !stored.override.foreground) return base
   return {
     ...base,
@@ -84,18 +126,22 @@ function mergeTheme(stored: StoredTheme): ITheme {
 
 export interface UseTerminalTheme {
   theme: ITheme
-  preset: TerminalPresetName
+  preset: string
   override: ThemeOverride
-  setPreset: (name: TerminalPresetName) => void
+  customPresets: Record<string, ITheme>
+  setPreset: (name: string) => void
   setOverride: (patch: ThemeOverride) => void
   resetOverride: () => void
+  /** 将当前有效主题（base + override）存为一份命名自定义预设，并立即切到它（override 清空） */
+  saveCustomPreset: (name: string, theme: ITheme) => void
+  deleteCustomPreset: (name: string) => void
 }
 
 export function useTerminalTheme(): UseTerminalTheme {
-  const stored = useSyncExternalStore(subscribe, getStoredSnapshot, getStoredSnapshot)
+  const { stored, customPresets } = useSyncExternalStore(subscribe, getCombinedSnapshot, getCombinedSnapshot)
 
-  const setPreset = useCallback((name: TerminalPresetName) => {
-    if (!isPresetName(name)) return
+  const setPreset = useCallback((name: string) => {
+    if (!isPresetName(name) && !name.startsWith(CUSTOM_PREFIX)) return
     writeStored({ preset: name, override: {} })
   }, [])
 
@@ -118,14 +164,40 @@ export function useTerminalTheme(): UseTerminalTheme {
     writeStored({ preset: current.preset, override: {} })
   }, [])
 
+  const saveCustomPreset = useCallback((name: string, theme: ITheme) => {
+    const clean = name.trim()
+    if (!clean) return
+    // 防止覆盖内置名
+    if (isPresetName(clean)) return
+    const current = readCustomPresets()
+    writeCustomPresets({ ...current, [clean]: theme })
+    writeStored({ preset: `${CUSTOM_PREFIX}${clean}`, override: {} })
+  }, [])
+
+  const deleteCustomPreset = useCallback((name: string) => {
+    const current = readCustomPresets()
+    if (!(name in current)) return
+    const next = { ...current }
+    delete next[name]
+    writeCustomPresets(next)
+    // 若当前选中被删，退回 default
+    const storedNow = readStored()
+    if (storedNow.preset === `${CUSTOM_PREFIX}${name}`) {
+      writeStored({ preset: 'default', override: {} })
+    }
+  }, [])
+
   return {
-    theme: mergeTheme(stored),
+    theme: mergeTheme(stored, customPresets),
     preset: stored.preset,
     override: stored.override,
+    customPresets,
     setPreset,
     setOverride,
     resetOverride,
+    saveCustomPreset,
+    deleteCustomPreset,
   }
 }
 
-export const __internal = { STORAGE_KEY, EVENT_NAME, readStored, writeStored, mergeTheme }
+export const __internal = { STORAGE_KEY, CUSTOM_PRESETS_KEY, EVENT_NAME, readStored, writeStored, readCustomPresets, writeCustomPresets, mergeTheme }

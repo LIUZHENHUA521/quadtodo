@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Drawer, Segmented, DatePicker, Card, Table, Collapse, Button, message, Empty, Spin } from 'antd'
+import { LineChartOutlined } from '@ant-design/icons'
 import { Line, Pie } from '@ant-design/charts'
 import dayjs, { Dayjs } from 'dayjs'
 
@@ -66,7 +67,12 @@ export default function StatsDrawer({ open, onClose }: { open: boolean; onClose:
   }
 
   return (
-    <Drawer open={open} onClose={onClose} width={720} title="📊 AI 使用统计">
+    <Drawer
+      open={open}
+      onClose={onClose}
+      width={720}
+      title={<span><LineChartOutlined style={{ marginRight: 6 }} />AI 使用统计</span>}
+    >
       <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
         <Segmented
           value={range}

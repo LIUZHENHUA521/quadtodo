@@ -35,6 +35,7 @@ export interface Todo {
   aiSessions: AiSession[]
   recurringRuleId: string | null
   instanceDate: string | null
+  completedAt: number | null
   createdAt: number
   updatedAt: number
 }
@@ -646,5 +647,22 @@ export async function initWiki(): Promise<{ state: string; wikiDir: string; erro
   const body = await jsonFetch<{ ok: true; state: string; wikiDir: string; error?: string }>('/api/wiki/init', {
     method: 'POST',
   })
+  return body
+}
+
+// ─── Report (每日完成) ───
+
+export interface DoneReport {
+  range: { since: number; until: number }
+  list: Todo[]
+  dailyCounts: { date: string; count: number }[]
+  missedCount: number
+  total: number
+}
+
+export async function getDoneReport(since: number, until: number): Promise<DoneReport> {
+  const body = await jsonFetch<{ ok: true } & DoneReport>(
+    `/api/reports/done?since=${since}&until=${until}`,
+  )
   return body
 }

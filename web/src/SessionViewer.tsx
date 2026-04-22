@@ -53,22 +53,23 @@ export default function SessionViewer(props: Props) {
       }}>
         <AiTerminalMini {...props} fillHeight={fillHeight} />
       </div>
+      {/* Chat 视图始终挂载，仅用 display 切换，保证轮询在后台持续、输入/滚动状态不丢 */}
       <div style={{
         display: mode === 'transcript' ? 'flex' : 'none',
         flexDirection: 'column',
         ...(fillHeight ? { flex: 1, minHeight: 0 } : {}),
       }}>
-        {mode === 'transcript' && (
-          <TranscriptView
-            todoId={todoId}
-            sessionId={sessionId}
-            onFork={onFork}
-            autoRefreshMs={isRunning ? 5000 : 0}
-            resumeTarget={props.resumeTarget}
-            onSessionRecovered={props.onSessionRecovered}
-            fillHeight={fillHeight}
-          />
-        )}
+        <TranscriptView
+          todoId={todoId}
+          sessionId={sessionId}
+          onFork={onFork}
+          autoRefreshMs={isRunning ? 2000 : 0}
+          resumeTarget={props.resumeTarget}
+          onSessionRecovered={props.onSessionRecovered}
+          fillHeight={fillHeight}
+          cwd={props.cwd}
+          active={mode === 'transcript'}
+        />
       </div>
     </div>
   )

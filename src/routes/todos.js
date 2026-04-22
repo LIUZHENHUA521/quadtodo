@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { watch as fsWatch } from 'node:fs'
 import { loadTranscript } from '../transcript.js'
 import { summarizeTurns } from '../summarize.js'
 import { buildTodoExport, renderTodoMarkdown } from '../export/todoMarkdown.js'
@@ -258,6 +259,129 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
     } catch (e) {
       console.error('[transcript]', e)
       res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
+  // SSE 推流：jsonl 源 fs.watch 实时推送新 turn；ptylog 源推一次 snapshot 后让客户端 fallback 轮询
+  router.get('/:id/ai-sessions/:sessionId/transcript/stream', async (req, res) => {
+    const todo = db.getTodo(req.params.id)
+    if (!todo) { res.status(404).json({ ok: false, error: 'not_found' }); return }
+    const session = (todo.aiSessions || []).find(s => s?.sessionId === req.params.sessionId)
+    if (!session) { res.status(404).json({ ok: false, error: 'session_not_found' }); return }
+
+    res.set({
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    })
+    res.flushHeaders?.()
+
+    let closed = false
+    const sendEvent = (event, data) => {
+      if (closed) return
+      try {
+        res.write(`event: ${event}\n`)
+        res.write(`data: ${JSON.stringify(data)}\n\n`)
+      } catch { /* client gone */ }
+    }
+
+    const loadArgs = () => ({
+      tool: session.tool,
+      nativeSessionId: session.nativeSessionId,
+      cwd: session.cwd || todo.workDir || null,
+      sessionId: session.sessionId,
+      logDir,
+      liveOutputHistory: (typeof getLiveSession === 'function' ? getLiveSession(session.sessionId) : null)?.outputHistory || null,
+      liveTimestamp: (typeof getLiveSession === 'function' ? getLiveSession(session.sessionId) : null)?.lastOutputAt || Date.now(),
+    })
+
+    let initial
+    try { initial = await loadTranscript(loadArgs()) }
+    catch (e) { sendEvent('error', { message: e.message }); res.end(); return }
+
+    sendEvent('snapshot', {
+      source: initial.source,
+      turns: initial.turns,
+      total: initial.turns.length,
+      session: {
+        sessionId: session.sessionId,
+        tool: session.tool,
+        nativeSessionId: session.nativeSessionId,
+        status: session.status,
+        label: session.label || '',
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+      },
+    })
+
+    let watcher = null
+    let debounceTimer = null
+    let keepaliveTimer = null
+    let lastTotal = initial.turns.length
+    const cleanup = () => {
+      if (closed) return
+      closed = true
+      if (debounceTimer) clearTimeout(debounceTimer)
+      if (keepaliveTimer) clearInterval(keepaliveTimer)
+      try { watcher?.close() } catch { /* ignore */ }
+      try { res.end() } catch { /* ignore */ }
+    }
+    req.on('close', cleanup)
+    req.on('error', cleanup)
+
+    // 仅 jsonl 源可推流；ptylog 源让前端降级到轮询
+    if (initial.source !== 'jsonl' || !initial.filePath) {
+      sendEvent('stream-not-supported', { source: initial.source })
+      cleanup()
+      return
+    }
+
+    keepaliveTimer = setInterval(() => {
+      if (!closed) { try { res.write(': keepalive\n\n') } catch { cleanup() } }
+    }, 15_000)
+
+    try {
+      watcher = fsWatch(initial.filePath, () => {
+        if (closed) return
+        if (debounceTimer) clearTimeout(debounceTimer)
+        debounceTimer = setTimeout(async () => {
+          debounceTimer = null
+          if (closed) return
+          try {
+            const parsed = await loadTranscript(loadArgs())
+            if (parsed.source !== 'jsonl') return
+            const newTotal = parsed.turns.length
+            if (newTotal > lastTotal) {
+              sendEvent('turn-added', {
+                turns: parsed.turns.slice(lastTotal),
+                total: newTotal,
+              })
+              lastTotal = newTotal
+            } else if (newTotal < lastTotal) {
+              // 文件被重写/截断：重新整体下发
+              sendEvent('snapshot', {
+                source: 'jsonl',
+                turns: parsed.turns,
+                total: newTotal,
+                session: {
+                  sessionId: session.sessionId, tool: session.tool,
+                  nativeSessionId: session.nativeSessionId, status: session.status,
+                  label: session.label || '',
+                  startedAt: session.startedAt, completedAt: session.completedAt,
+                },
+              })
+              lastTotal = newTotal
+            }
+          } catch (e) {
+            console.warn('[transcript stream] re-parse failed:', e?.message)
+          }
+        }, 120)
+      })
+      watcher.on?.('error', () => cleanup())
+    } catch (e) {
+      sendEvent('error', { message: `watch failed: ${e.message}` })
+      cleanup()
     }
   })
 

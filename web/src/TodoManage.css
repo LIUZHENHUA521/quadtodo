@@ -241,6 +241,44 @@ body {
   background: #fafcff;
 }
 
+/* ─── 优先级视图（单列流） ─── */
+.todo-priority-board {
+  background: #e8e8e8;
+  border-radius: 8px;
+  padding: 12px;
+  min-height: calc(100vh - 220px);
+}
+
+.todo-priority-list {
+  background: #fff;
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 60px;
+}
+
+.todo-priority-list .todo-card {
+  position: relative;
+}
+
+.todo-priority-list .todo-card::before {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.3px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.todo-priority-list .todo-card.quadrant-1::before { content: 'P0'; background: #ff4d4f; }
+.todo-priority-list .todo-card.quadrant-2::before { content: 'P1'; background: #faad14; }
+.todo-priority-list .todo-card.quadrant-3::before { content: 'P2'; background: #1677ff; }
+.todo-priority-list .todo-card.quadrant-4::before { content: 'P3'; background: #52c41a; }
+
 /* ─── 子任务列表 ─── */
 .subtask-item {
   display: flex;

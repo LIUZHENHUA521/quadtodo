@@ -3,8 +3,8 @@
  */
 
 import React, { useEffect, useRef, useCallback, useState } from 'react'
-import { Button, Tooltip, Tag, Dropdown, Popover, ColorPicker } from 'antd'
-import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, CloseOutlined, VerticalAlignBottomOutlined, LockOutlined, UnlockOutlined, BgColorsOutlined } from '@ant-design/icons'
+import { Button, Tooltip, Tag, Dropdown, Modal, ColorPicker, Input, Divider, message } from 'antd'
+import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, CloseOutlined, VerticalAlignBottomOutlined, LockOutlined, UnlockOutlined, BgColorsOutlined, DeleteOutlined } from '@ant-design/icons'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -43,11 +43,11 @@ const MIN_VALID_COLS = 30
 
 export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeTarget, onSessionRecovered, onClose, onDone, fillHeight }: Props) {
   void onClose
-  const { theme, preset, override, setPreset, setOverride, resetOverride } = useTerminalTheme()
+  const { theme, preset, override, customPresets, setPreset, setOverride, resetOverride, saveCustomPreset, deleteCustomPreset } = useTerminalTheme()
   const themeRef = useRef(theme)
   useEffect(() => { themeRef.current = theme }, [theme])
-  const [customPopoverOpen, setCustomPopoverOpen] = useState(false)
-  const overrideSnapshotRef = useRef<typeof override>({})
+  const [customModalOpen, setCustomModalOpen] = useState(false)
+  const [saveAsName, setSaveAsName] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -664,22 +664,26 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     term.focus()
   }, [])
 
-  const handleOpenCustomPopover = useCallback(() => {
-    overrideSnapshotRef.current = { ...override }
-    setCustomPopoverOpen(true)
-  }, [override])
+  const handleOpenCustomModal = useCallback(() => {
+    setSaveAsName('')
+    setCustomModalOpen(true)
+  }, [])
 
-  const handleCancelCustom = useCallback(() => {
-    const snap = overrideSnapshotRef.current
-    resetOverride()
-    if (snap.background || snap.foreground) {
-      setOverride({
-        ...(snap.background ? { background: snap.background } : {}),
-        ...(snap.foreground ? { foreground: snap.foreground } : {}),
-      })
+  const handleCloseCustomModal = useCallback(() => {
+    setCustomModalOpen(false)
+  }, [])
+
+  const handleSaveAsCustomPreset = useCallback(() => {
+    const name = saveAsName.trim()
+    if (!name) { message.warning('请输入主题名称'); return }
+    if (customPresets[name]) {
+      // 简单用原生 confirm 二次确认覆盖；用户偏好此项目的轻量交互
+      if (!window.confirm(`「${name}」已存在，是否覆盖？`)) return
     }
-    setCustomPopoverOpen(false)
-  }, [setOverride, resetOverride])
+    saveCustomPreset(name, { background: theme.background, foreground: theme.foreground })
+    setSaveAsName('')
+    message.success(`已保存自定义主题「${name}」`)
+  }, [saveAsName, customPresets, saveCustomPreset, theme])
 
   const toggleFollowTail = useCallback(() => {
     setFollowTail(prev => {
@@ -773,37 +777,6 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             </Tag>
           </Dropdown>
         )}
-        <Popover
-          open={customPopoverOpen}
-          onOpenChange={(open) => { if (!open) setCustomPopoverOpen(false) }}
-          trigger={[]}
-          placement="bottomRight"
-          destroyTooltipOnHide
-          content={
-            <div style={{ width: 220 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 12 }}>背景色</span>
-                <ColorPicker
-                  size="small"
-                  value={override.background || theme.background}
-                  onChange={(c) => setOverride({ background: c.toHexString() })}
-                />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 12 }}>文字色</span>
-                <ColorPicker
-                  size="small"
-                  value={override.foreground || theme.foreground}
-                  onChange={(c) => setOverride({ foreground: c.toHexString() })}
-                />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                <Button size="small" onClick={() => resetOverride()}>恢复预设默认</Button>
-                <Button size="small" onClick={handleCancelCustom}>取消</Button>
-              </div>
-            </div>
-          }
-        >
         <Dropdown
           menu={{
             items: [
@@ -820,13 +793,40 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
                   </div>
                 ),
               })),
+              ...(Object.keys(customPresets).length > 0 ? [
+                { type: 'divider' as const },
+                ...Object.entries(customPresets).map(([name, t]) => ({
+                  key: `custom:${name}`,
+                  label: (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                      <span style={{
+                        display: 'inline-block', width: 14, height: 14, borderRadius: 3,
+                        border: '1px solid rgba(128,128,128,0.3)',
+                        background: `linear-gradient(135deg, ${t.background} 50%, ${t.foreground} 50%)`,
+                      }} />
+                      <span style={{ flex: 1 }}>{name}</span>
+                      <span
+                        role="button"
+                        aria-label="删除"
+                        onClick={(e) => {
+                          e.stopPropagation(); e.preventDefault()
+                          if (window.confirm(`删除自定义主题「${name}」？`)) deleteCustomPreset(name)
+                        }}
+                        style={{ color: '#999', padding: '0 4px', cursor: 'pointer', fontSize: 11 }}
+                      >
+                        <DeleteOutlined />
+                      </span>
+                    </div>
+                  ),
+                })),
+              ] : []),
               { type: 'divider' as const },
               { key: '__custom', label: '自定义...' },
             ],
             selectedKeys: [preset],
             onClick: ({ key }) => {
-              if (key === '__custom') handleOpenCustomPopover()
-              else setPreset(key as TerminalPresetName)
+              if (key === '__custom') handleOpenCustomModal()
+              else setPreset(key)
             },
           }}
           trigger={['click']}
@@ -835,10 +835,53 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             icon={<BgColorsOutlined style={{ fontSize: 9 }} />}
             style={{ fontSize: 10, lineHeight: '16px', margin: 0, cursor: 'pointer', userSelect: 'none' }}
           >
-            {PRESET_LABELS[preset]}{(override.background || override.foreground) ? '*' : ''} <DownOutlined style={{ fontSize: 7 }} />
+            {preset.startsWith('custom:')
+              ? preset.slice(7)
+              : (PRESET_LABELS as Record<string, string>)[preset] || preset}
+            {(override.background || override.foreground) ? '*' : ''}
+            {' '}<DownOutlined style={{ fontSize: 7 }} />
           </Tag>
         </Dropdown>
-        </Popover>
+        <Modal
+          open={customModalOpen}
+          title="自定义终端颜色"
+          onCancel={handleCloseCustomModal}
+          width={360}
+          destroyOnClose
+          footer={
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <Button onClick={() => resetOverride()}>恢复预设默认</Button>
+              <Button type="primary" onClick={handleCloseCustomModal}>完成</Button>
+            </div>
+          }
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <span>背景色</span>
+            <ColorPicker
+              value={override.background || theme.background}
+              onChange={(c) => setOverride({ background: c.toHexString() })}
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span>文字色</span>
+            <ColorPicker
+              value={override.foreground || theme.foreground}
+              onChange={(c) => setOverride({ foreground: c.toHexString() })}
+            />
+          </div>
+          <Divider style={{ margin: '12px 0' }} />
+          <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>保存当前颜色为一份自定义主题，下次可直接从下拉里选：</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Input
+              placeholder="输入主题名称，例如：我的深色"
+              value={saveAsName}
+              onChange={(e) => setSaveAsName(e.target.value)}
+              onPressEnter={handleSaveAsCustomPreset}
+              maxLength={32}
+            />
+            <Button onClick={handleSaveAsCustomPreset} disabled={!saveAsName.trim()}>另存为</Button>
+          </div>
+        </Modal>
         <Tooltip title={followTail ? '已跟随新输出（点击暂停）' : '已暂停跟随（点击恢复）'}>
           <Tag
             color={followTail ? 'green' : 'default'}

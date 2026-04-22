@@ -80,18 +80,48 @@ describe('PtyManager', () => {
     expect(outputs).toEqual([{ sessionId: 's1', data: 'hello' }])
   })
 
-  it('captures Claude session id from output and emits native-session', () => {
+  it('pre-generates Claude session id via --session-id and emits native-session immediately', () => {
     const factory = makeFakePty()
     const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
     const events = []
     pm.on('native-session', (ev) => events.push(ev))
     pm.start({ sessionId: 's1', tool: 'claude', prompt: null, cwd: '/tmp' })
+    const args = factory.created[0]._args
+    const idx = args.indexOf('--session-id')
+    expect(idx).toBeGreaterThanOrEqual(0)
+    const presetId = args[idx + 1]
+    expect(presetId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    expect(events).toEqual([{ sessionId: 's1', nativeId: presetId }])
+  })
+
+  it('does not pre-generate --session-id when resuming', () => {
+    const factory = makeFakePty()
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    pm.start({
+      sessionId: 's1',
+      tool: 'claude',
+      prompt: null,
+      cwd: '/tmp',
+      resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+    })
+    expect(factory.created[0]._args).not.toContain('--session-id')
+  })
+
+  it('Claude output regex remains as a safety net when output yields a different UUID', () => {
+    const factory = makeFakePty()
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    const events = []
+    pm.on('native-session', (ev) => events.push(ev))
+    pm.start({ sessionId: 's1', tool: 'claude', prompt: null, cwd: '/tmp' })
+    // 第一个事件：启动时预生成 UUID
+    expect(events).toHaveLength(1)
     factory.created[0]._emitData(
       'some prefix claude --resume abcdef12-3456-7890-abcd-ef1234567890 and suffix',
     )
-    expect(events).toEqual([
-      { sessionId: 's1', nativeId: 'abcdef12-3456-7890-abcd-ef1234567890' },
-    ])
+    expect(events).toContainEqual({
+      sessionId: 's1',
+      nativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+    })
   })
 
   it('captures Codex session id from output and emits native-session', () => {

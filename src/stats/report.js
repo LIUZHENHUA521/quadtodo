@@ -40,6 +40,21 @@ export function buildReport(db, { since, until = Date.now(), pricing, topN = 10 
 		WHERE completed_at >= ? AND completed_at < ?
 	`).all(since, until)
 
+	// Build nativeId → todoId fallback map so stats 不用等下一次 scan 补 bound_todo_id
+	// 覆盖：transcript_files.bound_todo_id 为空、但 transcript.native_id 能在任何 todo.aiSessions[] 里找到
+	const todos = db.listTodos()
+	const nativeToTodo = new Map()
+	for (const t of todos) {
+		for (const s of (t.aiSessions || [])) {
+			if (s?.nativeSessionId && s?.tool) {
+				nativeToTodo.set(`${s.tool}:${s.nativeSessionId}`, t.id)
+			}
+		}
+	}
+	const effectiveTodoId = (f) => f.bound_todo_id
+		|| (f.native_id ? nativeToTodo.get(`${f.tool}:${f.native_id}`) : null)
+		|| null
+
 	// summary
 	let totalTokens = { ...ZERO }
 	let totalActive = 0
@@ -49,25 +64,27 @@ export function buildReport(db, { since, until = Date.now(), pricing, topN = 10 
 	for (const f of files) {
 		totalTokens = addTokens(totalTokens, fileTokens(f))
 		totalActive += f.active_ms || 0
-		if (f.bound_todo_id) coveredTodos.add(f.bound_todo_id)
+		const tid = effectiveTodoId(f)
+		if (tid) coveredTodos.add(tid)
 		else unbound++
 	}
 	for (const l of logs) totalWall += l.duration_ms || 0
 
 	const totalCost = costOf(totalTokens, null, pricing)
 
-	// topTodos: group files by bound_todo_id
+	// topTodos: group files by effective todoId（bound 或 通过 nativeId 回填）
 	const todoAgg = new Map()
 	for (const f of files) {
-		if (!f.bound_todo_id) continue
-		const bucket = todoAgg.get(f.bound_todo_id) || {
-			todoId: f.bound_todo_id, activeMs: 0, tokens: { ...ZERO }, sessions: 0, models: new Map(),
+		const tid = effectiveTodoId(f)
+		if (!tid) continue
+		const bucket = todoAgg.get(tid) || {
+			todoId: tid, activeMs: 0, tokens: { ...ZERO }, sessions: 0, models: new Map(),
 		}
 		bucket.activeMs += f.active_ms || 0
 		bucket.tokens = addTokens(bucket.tokens, fileTokens(f))
 		bucket.sessions += 1
 		if (f.primary_model) bucket.models.set(f.primary_model, (bucket.models.get(f.primary_model) || 0) + 1)
-		todoAgg.set(f.bound_todo_id, bucket)
+		todoAgg.set(tid, bucket)
 	}
 	// wall clock per todo from ai_session_log
 	const todoWall = new Map()
@@ -75,7 +92,6 @@ export function buildReport(db, { since, until = Date.now(), pricing, topN = 10 
 		todoWall.set(l.todo_id, (todoWall.get(l.todo_id) || 0) + (l.duration_ms || 0))
 	}
 
-	const todos = db.listTodos()
 	const todoById = new Map(todos.map(t => [t.id, t]))
 
 	const topTodos = [...todoAgg.values()]
@@ -105,7 +121,7 @@ export function buildReport(db, { since, until = Date.now(), pricing, topN = 10 
 	// byTool / byQuadrant / byModel
 	const byTool = aggregateBy(files, logs, f => f.tool, l => l.tool, pricing)
 	const byQuadrant = aggregateBy(files, logs,
-		f => { const t = todoById.get(f.bound_todo_id); return t ? t.quadrant : null },
+		f => { const t = todoById.get(effectiveTodoId(f)); return t ? t.quadrant : null },
 		l => l.quadrant, pricing)
 	const byModel = aggregateBy(files, [], f => f.primary_model || '(unknown)', () => null, pricing, { includeWall: false })
 

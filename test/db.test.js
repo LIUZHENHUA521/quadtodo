@@ -170,6 +170,64 @@ describe('db', () => {
     expect(db.getTodo(child.id)?.quadrant).toBe(3)
   })
 
+  describe('completed_at', () => {
+    it('new todo has completedAt=null and becomes set when status→done', async () => {
+      const t = db.createTodo({ title: 'A', quadrant: 1 })
+      expect(t.completedAt).toBeNull()
+      const done = db.updateTodo(t.id, { status: 'done' })
+      expect(done.completedAt).toBeTypeOf('number')
+      expect(done.completedAt).toBeGreaterThanOrEqual(t.createdAt)
+    })
+
+    it('reverting status from done clears completedAt', () => {
+      const t = db.createTodo({ title: 'A', quadrant: 1 })
+      db.updateTodo(t.id, { status: 'done' })
+      const reverted = db.updateTodo(t.id, { status: 'todo' })
+      expect(reverted.completedAt).toBeNull()
+    })
+
+    it('re-completing updates completedAt to the latest moment', async () => {
+      const t = db.createTodo({ title: 'A', quadrant: 1 })
+      const first = db.updateTodo(t.id, { status: 'done' })
+      db.updateTodo(t.id, { status: 'todo' })
+      await new Promise(r => setTimeout(r, 5))
+      const second = db.updateTodo(t.id, { status: 'done' })
+      expect(second.completedAt).toBeGreaterThan(first.completedAt)
+    })
+
+    it('editing a done todo does NOT change completedAt', async () => {
+      const t = db.createTodo({ title: 'A', quadrant: 1 })
+      const done = db.updateTodo(t.id, { status: 'done' })
+      await new Promise(r => setTimeout(r, 5))
+      const edited = db.updateTodo(t.id, { title: 'A2' })
+      expect(edited.completedAt).toBe(done.completedAt)
+    })
+
+    it('listCompletedTodos filters by [since, until) and sorts DESC by completedAt', async () => {
+      const a = db.createTodo({ title: 'A', quadrant: 1 })
+      const b = db.createTodo({ title: 'B', quadrant: 2 })
+      const c = db.createTodo({ title: 'C', quadrant: 3 })
+      const ta = db.updateTodo(a.id, { status: 'done' }).completedAt
+      await new Promise(r => setTimeout(r, 2))
+      const tb = db.updateTodo(b.id, { status: 'done' }).completedAt
+      await new Promise(r => setTimeout(r, 2))
+      const tc = db.updateTodo(c.id, { status: 'done' }).completedAt
+      const all = db.listCompletedTodos({ since: ta, until: tc + 1 })
+      expect(all.map(t => t.title)).toEqual(['C', 'B', 'A'])
+      const middle = db.listCompletedTodos({ since: tb, until: tc })
+      expect(middle.map(t => t.title)).toEqual(['B'])
+    })
+
+    it('countMissedInRange counts todos with status=missed by updated_at', () => {
+      const now = Date.now()
+      const t = db.createTodo({ title: 'Missed one', quadrant: 1 })
+      // 直接用 raw 模拟 sweepRecurring 打 missed 状态
+      db.raw.prepare(`UPDATE todos SET status = 'missed', updated_at = ? WHERE id = ?`).run(now, t.id)
+      expect(db.countMissedInRange({ since: now - 1000, until: now + 1000 })).toBe(1)
+      expect(db.countMissedInRange({ since: now + 2000, until: now + 3000 })).toBe(0)
+    })
+  })
+
   describe('ai_session_log', () => {
     it('insertSessionLog + querySessionStats aggregates', () => {
       const now = Date.now()
@@ -236,6 +294,49 @@ describe('transcript_files usage columns', () => {
     expect(row.primary_model).toBe('claude-sonnet-4-6')
     expect(row.active_ms).toBe(800)
     db.close()
+  })
+
+  it('老 todos DB 没有 completed_at 列时自动补列并用 updated_at 回填', () => {
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'quadtodo-completed-migration-'))
+    const tmpFile = path.join(tmpDir, 'old.db')
+    let migratedDb
+    try {
+      const raw = new Database(tmpFile)
+      raw.exec(`
+        CREATE TABLE todos (
+          id          TEXT PRIMARY KEY,
+          parent_id   TEXT,
+          title       TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          quadrant    INTEGER NOT NULL CHECK(quadrant IN (1,2,3,4)),
+          status      TEXT NOT NULL DEFAULT 'todo',
+          due_date    INTEGER,
+          work_dir    TEXT,
+          sort_order  REAL NOT NULL,
+          ai_session  TEXT,
+          created_at  INTEGER NOT NULL,
+          updated_at  INTEGER NOT NULL
+        )
+      `)
+      raw.prepare(`
+        INSERT INTO todos (id, title, quadrant, status, sort_order, created_at, updated_at)
+        VALUES ('done1', 'old done', 1, 'done', 1024, 100, 500),
+               ('todo1', 'still todo', 2, 'todo', 1024, 100, 500)
+      `).run()
+      raw.close()
+
+      migratedDb = openDb(tmpFile)
+      const cols = migratedDb.raw.prepare(`PRAGMA table_info(todos)`).all().map(c => c.name)
+      expect(cols).toContain('completed_at')
+
+      const doneRow = migratedDb.raw.prepare(`SELECT completed_at FROM todos WHERE id = 'done1'`).get()
+      expect(doneRow.completed_at).toBe(500)
+      const todoRow = migratedDb.raw.prepare(`SELECT completed_at FROM todos WHERE id = 'todo1'`).get()
+      expect(todoRow.completed_at).toBeNull()
+    } finally {
+      migratedDb?.close()
+      rmSync(tmpDir, { recursive: true })
+    }
   })
 
   it('老 DB 自动补列', () => {

@@ -240,6 +240,35 @@
   background: #b0b4bb;
 }
 
+.tv-unread-pill {
+  position: absolute;
+  right: 16px;
+  /* composer 粗估 ≈ 110px，加 8px gap；用户拖高度时 composer 高度不变 */
+  bottom: 118px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #1677ff;
+  color: #fff;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(22, 119, 255, 0.35);
+  z-index: 3;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  animation: tvPillPop 0.2s ease;
+}
+
+.tv-unread-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(22, 119, 255, 0.45);
+}
+
+@keyframes tvPillPop {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
 .tv-fullscreen-hint {
   position: absolute;
   bottom: 10px;

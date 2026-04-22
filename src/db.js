@@ -3,18 +3,19 @@ import { randomUUID } from 'node:crypto'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS todos (
-  id          TEXT PRIMARY KEY,
-  parent_id   TEXT,
-  title       TEXT NOT NULL,
-  description TEXT NOT NULL DEFAULT '',
-  quadrant    INTEGER NOT NULL CHECK(quadrant IN (1,2,3,4)),
-  status      TEXT NOT NULL DEFAULT 'todo',
-  due_date    INTEGER,
-  work_dir    TEXT,
-  sort_order  REAL NOT NULL,
-  ai_session  TEXT,
-  created_at  INTEGER NOT NULL,
-  updated_at  INTEGER NOT NULL
+  id           TEXT PRIMARY KEY,
+  parent_id    TEXT,
+  title        TEXT NOT NULL,
+  description  TEXT NOT NULL DEFAULT '',
+  quadrant     INTEGER NOT NULL CHECK(quadrant IN (1,2,3,4)),
+  status       TEXT NOT NULL DEFAULT 'todo',
+  due_date     INTEGER,
+  work_dir     TEXT,
+  sort_order   REAL NOT NULL,
+  ai_session   TEXT,
+  completed_at INTEGER,
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_todos_quadrant_sort ON todos(quadrant, sort_order);
 CREATE INDEX IF NOT EXISTS idx_todos_status        ON todos(status);
@@ -119,6 +120,34 @@ CREATE TABLE IF NOT EXISTS wiki_todo_coverage (
   PRIMARY KEY (wiki_run_id, todo_id)
 );
 CREATE INDEX IF NOT EXISTS idx_wiki_cov_todo ON wiki_todo_coverage(todo_id, llm_applied);
+
+CREATE TABLE IF NOT EXISTS pipeline_templates (
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  description     TEXT NOT NULL DEFAULT '',
+  roles_json      TEXT NOT NULL,
+  edges_json      TEXT NOT NULL,
+  max_iterations  INTEGER NOT NULL DEFAULT 3,
+  is_builtin      INTEGER NOT NULL DEFAULT 0,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+  id              TEXT PRIMARY KEY,
+  todo_id         TEXT NOT NULL,
+  template_id     TEXT NOT NULL,
+  status          TEXT NOT NULL,
+  started_at      INTEGER NOT NULL,
+  ended_at        INTEGER,
+  iteration_count INTEGER NOT NULL DEFAULT 0,
+  base_branch     TEXT,
+  base_sha        TEXT,
+  agents_json     TEXT NOT NULL DEFAULT '[]',
+  messages_json   TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_todo ON pipeline_runs(todo_id);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status);
 `
 
 const UNFINISHED = ['todo', 'ai_running', 'ai_pending', 'ai_done']
@@ -153,6 +182,7 @@ function rowToTodo(row) {
     aiSessions,
     recurringRuleId: row.recurring_rule_id ?? null,
     instanceDate: row.instance_date ?? null,
+    completedAt: row.completed_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -261,9 +291,15 @@ export function openDb(file = ':memory:') {
   if (!columns.some(col => col.name === 'instance_date')) {
     db.exec(`ALTER TABLE todos ADD COLUMN instance_date TEXT`)
   }
+  if (!columns.some(col => col.name === 'completed_at')) {
+    db.exec(`ALTER TABLE todos ADD COLUMN completed_at INTEGER`)
+    // 一次性回填：已完成的旧行用 updated_at 作为近似完成时间
+    db.exec(`UPDATE todos SET completed_at = updated_at WHERE status = 'done' AND completed_at IS NULL`)
+  }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_recurring ON todos(recurring_rule_id, instance_date)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_parent_sort ON todos(parent_id, sort_order)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_quad_parent_sort ON todos(quadrant, parent_id, sort_order)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_completed_at ON todos(completed_at)`)
 
   const tfCols = db.prepare(`PRAGMA table_info(transcript_files)`).all().map(c => c.name)
   for (const [name, type] of [
@@ -279,8 +315,8 @@ export function openDb(file = ':memory:') {
 
   const stmts = {
     insert: db.prepare(`
-      INSERT INTO todos (id, parent_id, title, description, quadrant, status, due_date, work_dir, brainstorm, applied_template_ids, sort_order, ai_session, recurring_rule_id, instance_date, created_at, updated_at)
-      VALUES (@id, @parent_id, @title, @description, @quadrant, @status, @due_date, @work_dir, @brainstorm, @applied_template_ids, @sort_order, @ai_session, @recurring_rule_id, @instance_date, @created_at, @updated_at)
+      INSERT INTO todos (id, parent_id, title, description, quadrant, status, due_date, work_dir, brainstorm, applied_template_ids, sort_order, ai_session, recurring_rule_id, instance_date, completed_at, created_at, updated_at)
+      VALUES (@id, @parent_id, @title, @description, @quadrant, @status, @due_date, @work_dir, @brainstorm, @applied_template_ids, @sort_order, @ai_session, @recurring_rule_id, @instance_date, @completed_at, @created_at, @updated_at)
     `),
     getById: db.prepare(`SELECT * FROM todos WHERE id = ?`),
     listChildrenByParent: db.prepare(`SELECT id FROM todos WHERE parent_id = ? ORDER BY sort_order ASC, created_at ASC`),
@@ -309,13 +345,14 @@ export function openDb(file = ':memory:') {
     const now = Date.now()
     const parent = resolveParent(data.parentId ?? null)
     const quadrant = parent ? parent.quadrant : (Number(data.quadrant) || 4)
+    const status = data.status || 'todo'
     const row = {
       id: randomUUID(),
       parent_id: parent?.id ?? null,
       title: data.title,
       description: data.description || '',
       quadrant,
-      status: data.status || 'todo',
+      status,
       due_date: data.dueDate ?? null,
       work_dir: data.workDir ?? null,
       brainstorm: data.brainstorm ? 1 : 0,
@@ -324,6 +361,7 @@ export function openDb(file = ':memory:') {
       ai_session: JSON.stringify(normalizeAiSessions(data.aiSessions ?? data.aiSession)),
       recurring_rule_id: data.recurringRuleId ?? null,
       instance_date: data.instanceDate ?? null,
+      completed_at: status === 'done' ? now : null,
       created_at: now,
       updated_at: now,
     }
@@ -389,8 +427,17 @@ export function openDb(file = ':memory:') {
       fields.push(`ai_session = @ai_session`)
       bind.ai_session = JSON.stringify(normalizeAiSessions(patch.aiSessions))
     }
-    if (!fields.length) return existing
     const now = Date.now()
+    if (patch.status !== undefined && patch.status !== existing.status) {
+      if (patch.status === 'done') {
+        fields.push(`completed_at = @completed_at`)
+        bind.completed_at = now
+      } else if (existing.status === 'done') {
+        fields.push(`completed_at = @completed_at`)
+        bind.completed_at = null
+      }
+    }
+    if (!fields.length) return existing
     fields.push(`updated_at = @updated_at`)
     bind.updated_at = now
     const sql = `UPDATE todos SET ${fields.join(', ')} WHERE id = @id`
@@ -448,6 +495,29 @@ export function openDb(file = ':memory:') {
       }
     }
     return todos.filter(todo => includeIds.has(todo.id) || (todo.parentId && includeIds.has(todo.parentId)))
+  }
+
+  function listCompletedTodos({ since, until }) {
+    const rows = db.prepare(`
+      SELECT * FROM todos
+      WHERE status = 'done'
+        AND completed_at IS NOT NULL
+        AND completed_at >= ?
+        AND completed_at < ?
+      ORDER BY completed_at DESC
+    `).all(Number(since), Number(until))
+    return rows.map(rowToTodo)
+  }
+
+  function countMissedInRange({ since, until }) {
+    // 循环任务过期：status='missed'，在 sweepRecurring 里用 updated_at 标记时间
+    const row = db.prepare(`
+      SELECT COUNT(*) AS n FROM todos
+      WHERE status = 'missed'
+        AND updated_at >= ?
+        AND updated_at < ?
+    `).get(Number(since), Number(until))
+    return row?.n || 0
   }
 
   const commentStmts = {
@@ -1067,6 +1137,200 @@ export function openDb(file = ':memory:') {
     return { today, startOfTodayMs }
   }
 
+  // ─── pipeline templates & runs ───
+  const pipeTmplStmts = {
+    list: db.prepare(`SELECT * FROM pipeline_templates ORDER BY is_builtin DESC, created_at ASC`),
+    get: db.prepare(`SELECT * FROM pipeline_templates WHERE id = ?`),
+    insert: db.prepare(`INSERT INTO pipeline_templates (id, name, description, roles_json, edges_json, max_iterations, is_builtin, created_at, updated_at) VALUES (@id, @name, @description, @roles_json, @edges_json, @max_iterations, @is_builtin, @created_at, @updated_at)`),
+    update: db.prepare(`UPDATE pipeline_templates SET name = @name, description = @description, roles_json = @roles_json, edges_json = @edges_json, max_iterations = @max_iterations, updated_at = @updated_at WHERE id = @id`),
+    delete: db.prepare(`DELETE FROM pipeline_templates WHERE id = ?`),
+    countAll: db.prepare(`SELECT COUNT(*) AS n FROM pipeline_templates`),
+  }
+  function rowToPipeTemplate(r) {
+    if (!r) return null
+    return {
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      roles: safeParseJson(r.roles_json, []),
+      edges: safeParseJson(r.edges_json, []),
+      maxIterations: r.max_iterations,
+      isBuiltin: !!r.is_builtin,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    }
+  }
+  function safeParseJson(s, fallback) {
+    try { return JSON.parse(s) } catch { return fallback }
+  }
+  function listPipelineTemplates() {
+    return pipeTmplStmts.list.all().map(rowToPipeTemplate)
+  }
+  function getPipelineTemplate(id) {
+    return rowToPipeTemplate(pipeTmplStmts.get.get(id))
+  }
+  function createPipelineTemplate(data) {
+    const now = Date.now()
+    const row = {
+      id: data.id || randomUUID(),
+      name: data.name || '未命名流水线',
+      description: data.description || '',
+      roles_json: JSON.stringify(data.roles || []),
+      edges_json: JSON.stringify(data.edges || []),
+      max_iterations: Number.isFinite(data.maxIterations) ? data.maxIterations : 3,
+      is_builtin: data.isBuiltin ? 1 : 0,
+      created_at: now,
+      updated_at: now,
+    }
+    pipeTmplStmts.insert.run(row)
+    return rowToPipeTemplate(pipeTmplStmts.get.get(row.id))
+  }
+  function updatePipelineTemplate(id, patch) {
+    const existing = pipeTmplStmts.get.get(id)
+    if (!existing) return null
+    if (existing.is_builtin) throw new Error('builtin_pipeline_template_readonly')
+    pipeTmplStmts.update.run({
+      id,
+      name: patch.name ?? existing.name,
+      description: patch.description ?? existing.description,
+      roles_json: patch.roles !== undefined ? JSON.stringify(patch.roles) : existing.roles_json,
+      edges_json: patch.edges !== undefined ? JSON.stringify(patch.edges) : existing.edges_json,
+      max_iterations: Number.isFinite(patch.maxIterations) ? patch.maxIterations : existing.max_iterations,
+      updated_at: Date.now(),
+    })
+    return rowToPipeTemplate(pipeTmplStmts.get.get(id))
+  }
+  function deletePipelineTemplate(id) {
+    const existing = pipeTmplStmts.get.get(id)
+    if (!existing) return
+    if (existing.is_builtin) throw new Error('builtin_pipeline_template_readonly')
+    pipeTmplStmts.delete.run(id)
+  }
+
+  const pipeRunStmts = {
+    list: db.prepare(`SELECT * FROM pipeline_runs WHERE todo_id = ? ORDER BY started_at DESC`),
+    listRecent: db.prepare(`SELECT * FROM pipeline_runs ORDER BY started_at DESC LIMIT ?`),
+    get: db.prepare(`SELECT * FROM pipeline_runs WHERE id = ?`),
+    insert: db.prepare(`INSERT INTO pipeline_runs (id, todo_id, template_id, status, started_at, ended_at, iteration_count, base_branch, base_sha, agents_json, messages_json) VALUES (@id, @todo_id, @template_id, @status, @started_at, @ended_at, @iteration_count, @base_branch, @base_sha, @agents_json, @messages_json)`),
+    update: db.prepare(`UPDATE pipeline_runs SET status = @status, ended_at = @ended_at, iteration_count = @iteration_count, agents_json = @agents_json, messages_json = @messages_json WHERE id = @id`),
+    listActive: db.prepare(`SELECT * FROM pipeline_runs WHERE status = 'running' ORDER BY started_at ASC`),
+    findActiveForTodo: db.prepare(`SELECT * FROM pipeline_runs WHERE todo_id = ? AND status = 'running' LIMIT 1`),
+  }
+  function rowToPipeRun(r) {
+    if (!r) return null
+    return {
+      id: r.id,
+      todoId: r.todo_id,
+      templateId: r.template_id,
+      status: r.status,
+      startedAt: r.started_at,
+      endedAt: r.ended_at,
+      iterationCount: r.iteration_count,
+      baseBranch: r.base_branch,
+      baseSha: r.base_sha,
+      agents: safeParseJson(r.agents_json, []),
+      messages: safeParseJson(r.messages_json, []),
+    }
+  }
+  function createPipelineRun(data) {
+    const row = {
+      id: data.id || randomUUID(),
+      todo_id: data.todoId,
+      template_id: data.templateId,
+      status: data.status || 'running',
+      started_at: data.startedAt || Date.now(),
+      ended_at: data.endedAt || null,
+      iteration_count: data.iterationCount || 0,
+      base_branch: data.baseBranch || null,
+      base_sha: data.baseSha || null,
+      agents_json: JSON.stringify(data.agents || []),
+      messages_json: JSON.stringify(data.messages || []),
+    }
+    pipeRunStmts.insert.run(row)
+    return rowToPipeRun(pipeRunStmts.get.get(row.id))
+  }
+  function updatePipelineRun(id, patch) {
+    const existing = pipeRunStmts.get.get(id)
+    if (!existing) return null
+    pipeRunStmts.update.run({
+      id,
+      status: patch.status ?? existing.status,
+      ended_at: patch.endedAt !== undefined ? patch.endedAt : existing.ended_at,
+      iteration_count: Number.isFinite(patch.iterationCount) ? patch.iterationCount : existing.iteration_count,
+      agents_json: patch.agents !== undefined ? JSON.stringify(patch.agents) : existing.agents_json,
+      messages_json: patch.messages !== undefined ? JSON.stringify(patch.messages) : existing.messages_json,
+    })
+    return rowToPipeRun(pipeRunStmts.get.get(id))
+  }
+  function listPipelineRunsForTodo(todoId) {
+    return pipeRunStmts.list.all(todoId).map(rowToPipeRun)
+  }
+  function getPipelineRun(id) {
+    return rowToPipeRun(pipeRunStmts.get.get(id))
+  }
+  function listActivePipelineRuns() {
+    return pipeRunStmts.listActive.all().map(rowToPipeRun)
+  }
+  function findActivePipelineRunForTodo(todoId) {
+    return rowToPipeRun(pipeRunStmts.findActiveForTodo.get(todoId))
+  }
+
+  function seedBuiltinPipelineTemplatesIfEmpty() {
+    if (pipeTmplStmts.countAll.get().n > 0) return
+    const CODER_SYS = `你是「代码员」（coder），职责：根据需求编写代码。
+
+重要约束：
+- 你当前的工作目录是一个专属 git worktree，请**只在此目录内修改文件**，不要切换到其他目录
+- 写代码时遵循项目既有风格、既有模式；不过度设计
+- 每完成一轮修改，请**先用 git 提交你的变更**（\`git add && git commit\`）
+- 完成后正常结束对话即可（不需要写任何 handoff 标签），后续会自动交给审阅员
+
+若你需要主动提前提交给审阅员，可以写：
+<handoff to="reviewer" summary="简短说明本轮做了什么" />
+
+若你刚收到审阅员的驳回反馈（feedback 会注入在消息里），请根据反馈修改，然后照上面流程再提交一次。`
+
+    const REVIEWER_SYS = `你是「审阅员」（reviewer），职责：审阅代码员的本轮修改，判断是否通过。
+
+你当前 cwd 是代码员的 worktree，**只读**，不要修改任何文件。
+
+流程：
+1. 用 \`git diff HEAD~..HEAD\` 或 \`git log\` 查看本轮代码员的改动
+2. 按以下维度审阅：
+   - 需求完成度：是否完成用户最初的诉求
+   - 正确性：边界、错误处理、并发
+   - 可读性：命名、结构
+   - 副作用：是否引入新的抽象、是否改了不该改的东西
+3. 必须以**下面其中一个 handoff 标签**结尾：
+
+通过（任务完结）：
+<handoff to="__done__" verdict="approved" rationale="简短理由" />
+
+驳回（打回给代码员修改）：
+<handoff to="coder" verdict="rejected" feedback="具体的、可执行的修改建议，逐条列出" />
+
+不要含糊 —— 要么通过，要么给出明确可改的反馈。`
+
+    const builtin = {
+      id: 'builtin-coder-reviewer-loop',
+      name: 'Coder ↔ Reviewer 循环',
+      description: '代码员实现 → 审阅员审阅，驳回则打回复用 coder session，通过则结束',
+      roles: [
+        { key: 'coder', name: '代码员', tool: 'claude', writeAccess: true, worktree: 'own', systemPrompt: CODER_SYS },
+        { key: 'reviewer', name: '审阅员', tool: 'claude', writeAccess: false, worktree: 'attach_to_writer', systemPrompt: REVIEWER_SYS },
+      ],
+      edges: [
+        { from: 'coder', event: 'done', to: 'reviewer' },
+        { from: 'reviewer', event: 'handoff', verdict: 'approved', to: '__done__' },
+        { from: 'reviewer', event: 'handoff', verdict: 'rejected', to: 'coder' },
+      ],
+      maxIterations: 3,
+      isBuiltin: true,
+    }
+    createPipelineTemplate(builtin)
+  }
+  seedBuiltinPipelineTemplatesIfEmpty()
+
   return {
     raw: db,
     listTemplates,
@@ -1079,6 +1343,8 @@ export function openDb(file = ':memory:') {
     updateTodo,
     deleteTodo,
     listTodos,
+    listCompletedTodos,
+    countMissedInRange,
     nextSortOrder,
     addComment,
     listComments,
@@ -1118,6 +1384,18 @@ export function openDb(file = ':memory:') {
     markCoverageApplied,
     listCoverageForTodo,
     listUnappliedDoneTodos,
+    // pipeline
+    listPipelineTemplates,
+    getPipelineTemplate,
+    createPipelineTemplate,
+    updatePipelineTemplate,
+    deletePipelineTemplate,
+    createPipelineRun,
+    updatePipelineRun,
+    listPipelineRunsForTodo,
+    getPipelineRun,
+    listActivePipelineRuns,
+    findActivePipelineRunForTodo,
     close: () => db.close(),
   }
 }

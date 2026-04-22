@@ -208,96 +208,96 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     }
   })
 
+  // ─── 程序化 session 启动入口（供 orchestrator 等模块直接调用，跳过 HTTP） ───
+  function spawnSession({ todoId, prompt, tool, cwd, resumeNativeId, permissionMode, label }) {
+    if (!todoId || typeof prompt !== 'string' || !tool) {
+      const err = new Error('missing todoId, prompt, or tool'); err.code = 'bad_request'
+      throw err
+    }
+    if (!['claude', 'codex'].includes(tool)) {
+      const err = new Error('invalid tool'); err.code = 'bad_request'
+      throw err
+    }
+    const todo = db.getTodo(todoId)
+    if (!todo) {
+      const err = new Error('todo_not_found'); err.code = 'not_found'
+      throw err
+    }
+    if (resumeNativeId) {
+      const existing = nativeSessionMap.get(`${tool}:${resumeNativeId}`)
+      if (existing) return { sessionId: existing, reused: true }
+    }
+
+    const sessionId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    const sessionCwd = resolveSessionCwd(cwd)
+    const session = {
+      sessionId,
+      todoId,
+      tool,
+      prompt,
+      status: 'running',
+      startedAt: Date.now(),
+      completedAt: null,
+      browsers: new Set(),
+      outputHistory: [],
+      outputSize: 0,
+      nativeSessionId: resumeNativeId || null,
+      recentOutput: '',
+      cwd: sessionCwd,
+      currentCwd: sessionCwd,
+      autoMode: permissionMode && permissionMode !== 'default' ? permissionMode : null,
+      lastOutputAt: null,
+      outputBytesTotal: 0,
+    }
+    sessions.set(sessionId, session)
+    todoSessionMap.set(todoId, sessionId)
+    if (resumeNativeId) nativeSessionMap.set(`${tool}:${resumeNativeId}`, sessionId)
+
+    db.updateTodo(todoId, {
+      status: 'ai_running',
+      aiSessions: mergeTodoAiSessions(todo, {
+        sessionId,
+        tool,
+        nativeSessionId: resumeNativeId || null,
+        cwd: sessionCwd,
+        status: 'running',
+        startedAt: session.startedAt,
+        completedAt: null,
+        prompt,
+        ...(label ? { label } : {}),
+      }),
+    })
+
+    try {
+      pty.start({
+        sessionId,
+        tool,
+        prompt: resumeNativeId ? null : prompt,
+        cwd: sessionCwd,
+        resumeNativeId: resumeNativeId || undefined,
+        permissionMode: permissionMode || null,
+      })
+    } catch (error) {
+      sessions.delete(sessionId)
+      if (todoSessionMap.get(todoId) === sessionId) todoSessionMap.delete(todoId)
+      if (resumeNativeId) nativeSessionMap.delete(`${tool}:${resumeNativeId}`)
+      throw error
+    }
+    return { sessionId, reused: false }
+  }
+
   // ─── REST ───
 
   const router = Router()
 
   router.post('/exec', (req, res) => {
     try {
-      const { todoId, prompt, tool, cwd, resumeNativeId, permissionMode } = req.body || {}
-      if (!todoId || typeof prompt !== 'string' || !tool) {
-        res.status(400).json({ ok: false, error: 'missing todoId, prompt, or tool' })
-        return
-      }
-      if (!['claude', 'codex'].includes(tool)) {
-        res.status(400).json({ ok: false, error: 'invalid tool' })
-        return
-      }
-      const todo = db.getTodo(todoId)
-      if (!todo) {
-        res.status(404).json({ ok: false, error: 'todo_not_found' })
-        return
-      }
-      if (resumeNativeId) {
-        const existingNativeSessionId = nativeSessionMap.get(`${tool}:${resumeNativeId}`)
-        if (existingNativeSessionId) {
-          res.json({ ok: true, sessionId: existingNativeSessionId, reused: true })
-          return
-        }
-      }
-
-      const sessionId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-      const sessionCwd = resolveSessionCwd(cwd)
-      const session = {
-        sessionId,
-        todoId,
-        tool,
-        prompt,
-        status: 'running',
-        startedAt: Date.now(),
-        completedAt: null,
-        browsers: new Set(),
-        outputHistory: [],
-        outputSize: 0,
-        nativeSessionId: resumeNativeId || null,
-        recentOutput: '',
-        cwd: sessionCwd,
-        currentCwd: sessionCwd,
-        autoMode: permissionMode && permissionMode !== 'default' ? permissionMode : null,
-        lastOutputAt: null,
-        outputBytesTotal: 0,
-        completedAt: null,
-      }
-      sessions.set(sessionId, session)
-      todoSessionMap.set(todoId, sessionId)
-      if (resumeNativeId) {
-        nativeSessionMap.set(`${tool}:${resumeNativeId}`, sessionId)
-      }
-
-      db.updateTodo(todoId, {
-        status: 'ai_running',
-        aiSessions: mergeTodoAiSessions(todo, {
-          sessionId,
-          tool,
-          nativeSessionId: resumeNativeId || null,
-          cwd: sessionCwd,
-          status: 'running',
-          startedAt: session.startedAt,
-          completedAt: null,
-          prompt,
-        }),
-      })
-
-      try {
-        pty.start({
-          sessionId,
-          tool,
-          prompt: resumeNativeId ? null : prompt,
-          cwd: sessionCwd,
-          resumeNativeId: resumeNativeId || undefined,
-          permissionMode: permissionMode || null,
-        })
-      } catch (error) {
-        sessions.delete(sessionId)
-        if (todoSessionMap.get(todoId) === sessionId) todoSessionMap.delete(todoId)
-        if (resumeNativeId) nativeSessionMap.delete(`${tool}:${resumeNativeId}`)
-        throw error
-      }
-
-      res.json({ ok: true, sessionId })
+      const result = spawnSession(req.body || {})
+      res.json({ ok: true, ...result })
     } catch (e) {
-      console.error('[ai-terminal/exec]', e)
-      res.status(500).json({ ok: false, error: e.message })
+      const status = e.code === 'bad_request' ? 400 : e.code === 'not_found' ? 404 : 500
+      if (status >= 500) console.error('[ai-terminal/exec]', e)
+      res.status(status).json({ ok: false, error: e.message })
     }
   })
 
@@ -594,6 +594,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     removeBrowser,
     handleBrowserMessage,
     broadcastToSession,
+    spawnSession,
     close,
   }
 }

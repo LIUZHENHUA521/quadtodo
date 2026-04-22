@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Drawer, Button, Checkbox, Empty, Spin, Space, Tag, Alert, message, Modal } from 'antd'
-import { FolderOpenOutlined, SyncOutlined, FileTextOutlined } from '@ant-design/icons'
+import { FolderOpenOutlined, SyncOutlined, FileTextOutlined, BookOutlined } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import dayjs from 'dayjs'
@@ -125,7 +125,7 @@ export default function WikiDrawer({
 
   return (
     <Drawer
-      title={<span>🧠 记忆（Wiki）</span>}
+      title={<span><BookOutlined style={{ marginRight: 6 }} />记忆（Wiki）</span>}
       open={open}
       onClose={onClose}
       width={1100}

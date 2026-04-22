@@ -100,21 +100,49 @@ export function createTranscriptsService({ db, listTodos, updateTodo, dirs = {} 
   async function autoBindUnbound() {
     const unbound = db.listUnboundTranscriptFiles()
     if (!unbound.length) return 0
-    const orphans = collectOrphans(listTodos())
-    if (!orphans.length) return 0
-    const pairs = autoMatch(unbound, orphans)
-    for (const p of pairs) {
-      const file = db.getTranscriptFile(p.fileId)
-      if (!file) continue
-      applyBindingToTodo(p.todoId, {
-        nativeId: p.nativeId,
-        tool: file.tool,
-        startedAt: file.started_at,
-        endedAt: file.ended_at,
-      }, p.sessionId)
-      db.setTranscriptBound(p.fileId, p.todoId)
+    const todos = listTodos()
+
+    // Pass 1（直连）：transcript_files.native_id 直接命中 todo.aiSessions[].nativeSessionId
+    // quadtodo 启动的会话都走这条，避免依赖 cwd+time+prompt 的模糊匹配
+    const nativeToTodo = new Map()
+    for (const t of todos) {
+      for (const s of (t.aiSessions || [])) {
+        if (s?.nativeSessionId && s?.tool) {
+          nativeToTodo.set(`${s.tool}:${s.nativeSessionId}`, t.id)
+        }
+      }
     }
-    return pairs.length
+    const remaining = []
+    let directBound = 0
+    for (const f of unbound) {
+      const hit = f.native_id ? nativeToTodo.get(`${f.tool}:${f.native_id}`) : null
+      if (hit) {
+        db.setTranscriptBound(f.id, hit)
+        directBound++
+      } else {
+        remaining.push(f)
+      }
+    }
+
+    // Pass 2（fuzzy）：历史遗留、外部工具启动的会话没有 nativeSessionId 记到 todo 上，才走 cwd+time+prompt
+    const orphans = collectOrphans(todos)
+    let fuzzyBound = 0
+    if (orphans.length && remaining.length) {
+      const pairs = autoMatch(remaining, orphans)
+      for (const p of pairs) {
+        const file = db.getTranscriptFile(p.fileId)
+        if (!file) continue
+        applyBindingToTodo(p.todoId, {
+          nativeId: p.nativeId,
+          tool: file.tool,
+          startedAt: file.started_at,
+          endedAt: file.ended_at,
+        }, p.sessionId)
+        db.setTranscriptBound(p.fileId, p.todoId)
+        fuzzyBound++
+      }
+    }
+    return directBound + fuzzyBound
   }
 
   function search(opts) {

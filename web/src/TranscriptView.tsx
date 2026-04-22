@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Input, Button, Spin, Tag, Empty, Tooltip, message } from 'antd'
+import { Input, Button, Spin, Tag, Empty, Tooltip, Mentions, message } from 'antd'
 import {
   ReloadOutlined, BranchesOutlined, DownOutlined, RightOutlined, SearchOutlined, SendOutlined,
   FullscreenOutlined, FullscreenExitOutlined,
@@ -20,6 +20,17 @@ interface Props {
   onSessionRecovered?: (nextSessionId: string) => void
   /** 父容器撑满时由父级控高（flex:1），不显示拖拽手柄 */
   fillHeight?: boolean
+  /** 当前会话工作目录 —— 用于拉取 project-local 的 slash 命令 */
+  cwd?: string | null
+  /** Chat tab 是否可见。不可见时不打开 SSE 长连接，避免占用浏览器同源 6 并发池 */
+  active?: boolean
+}
+
+interface SlashCommand {
+  name: string
+  description: string
+  scope: 'global' | 'local'
+  source: 'user' | 'project' | string  // string = `plugin:xxx`
 }
 
 const ROLE_META: Record<string, { label: string; cls: string }> = {
@@ -75,31 +86,30 @@ function CodeBlock({ inline, className, children }: any) {
   )
 }
 
-function TurnItem({ turn, index, keyword, onFork, collapsedTools, toggleTool }: {
+interface TurnItemProps {
   turn: TranscriptTurn
   index: number
   keyword: string
-  onFork?: (i: number) => void
-  collapsedTools: boolean
-  toggleTool: () => void
-}) {
+  canFork: boolean
+  collapsed: boolean
+  onFork: (i: number) => void
+  onToggleCollapse: (i: number) => void
+}
+
+const TurnItem = React.memo(function TurnItem({ turn, index, keyword, canFork, collapsed, onFork, onToggleCollapse }: TurnItemProps) {
   const meta = ROLE_META[turn.role] || { label: turn.role, cls: '' }
   const isTool = turn.role === 'tool_use' || turn.role === 'tool_result' || turn.role === 'thinking'
   const isRaw = turn.role === 'raw'
 
-  const body = (() => {
+  // markdown / 代码高亮仅在内容或关键词变化时重跑，切 tab / 追加新 turn 时不做无谓计算
+  const body = useMemo(() => {
     if (isTool) {
-      if (collapsedTools) return null
-      return (
-        <pre className="tv-tool-pre">{highlightKeyword(turn.content, keyword)}</pre>
-      )
+      if (collapsed) return null
+      return <pre className="tv-tool-pre">{highlightKeyword(turn.content, keyword)}</pre>
     }
     if (isRaw) return <pre className="tv-raw-pre">{highlightKeyword(turn.content, keyword)}</pre>
-    if (keyword) {
-      // Markdown + 高亮难以同时支持，先做关键词高亮的 fallback 纯文本视图
-      if (turn.content.toLowerCase().includes(keyword.toLowerCase())) {
-        return <div className="tv-plain">{highlightKeyword(turn.content, keyword)}</div>
-      }
+    if (keyword && turn.content.toLowerCase().includes(keyword.toLowerCase())) {
+      return <div className="tv-plain">{highlightKeyword(turn.content, keyword)}</div>
     }
     return (
       <div className="tv-md">
@@ -108,7 +118,10 @@ function TurnItem({ turn, index, keyword, onFork, collapsedTools, toggleTool }: 
         </ReactMarkdown>
       </div>
     )
-  })()
+  }, [turn.content, turn.role, keyword, collapsed, isTool, isRaw])
+
+  const handleToggle = useCallback(() => onToggleCollapse(index), [onToggleCollapse, index])
+  const handleFork = useCallback(() => onFork(index), [onFork, index])
 
   return (
     <div className={`tv-turn ${meta.cls}`} data-turn-index={index}>
@@ -118,28 +131,28 @@ function TurnItem({ turn, index, keyword, onFork, collapsedTools, toggleTool }: 
           <span className="tv-turn-time">{new Date(turn.timestamp).toLocaleTimeString()}</span>
         )}
         {isTool && (
-          <Button size="small" type="text" icon={collapsedTools ? <RightOutlined /> : <DownOutlined />} onClick={toggleTool}>
-            {collapsedTools ? '展开' : '折叠'}
+          <Button size="small" type="text" icon={collapsed ? <RightOutlined /> : <DownOutlined />} onClick={handleToggle}>
+            {collapsed ? '展开' : '折叠'}
           </Button>
         )}
         <div style={{ flex: 1 }} />
-        {onFork && !isTool && !isRaw && (
+        {canFork && !isTool && !isRaw && (
           <Tooltip title="从这里 Fork 新会话">
-            <Button size="small" type="text" icon={<BranchesOutlined />} onClick={() => onFork(index)} />
+            <Button size="small" type="text" icon={<BranchesOutlined />} onClick={handleFork} />
           </Tooltip>
         )}
       </div>
       {body}
     </div>
   )
-}
+})
 
 type LocalTurn = TranscriptTurn & { optimisticId?: string }
 
 const MIN_HEIGHT = 240
 const MAX_HEIGHT = 1200
 
-export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshMs = 0, resumeTarget = null, onSessionRecovered, fillHeight }: Props) {
+export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshMs = 0, resumeTarget = null, onSessionRecovered, fillHeight, cwd, active = true }: Props) {
   const [data, setData] = useState<TranscriptResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
@@ -203,15 +216,20 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     dataRef.current = data
   }, [data])
 
-  const fetchData = useCallback(async (mode: 'reset' | 'incremental' = 'reset') => {
+  const fetchData = useCallback(async (mode: 'reset' | 'incremental' | 'poll' = 'reset') => {
     if (mode === 'reset') setLoading(true)
     try {
       const previous = dataRef.current
-      const since = mode === 'incremental' && previous ? previous.total : undefined
+      // 'poll' 是后台静默刷新：
+      //  - jsonl 源：用 since 做增量，同 'incremental'
+      //  - ptylog 源：单个 raw turn 的 content 会持续增长，since 会让服务端 slice 出空数组，必须走全量
+      const useIncremental = mode === 'incremental'
+        || (mode === 'poll' && previous?.source === 'jsonl')
+      const since = useIncremental && previous ? previous.total : undefined
       const r = await getTranscript(todoId, sessionId, since)
       setError(null)
       setData((current) => {
-        if (mode === 'incremental' && current && since != null) {
+        if (useIncremental && current && since != null) {
           return {
             ...r,
             offset: 0,
@@ -224,7 +242,8 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
         setOptimisticTurns([])
       }
     } catch (e: any) {
-      setError(e?.message || '加载失败')
+      // 静默轮询出错不刷 error，避免闪烁；首屏/手动刷新仍走 error 通道
+      if (mode !== 'poll') setError(e?.message || '加载失败')
     } finally {
       if (mode === 'reset') setLoading(false)
     }
@@ -241,11 +260,90 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     void fetchData('reset')
   }, [fetchData])
 
+  // SSE 推流订阅（运行中会话），失败 5s 重连一次，仍失败则降级为轮询
+  // 关键：仅在 Chat tab 激活时才开 SSE —— 否则每个运行中的 session 永远挂一条 SSE，
+  // 叠加 Live 的 WS，很快打满浏览器单源 6 条并发限制，所有新请求 pending。
   useEffect(() => {
-    if (!autoRefreshMs) return
-    const t = setInterval(() => { void fetchData('incremental') }, autoRefreshMs)
-    return () => clearInterval(t)
-  }, [autoRefreshMs, fetchData])
+    if (!autoRefreshMs || !active) return
+    let es: EventSource | null = null
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let fallbackTimer: ReturnType<typeof setInterval> | null = null
+    let retriedOnce = false
+    let disposed = false
+
+    const closeES = () => {
+      if (es) { try { es.close() } catch { /* ignore */ } ; es = null }
+    }
+    const startFallback = () => {
+      if (fallbackTimer || disposed) return
+      fallbackTimer = setInterval(() => { void fetchData('poll') }, autoRefreshMs)
+    }
+    const stopFallback = () => {
+      if (fallbackTimer) clearInterval(fallbackTimer)
+      fallbackTimer = null
+    }
+    const handleSnapshot = (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data)
+        setData({
+          source: payload.source,
+          turns: payload.turns,
+          total: payload.total,
+          offset: 0,
+          session: payload.session,
+        })
+        setOptimisticTurns([])
+        retriedOnce = false
+        stopFallback()
+      } catch { /* ignore */ }
+    }
+    const handleTurnAdded = (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data)
+        setData(current => current ? {
+          ...current,
+          turns: [...current.turns, ...(payload.turns as TranscriptTurn[])],
+          total: payload.total,
+        } : current)
+        if (payload.turns?.length) setOptimisticTurns([])
+      } catch { /* ignore */ }
+    }
+    const handleStreamUnsupported = () => {
+      closeES()
+      startFallback()
+    }
+    const connect = () => {
+      if (disposed) return
+      closeES()
+      try {
+        const url = `/api/todos/${todoId}/ai-sessions/${sessionId}/transcript/stream`
+        const evt = new EventSource(url)
+        es = evt
+        evt.addEventListener('snapshot', handleSnapshot as EventListener)
+        evt.addEventListener('turn-added', handleTurnAdded as EventListener)
+        evt.addEventListener('stream-not-supported', handleStreamUnsupported as EventListener)
+        evt.onerror = () => {
+          if (disposed) return
+          closeES()
+          if (!retriedOnce) {
+            retriedOnce = true
+            retryTimer = setTimeout(() => { if (!disposed) connect() }, 5000)
+          } else {
+            startFallback()
+          }
+        }
+      } catch {
+        startFallback()
+      }
+    }
+    connect()
+    return () => {
+      disposed = true
+      closeES()
+      if (retryTimer) clearTimeout(retryTimer)
+      stopFallback()
+    }
+  }, [autoRefreshMs, fetchData, todoId, sessionId, active])
 
   const displayedTurns = useMemo<LocalTurn[]>(() => (
     data ? [...data.turns, ...optimisticTurns] : optimisticTurns
@@ -269,6 +367,110 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   }, [matches])
 
   useEffect(() => { if (matches.length) jumpToMatch(0) }, [matches, jumpToMatch])
+
+  // 跟随底部：用户停在底部就粘住最新；滚上去看历史就停止跟随
+  const isAtBottomRef = useRef(true)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const handleBodyScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    const atBottom = distanceFromBottom < 40
+    isAtBottomRef.current = atBottom
+    if (atBottom) setUnreadCount(0)
+  }, [])
+
+  // 持续粘底：用 ResizeObserver 监听每个 turn 子节点的尺寸变化（markdown / 代码高亮 / 图片加载都异步，
+  // 简单 scrollTop=scrollHeight 会在首帧就算好，之后 markdown 撑高了就"漏出底部空间"看不到最新内容）
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const stickToBottom = () => {
+      if (isAtBottomRef.current) el.scrollTop = el.scrollHeight
+    }
+    const ro = new ResizeObserver(stickToBottom)
+    const observed = new WeakSet<Element>()
+    const observeChildren = () => {
+      for (const c of Array.from(el.children)) {
+        if (!observed.has(c)) { ro.observe(c); observed.add(c) }
+      }
+    }
+    observeChildren()
+    const mo = new MutationObserver(() => { observeChildren(); stickToBottom() })
+    mo.observe(el, { childList: true })
+    stickToBottom()
+    return () => { ro.disconnect(); mo.disconnect() }
+  }, [])
+
+  // 未读计数：仅在 turn 数增加且用户不在底部时累加；首次 snapshot 不计
+  const prevCountRef = useRef(0)
+  useEffect(() => {
+    const count = displayedTurns.length
+    const prevCount = prevCountRef.current
+    prevCountRef.current = count
+    const added = count - prevCount
+    if (added <= 0) return
+    if (!isAtBottomRef.current && prevCount > 0) {
+      setUnreadCount(n => n + added)
+    }
+  }, [displayedTurns])
+
+  const jumpToLatest = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    isAtBottomRef.current = true
+    setUnreadCount(0)
+  }, [])
+
+  // 拉取可用 slash 命令列表（~/.claude 与 <cwd>/.claude 下 commands + skills + 已安装插件）
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([])
+  useEffect(() => {
+    const qs = cwd ? `?cwd=${encodeURIComponent(cwd)}` : ''
+    fetch(`/api/claude-commands${qs}`)
+      .then(r => r.ok ? r.json() : { ok: false })
+      .then(d => { if (d?.ok && Array.isArray(d.commands)) setSlashCommands(d.commands) })
+      .catch(() => { /* 拿不到命令列表就静默，不影响发送 */ })
+  }, [cwd])
+
+  const slashOptions = useMemo(() => (
+    slashCommands.map(c => ({
+      value: c.name,
+      label: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', maxWidth: 520 }}>
+          <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: '#1677ff', flexShrink: 0 }}>/{c.name}</span>
+          <span style={{ fontSize: 11, color: '#888', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {c.description || '—'}
+          </span>
+          {c.source === 'project' && <Tag color="orange" style={{ fontSize: 10, margin: 0, lineHeight: '16px', height: 16, padding: '0 4px' }}>项目</Tag>}
+          {typeof c.source === 'string' && c.source.startsWith('plugin:') && (
+            <Tag color="purple" style={{ fontSize: 10, margin: 0, lineHeight: '16px', height: 16, padding: '0 4px' }}>插件</Tag>
+          )}
+        </div>
+      ),
+    }))
+  ), [slashCommands])
+
+  // 稳定回调传给 memo 化的 TurnItem：不让 turn 列表每次父级重渲时都 re-render
+  const displayedTurnsRef = useRef<LocalTurn[]>([])
+  useEffect(() => { displayedTurnsRef.current = displayedTurns }, [displayedTurns])
+  const allToolsCollapsedRef = useRef<boolean>(allToolsCollapsed)
+  useEffect(() => { allToolsCollapsedRef.current = allToolsCollapsed }, [allToolsCollapsed])
+  const onForkRef = useRef(onFork)
+  useEffect(() => { onForkRef.current = onFork }, [onFork])
+
+  const handleTurnFork = useCallback((i: number) => {
+    const fn = onForkRef.current
+    if (!fn) return
+    fn(i, displayedTurnsRef.current.slice(0, i + 1))
+  }, [])
+  const handleToggleCollapse = useCallback((i: number) => {
+    setCollapsedTools(prev => {
+      const fallback = allToolsCollapsedRef.current
+      const cur = prev[i] ?? fallback
+      return { ...prev, [i]: !cur }
+    })
+  }, [])
 
   const resumeSession = useCallback(async () => {
     if (!resumeTarget?.nativeSessionId) {
@@ -437,7 +639,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           />
         </Tooltip>
       </div>
-      <div className="tv-body" ref={scrollRef}>
+      <div className="tv-body" ref={scrollRef} onScroll={handleBodyScroll}>
         {loading && !data && <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>}
         {error && <div className="tv-error">{error}</div>}
         {!loading && !error && data && data.turns.length === 0 && (
@@ -449,19 +651,32 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
             turn={t}
             index={i}
             keyword={keyword}
-            onFork={onFork ? (idx) => onFork(idx, displayedTurns.slice(0, idx + 1)) : undefined}
-            collapsedTools={collapsedTools[i] ?? allToolsCollapsed}
-            toggleTool={() => setCollapsedTools(prev => ({ ...prev, [i]: !(prev[i] ?? allToolsCollapsed) }))}
+            canFork={!!onFork}
+            collapsed={collapsedTools[i] ?? allToolsCollapsed}
+            onFork={handleTurnFork}
+            onToggleCollapse={handleToggleCollapse}
           />
         ))}
       </div>
+      {unreadCount > 0 && (
+        <button className="tv-unread-pill" onClick={jumpToLatest}>
+          ↓ {unreadCount} 条新消息
+        </button>
+      )}
       <div className="tv-composer">
-        <Input.TextArea
+        <Mentions
           value={composer}
-          onChange={(e) => setComposer(e.target.value)}
-          placeholder="继续这段会话，Enter 发送，Shift+Enter 换行，Cmd/Ctrl+V 粘贴图片"
+          onChange={(v) => setComposer(v)}
+          prefix="/"
+          options={slashOptions}
+          placeholder="继续这段会话，Enter 发送 / Shift+Enter 换行 / 输入 / 查看命令 / Cmd+V 粘贴图片"
           autoSize={{ minRows: 2, maxRows: 6 }}
+          filterOption={(input, option) => {
+            const v = String(option?.value || '').toLowerCase()
+            return v.includes(input.toLowerCase())
+          }}
           onPressEnter={(e) => {
+            // 下拉打开时 Mentions 内部会拦截 Enter 做选项确认，不会走到这里
             if (e.shiftKey) return
             e.preventDefault()
             void handleSendMessage()

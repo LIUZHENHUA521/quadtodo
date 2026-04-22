@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { createRequire } from 'node:module'
+import { randomUUID } from 'node:crypto'
 import { readdirSync, statSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -30,37 +31,8 @@ function buildPermissionArgs(tool, mode) {
 
 const CLAUDE_SESSION_RE = /claude\s+--resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
 const CODEX_SESSION_RE = /codex\s+resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const MAX_LOG_BYTES = 512 * 1024
-const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude', 'projects')
 const CODEX_SESSIONS_DIR = join(homedir(), '.codex', 'sessions')
-
-function claudeProjectHash(absPath) {
-  return absPath.replace(/\//g, '-')
-}
-
-function detectClaudeSessionFromFs(workDir, afterMs) {
-  const projDir = join(CLAUDE_PROJECTS_DIR, claudeProjectHash(workDir))
-  if (!existsSync(projDir)) return null
-  try {
-    let newest = null
-    let newestTime = 0
-    for (const file of readdirSync(projDir)) {
-      if (!file.endsWith('.jsonl')) continue
-      const uuid = file.slice(0, -6)
-      if (!UUID_RE.test(uuid)) continue
-      const st = statSync(join(projDir, file))
-      const t = st.birthtimeMs || st.ctimeMs
-      if (t > afterMs && t > newestTime) {
-        newest = uuid
-        newestTime = t
-      }
-    }
-    return newest
-  } catch {
-    return null
-  }
-}
 
 function detectCodexSessionFromFs(afterMs) {
   const now = new Date()
@@ -132,13 +104,16 @@ export class PtyManager extends EventEmitter {
     // permissionMode → 原生 CLI 标志：把托管模式直接交给 claude/codex 处理，
     // 比在 PTY 输出里做正则匹配 + 自动回车 更可靠。
     const permissionArgs = buildPermissionArgs(tool, permissionMode)
+    // Claude 支持 --session-id <uuid>：新会话时由我们预生成，避免事后靠 FS/输出扫描。
+    const presetClaudeId = tool === 'claude' && !resumeNativeId ? randomUUID() : null
+    const claudeSessionArgs = presetClaudeId ? ['--session-id', presetClaudeId] : []
     const args = resumeNativeId
       ? tool === 'codex'
         ? [...baseArgs, ...permissionArgs, 'resume', resumeNativeId]
         : [...baseArgs, ...permissionArgs, '--resume', resumeNativeId]
       : useCliPrompt
-        ? [...baseArgs, ...permissionArgs, prompt]
-        : [...baseArgs, ...permissionArgs]
+        ? [...baseArgs, ...permissionArgs, ...claudeSessionArgs, prompt]
+        : [...baseArgs, ...permissionArgs, ...claudeSessionArgs]
     const effectiveCwd = cwd || process.env.HOME || process.cwd()
 
     console.log(`[pty] starting ${tool} bin=${toolCfg.bin} cwd=${effectiveCwd} args=${JSON.stringify(args)}`)
@@ -171,13 +146,19 @@ export class PtyManager extends EventEmitter {
       pendingPrompt: useCliPrompt ? null : (prompt && !resumeNativeId ? prompt : null),
       resized: false,
       promptTimer: null,
-      nativeId: resumeNativeId || null,
+      nativeId: resumeNativeId || presetClaudeId || null,
       stopped: false,
       detectTimer: null,
     }
     this.sessions.set(sessionId, session)
 
-    if (!resumeNativeId) {
+    // Claude 预生成 UUID → 立即同步通知，下游（ai-terminal）能在首次 DB 写入窗口内拿到 nativeSessionId
+    if (presetClaudeId) {
+      this.emit('native-session', { sessionId, nativeId: presetClaudeId })
+    }
+
+    // Codex 新会话：无 --session-id 支持，继续靠 FS 兜底。400ms × 30 次（旧方案 2000ms × 15 次）。
+    if (!resumeNativeId && tool === 'codex') {
       const spawnTime = Date.now() - 1000
       let detectAttempts = 0
       session.detectTimer = setInterval(() => {
@@ -187,19 +168,17 @@ export class PtyManager extends EventEmitter {
           session.detectTimer = null
           return
         }
-        const id = tool === 'codex'
-          ? detectCodexSessionFromFs(spawnTime)
-          : detectClaudeSessionFromFs(effectiveCwd, spawnTime)
+        const id = detectCodexSessionFromFs(spawnTime)
         if (id) {
           clearInterval(session.detectTimer)
           session.detectTimer = null
           session.nativeId = id
           this.emit('native-session', { sessionId, nativeId: id })
-        } else if (detectAttempts >= 15) {
+        } else if (detectAttempts >= 30) {
           clearInterval(session.detectTimer)
           session.detectTimer = null
         }
-      }, 2000)
+      }, 400)
       session.detectTimer.unref?.()
     }
 

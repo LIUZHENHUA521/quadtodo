@@ -11,6 +11,7 @@ import {
   CodeOutlined, DesktopOutlined, SendOutlined, EditOutlined,
   DownOutlined, UpOutlined, CloseOutlined, RightOutlined,
   DashboardOutlined, FileTextOutlined, ExportOutlined,
+  BookOutlined, LineChartOutlined, TrophyOutlined,
 } from '@ant-design/icons'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
@@ -41,6 +42,7 @@ import ExportDialog from './ExportDialog'
 import TemplateDrawer from './TemplateDrawer'
 import ForkDialog from './ForkDialog'
 import DashboardDrawer from './dashboard/DashboardDrawer'
+import ReportDrawer from './ReportDrawer'
 import PetView from './pet/PetView'
 import TranscriptSearchDrawer from './transcripts/TranscriptSearchDrawer'
 import { useAiSessionStore } from './store/aiSessionStore'
@@ -758,11 +760,13 @@ export default function TodoManage() {
   const [templateDrawerOpen, setTemplateDrawerOpen] = useState(false)
   const [dashboardOpen, setDashboardOpen] = useState(false)
   const [transcriptDrawerOpen, setTranscriptDrawerOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
   const [unboundTranscripts, setUnboundTranscripts] = useState(0)
-  const [viewMode, setViewMode] = useState<'list' | 'pet'>(() => {
-    return (localStorage.getItem('quadtodo:viewMode') as 'list' | 'pet') || 'list'
+  const [viewMode, setViewMode] = useState<'list' | 'priority' | 'pet'>(() => {
+    const saved = localStorage.getItem('quadtodo:viewMode')
+    return saved === 'priority' || saved === 'list' ? saved : 'list'
   })
-  const changeViewMode = useCallback((v: 'list' | 'pet') => {
+  const changeViewMode = useCallback((v: 'list' | 'priority' | 'pet') => {
     setViewMode(v)
     localStorage.setItem('quadtodo:viewMode', v)
   }, [])
@@ -908,6 +912,15 @@ export default function TodoManage() {
     }
     return groups
   }, [todos])
+
+  // ─── 按优先级扁平化（用于「优先级」视图） ───
+  const priorityList = useMemo(() => {
+    const flat: Todo[] = []
+    for (const q of [1, 2, 3, 4] as const) {
+      flat.push(...(todosByQuadrant[q] || []))
+    }
+    return flat
+  }, [todosByQuadrant])
 
   // ─── CRUD ───
 
@@ -1361,6 +1374,11 @@ export default function TodoManage() {
 
     if (!targetQuadrant) return
 
+    if (viewMode === 'priority' && draggedTodo.quadrant !== targetQuadrant) {
+      message.info('优先级模式下不支持跨优先级拖拽，请到看板视图调整')
+      return
+    }
+
     if (draggedTodo.quadrant !== targetQuadrant) {
       const qTodos = todos.filter(t => t.quadrant === targetQuadrant && !t.parentId)
       const maxSort = qTodos.length > 0 ? Math.max(...qTodos.map(t => t.sortOrder || 0)) : 0
@@ -1486,27 +1504,43 @@ export default function TodoManage() {
           size="small"
           onClick={() => setDashboardOpen(true)}
           title="AI 工作面板"
-        />
+        >AI 面板</Button>
         <Button
           icon={<SearchOutlined />}
           size="small"
           onClick={() => setTranscriptDrawerOpen(true)}
           title="历史会话找回"
-        />
+        >找回</Button>
         <Button
           icon={<FileTextOutlined />}
           size="small"
           onClick={() => setTemplateDrawerOpen(true)}
           title="Prompt 模板库"
-        />
+        >模板</Button>
         <Button
           icon={<SettingOutlined />}
           size="small"
           onClick={() => setSettingsOpen(true)}
           title="设置"
-        />
-        <Button size="small" onClick={() => setWikiOpen(true)}>🧠 记忆</Button>
-        <Button size="small" onClick={() => setStatsOpen(true)}>📊 统计</Button>
+        >设置</Button>
+        <Button
+          size="small"
+          icon={<TrophyOutlined />}
+          onClick={() => setReportOpen(true)}
+          title="每日完成报表"
+        >报表</Button>
+        <Button
+          size="small"
+          icon={<BookOutlined />}
+          onClick={() => setWikiOpen(true)}
+          title="记忆"
+        >记忆</Button>
+        <Button
+          size="small"
+          icon={<LineChartOutlined />}
+          onClick={() => setStatsOpen(true)}
+          title="统计"
+        >统计</Button>
       </div>
 
       {/* 筛选栏 */}
@@ -1536,10 +1570,10 @@ export default function TodoManage() {
         <Segmented
           size="small"
           value={viewMode}
-          onChange={(v) => changeViewMode(v as 'list' | 'pet')}
+          onChange={(v) => changeViewMode(v as 'list' | 'priority' | 'pet')}
           options={[
             { label: '列表', value: 'list' },
-            { label: '宠物', value: 'pet' },
+            { label: '优先级', value: 'priority' },
           ]}
         />
       </div>
@@ -1547,6 +1581,68 @@ export default function TodoManage() {
 
       {viewMode === 'pet' ? (
         <PetView onPetClick={handleDashboardOpenTerminal} />
+      ) : viewMode === 'priority' ? (
+        <Spin spinning={loading}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="todo-priority-board">
+              <SortableContext
+                items={priorityList.map(t => todoDndId(t))}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="todo-priority-list">
+                  {priorityList.map((t) => (
+                    <SortableTodoCard
+                      key={t.id}
+                      todo={t}
+                      children={childrenByParentId[t.id] || []}
+                      childHitIds={childHitIdsByParentId[t.id]}
+                      onCreateSubtodo={handleCreateSubtodo}
+                      onClick={openDetail}
+                      onToggleDone={handleToggleDone}
+                      onAiExec={handleAiExec}
+                      onRequestFork={handleRequestFork}
+                      onAiExecBoth={handleAiExecBoth}
+                      onDeleteAiSession={handleDeleteAiSession}
+                      onUpdateSessionLabel={handleUpdateSessionLabel}
+                      onDelete={handleDelete}
+                      onOpenTrae={handleOpenTrae}
+                      onOpenTerminal={handleOpenTerminal}
+                      onOpenNativeResume={handleOpenNativeResume}
+                      onCopyPrompt={handleCopyPrompt}
+                      onExport={handleExport}
+                      expandedTerminal={expandedTerminal}
+                      setExpandedTerminal={setExpandedTerminal}
+                      hiddenTerminalSessionId={hiddenTerminalSessionIdByTodo[t.id] || null}
+                      onHideTerminal={handleHideTerminal}
+                      onShowTerminal={handleShowTerminal}
+                      terminalCollapsed={!!collapsedTerminalByTodo[t.id]}
+                      onToggleTerminalCollapsed={handleToggleTerminalCollapsed}
+                      sideBySideSessionId={sideBySideByTodo[t.id] || null}
+                      onSetSideBySide={handleSetSideBySide}
+                      isNarrow={isNarrow}
+                      onRefresh={fetchTodos}
+                    />
+                  ))}
+                  {priorityList.length === 0 && (
+                    <div className="todo-drop-placeholder">暂无待办</div>
+                  )}
+                </div>
+              </SortableContext>
+            </div>
+            <DragOverlay>
+              {activeTodo ? (
+                <div className={`todo-card quadrant-${activeTodo.quadrant}`} style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)', width: 300 }}>
+                  <div className="todo-card-title">{activeTodo.title}</div>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        </Spin>
       ) : (
       <Spin spinning={loading}>
         {/* 看板视图 */}
@@ -2028,6 +2124,7 @@ export default function TodoManage() {
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <StatsDrawer open={statsOpen} onClose={() => setStatsOpen(false)} />
       <WikiDrawer open={wikiOpen} onClose={() => setWikiOpen(false)} />
+      <ReportDrawer open={reportOpen} onClose={() => setReportOpen(false)} />
       <ExportDialog
         todo={exportTarget}
         open={!!exportTarget}

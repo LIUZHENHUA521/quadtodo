@@ -6,6 +6,8 @@ import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import {
+	buildNativeResumeLaunch,
+	buildNativeResumeMarker,
 	createServer,
 	resolveEditorTargetInfo,
 	resolveEditorTargetPath,
@@ -203,6 +205,29 @@ describe("server", () => {
 		expect(nativeTerminalCalls[0].command).toContain("--resume");
 		expect(nativeTerminalCalls[0].command).toContain("native-123");
 		expect(srv.pty.started.length).toBe(before);
+	});
+
+	it("buildNativeResumeMarker produces a stable per-session string", () => {
+		const marker = buildNativeResumeMarker("quadtodo:claude:native-123");
+		expect(marker).toBe("__quadtodo_resume__:quadtodo:claude:native-123");
+		expect(buildNativeResumeMarker("quadtodo:claude:other")).not.toBe(marker);
+	});
+
+	it("buildNativeResumeLaunch prints the marker before cd+command so history contains it", () => {
+		const { marker, launch } = buildNativeResumeLaunch({
+			cwd: "/tmp/work dir",
+			command: "'claude' '--resume' 'native-123'",
+			title: "quadtodo:claude:native-123",
+		});
+		expect(marker).toBe("__quadtodo_resume__:quadtodo:claude:native-123");
+		const markerIdx = launch.indexOf(marker);
+		const cdIdx = launch.indexOf("cd ");
+		const cmdIdx = launch.indexOf("'claude'");
+		expect(markerIdx).toBeGreaterThan(-1);
+		expect(markerIdx).toBeLessThan(cdIdx);
+		expect(cdIdx).toBeLessThan(cmdIdx);
+		// cwd must be shell-escaped so spaces do not split the `cd` argument
+		expect(launch).toContain("cd '/tmp/work dir'");
 	});
 
 	it("resolveEditorTargetPath resolves repo-relative paths under cwd descendants", () => {

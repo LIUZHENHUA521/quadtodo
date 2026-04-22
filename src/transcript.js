@@ -9,7 +9,11 @@ const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude', 'projects')
 const CODEX_SESSIONS_DIR = join(homedir(), '.codex', 'sessions')
 
 function claudeProjectHash(absPath) {
-  return absPath.replace(/\//g, '-')
+  // Claude Code 在写 JSONL 路径时会先规范化 cwd（去掉尾斜杠）
+  // 若不做同样处理，带尾斜杠的 cwd 会被 hash 成比实际路径多一个 '-' 的目录名，导致找不到 JSONL
+  // 回退到 ptylog（"日志降级"）的 UX 退化
+  const normalized = String(absPath).replace(/\/+$/, '') || '/'
+  return normalized.replace(/\//g, '-')
 }
 
 // Replay ANSI byte stream through a headless xterm so cursor motions (CUF/CUP/CHA…)
