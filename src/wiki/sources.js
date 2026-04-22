@@ -83,7 +83,7 @@ export async function buildSourceMarkdown({
     let idx = 0
     for (const s of sessions) {
       idx += 1
-      const parsed = loadTranscript(s) || { source: 'empty', turns: [] }
+      const parsed = (await loadTranscript(s)) || { source: 'empty', turns: [] }
       const turns = Array.isArray(parsed.turns) ? parsed.turns : []
       const completed = s.completedAt ? toDateTime(s.completedAt) : '-'
       lines.push(`### Session ${idx} — ${s.tool}（${turns.length} 轮，完成时间 ${completed}）`)

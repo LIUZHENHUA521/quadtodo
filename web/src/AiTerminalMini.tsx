@@ -34,6 +34,12 @@ const INITIAL_RECONNECT_DELAY = 1000
 const MAX_RECONNECT_ATTEMPTS = 15
 const HEARTBEAT_INTERVAL = 15_000
 const RESIZE_DEBOUNCE_MS = 100
+// 发给服务端 PTY 的 resize 需要稳定窗口：cols/rows 连续 200ms 不变才发。
+// 防止切 tab / 折叠展开时的中间态 cols 值被发给后端（Claude 据此折行，污染 scrollback）。
+const RESIZE_STABILITY_MS = 200
+// fit 结果低于这两个阈值认为是布局中间态，直接跳过、等下一次触发
+const MIN_CONTAINER_WIDTH = 300
+const MIN_VALID_COLS = 30
 
 export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeTarget, onSessionRecovered, onClose, onDone, fillHeight }: Props) {
   void onClose
@@ -70,6 +76,10 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   const disposedRef = useRef(false)
   const lastSentSizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const refitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const refitAttemptsRef = useRef(0)
+  // 稳定性去抖：只有 cols/rows 在连续 RESIZE_STABILITY_MS 内保持不变才发 WS resize
+  const pendingResizeRef = useRef<{ cols: number; rows: number; timer: ReturnType<typeof setTimeout> | null } | null>(null)
   const lastPongRef = useRef<number>(Date.now())
   const STALE_THRESHOLD = 30_000
   const recoveringRef = useRef(false)
@@ -108,25 +118,72 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     }
   }, [])
 
-  /** fit + 发送 resize（跳过尺寸未变的情况） */
-  const doFit = useCallback(() => {
-    const fit = fitRef.current
-    const term = termRef.current
-    const ws = wsRef.current
-    if (!fit || !term) return
-    try {
-      fit.fit()
-      const { cols, rows } = term
-      const last = lastSentSizeRef.current
-      if (last && last.cols === cols && last.rows === rows) return
+  /** 去抖发送 resize 到服务端：cols/rows 必须稳定 RESIZE_STABILITY_MS 才真正发，
+   *  防止切 tab / 展开瞬间的中间态被后端 PTY 吃掉，进而让 Claude 按窄 cols 折行污染 scrollback。 */
+  const scheduleResizeSend = useCallback((cols: number, rows: number) => {
+    const last = lastSentSizeRef.current
+    if (last && last.cols === cols && last.rows === rows) {
+      if (pendingResizeRef.current?.timer) {
+        clearTimeout(pendingResizeRef.current.timer)
+        pendingResizeRef.current = null
+      }
+      return
+    }
+    if (pendingResizeRef.current?.timer) clearTimeout(pendingResizeRef.current.timer)
+    const timer = setTimeout(() => {
+      pendingResizeRef.current = null
+      const ws = wsRef.current
       lastSentSizeRef.current = { cols, rows }
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'resize', cols, rows }))
       }
+    }, RESIZE_STABILITY_MS)
+    pendingResizeRef.current = { cols, rows, timer }
+  }, [])
+
+  /** fit + 去抖发送 resize（跳过尺寸未变的情况） */
+  const doFit = useCallback(() => {
+    const fit = fitRef.current
+    const term = termRef.current
+    const container = containerRef.current
+    if (!fit || !term || !container) return
+    // 容器处于 display:none 或尚未布局完成时跳过，避免 fit() 把 cols 算成小值污染 xterm 状态
+    if (container.offsetParent === null) return
+    if (container.clientWidth < MIN_CONTAINER_WIDTH || container.clientHeight < 20) {
+      // 容器还没铺开，安排指数回退重试，等待布局 settle
+      if (!refitTimerRef.current && refitAttemptsRef.current < 3) {
+        const delays = [50, 150, 400]
+        const delay = delays[refitAttemptsRef.current] ?? 400
+        refitAttemptsRef.current++
+        refitTimerRef.current = setTimeout(() => {
+          refitTimerRef.current = null
+          doFit()
+        }, delay)
+      }
+      return
+    }
+    try {
+      fit.fit()
+      const { cols, rows } = term
+      // fit 出异常小的 cols：不送给后端，安排重试
+      if (cols < MIN_VALID_COLS) {
+        if (!refitTimerRef.current && refitAttemptsRef.current < 3) {
+          const delays = [50, 150, 400]
+          const delay = delays[refitAttemptsRef.current] ?? 400
+          refitAttemptsRef.current++
+          refitTimerRef.current = setTimeout(() => {
+            refitTimerRef.current = null
+            doFit()
+          }, delay)
+        }
+        return
+      }
+      refitAttemptsRef.current = 0
+      scheduleResizeSend(cols, rows)
     } catch (e) {
       console.warn('[AiTerminalMini] fit error:', e)
     }
-  }, [])
+  }, [scheduleResizeSend])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -137,6 +194,8 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     reconnectDelayRef.current = INITIAL_RECONNECT_DELAY
     reconnectCountRef.current = 0
     lastSentSizeRef.current = null
+    if (pendingResizeRef.current?.timer) clearTimeout(pendingResizeRef.current.timer)
+    pendingResizeRef.current = null
     lastPongRef.current = Date.now()
     setSessionExpired(false)
     setWsConnected(false)
@@ -256,11 +315,10 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         if (!resumeTargetRef.current?.nativeSessionId && status === 'ai_running') {
           term.writeln('\x1b[90m--- 正在注入任务上下文，请稍候... ---\x1b[0m\r')
         }
+        // WS 打开后走 doFit 统一管路：guards + 稳定性去抖，
+        // 避免在 Chat tab 激活 / 终端折叠 时发出错误 cols（Claude 会按此折行污染 scrollback）
         requestAnimationFrame(() => {
-          try {
-            fit.fit()
-            ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
-          } catch {}
+          requestAnimationFrame(() => doFit())
         })
         heartbeatTimer = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
@@ -465,6 +523,20 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     })
     ro.observe(containerRef.current)
 
+    // 可见性监听：display:none ↔ 可见切换时 ResizeObserver 不保证触发，用 IO 兜底
+    // 双 rAF：第一帧让样式计算提交，第二帧让布局完全 settle，再读 clientWidth 做 fit
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && entry.intersectionRatio > 0) {
+          refitAttemptsRef.current = 0
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => doFit())
+          })
+        }
+      }
+    })
+    io.observe(containerRef.current)
+
     // 浏览器窗口缩放/拖拽：ResizeObserver 可能不触发，需要额外监听
     let windowResizeTimer: ReturnType<typeof setTimeout> | null = null
     function handleWindowResize() {
@@ -491,7 +563,17 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         clearTimeout(resizeTimerRef.current)
         resizeTimerRef.current = null
       }
+      if (refitTimerRef.current) {
+        clearTimeout(refitTimerRef.current)
+        refitTimerRef.current = null
+      }
+      refitAttemptsRef.current = 0
+      if (pendingResizeRef.current?.timer) {
+        clearTimeout(pendingResizeRef.current.timer)
+      }
+      pendingResizeRef.current = null
       ro.disconnect()
+      io.disconnect()
       const ws = wsRef.current
       if (ws) ws.close()
       try { linkProviderRef.current?.dispose() } catch {}
@@ -511,6 +593,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   }, [theme])
 
   useEffect(() => {
+    refitAttemptsRef.current = 0
     requestAnimationFrame(doFit)
   }, [fullscreen, height, doFit])
 

@@ -1,6 +1,9 @@
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import xtermHeadless from '@xterm/headless'
+
+const { Terminal } = xtermHeadless
 
 const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude', 'projects')
 const CODEX_SESSIONS_DIR = join(homedir(), '.codex', 'sessions')
@@ -9,13 +12,30 @@ function claudeProjectHash(absPath) {
   return absPath.replace(/\//g, '-')
 }
 
-function stripAnsi(str) {
-  return String(str)
-    .replace(/\x1b\[[0-9;?]*[A-Za-z~]/g, '')
-    .replace(/\x1b\][^\x07]*\x07/g, '')
-    .replace(/\x1b[()#][A-Za-z0-9]/g, '')
-    .replace(/\x1b[>=<cDEHMNOPZ78]/g, '')
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+// Replay ANSI byte stream through a headless xterm so cursor motions (CUF/CUP/CHA…)
+// become real spaces rather than being deleted — TUIs like Claude Code render status
+// bars by moving the cursor between words instead of writing ASCII spaces.
+function renderPtyLogText(raw) {
+  return new Promise((resolve) => {
+    const term = new Terminal({
+      cols: 200,
+      rows: 50,
+      scrollback: 50000,
+      allowProposedApi: true,
+      convertEol: true,
+    })
+    term.write(String(raw), () => {
+      const buf = term.buffer.active
+      const lines = []
+      for (let i = 0; i < buf.length; i++) {
+        const line = buf.getLine(i)
+        lines.push(line ? line.translateToString(true) : '')
+      }
+      while (lines.length && lines[lines.length - 1] === '') lines.pop()
+      term.dispose()
+      resolve(lines.join('\n'))
+    })
+  })
 }
 
 function parseClaudeJsonl(filePath) {
@@ -145,26 +165,28 @@ function parseCodexJsonl(filePath) {
   return turns
 }
 
-function loadFromPtyLog(logDir, sessionId) {
+async function loadFromPtyLog(logDir, sessionId) {
   if (!logDir || !sessionId) return null
   const file = join(logDir, `${sessionId}.log`)
   if (!existsSync(file)) return null
   const raw = readFileSync(file, 'utf8')
-  return [{ role: 'raw', content: stripAnsi(raw), timestamp: statSync(file).mtimeMs }]
+  const content = await renderPtyLogText(raw)
+  return [{ role: 'raw', content, timestamp: statSync(file).mtimeMs }]
 }
 
-function loadFromLiveOutputHistory(outputHistory, timestamp) {
+async function loadFromLiveOutputHistory(outputHistory, timestamp) {
   if (!Array.isArray(outputHistory) || outputHistory.length === 0) return null
   const raw = outputHistory.join('')
   if (!raw) return null
-  return [{ role: 'raw', content: stripAnsi(raw), timestamp: timestamp || Date.now() }]
+  const content = await renderPtyLogText(raw)
+  return [{ role: 'raw', content, timestamp: timestamp || Date.now() }]
 }
 
 /**
  * @param {{ tool: 'claude'|'codex', nativeSessionId?: string|null, cwd?: string|null, sessionId: string, logDir?: string|null, liveOutputHistory?: string[]|null, liveTimestamp?: number|null }} opts
- * @returns {{ source: 'jsonl'|'ptylog'|'empty', turns: Array<object>, filePath: string|null }}
+ * @returns {Promise<{ source: 'jsonl'|'ptylog'|'empty', turns: Array<object>, filePath: string|null }>}
  */
-export function loadTranscript({ tool, nativeSessionId, cwd, sessionId, logDir, liveOutputHistory, liveTimestamp }) {
+export async function loadTranscript({ tool, nativeSessionId, cwd, sessionId, logDir, liveOutputHistory, liveTimestamp }) {
   try {
     let filePath = null
     if (tool === 'claude' && nativeSessionId && cwd) {
@@ -181,9 +203,9 @@ export function loadTranscript({ tool, nativeSessionId, cwd, sessionId, logDir, 
   } catch (e) {
     console.warn('[transcript] parse failed:', e.message)
   }
-  const ptyTurns = loadFromPtyLog(logDir, sessionId)
+  const ptyTurns = await loadFromPtyLog(logDir, sessionId)
   if (ptyTurns) return { source: 'ptylog', turns: ptyTurns, filePath: null }
-  const liveTurns = loadFromLiveOutputHistory(liveOutputHistory, liveTimestamp)
+  const liveTurns = await loadFromLiveOutputHistory(liveOutputHistory, liveTimestamp)
   if (liveTurns) return { source: 'ptylog', turns: liveTurns, filePath: null }
   return { source: 'empty', turns: [], filePath: null }
 }

@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Input, Button, Spin, Tag, Empty, Tooltip, message } from 'antd'
-import { ReloadOutlined, BranchesOutlined, DownOutlined, RightOutlined, SearchOutlined, SendOutlined } from '@ant-design/icons'
+import {
+  ReloadOutlined, BranchesOutlined, DownOutlined, RightOutlined, SearchOutlined, SendOutlined,
+  FullscreenOutlined, FullscreenExitOutlined,
+} from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import hljs from 'highlight.js'
@@ -15,6 +18,8 @@ interface Props {
   autoRefreshMs?: number
   resumeTarget?: ResumeSessionInput | null
   onSessionRecovered?: (nextSessionId: string) => void
+  /** 父容器撑满时由父级控高（flex:1），不显示拖拽手柄 */
+  fillHeight?: boolean
 }
 
 const ROLE_META: Record<string, { label: string; cls: string }> = {
@@ -131,7 +136,10 @@ function TurnItem({ turn, index, keyword, onFork, collapsedTools, toggleTool }: 
 
 type LocalTurn = TranscriptTurn & { optimisticId?: string }
 
-export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshMs = 0, resumeTarget = null, onSessionRecovered }: Props) {
+const MIN_HEIGHT = 240
+const MAX_HEIGHT = 1200
+
+export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshMs = 0, resumeTarget = null, onSessionRecovered, fillHeight }: Props) {
   const [data, setData] = useState<TranscriptResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
@@ -142,8 +150,54 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   const [allToolsCollapsed, setAllToolsCollapsed] = useState(false)
   const [composer, setComposer] = useState('')
   const [optimisticTurns, setOptimisticTurns] = useState<LocalTurn[]>([])
+  const [fullscreen, setFullscreen] = useState(false)
+  const [height, setHeight] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem('quadtodo.transcriptHeight')
+      const n = raw ? parseInt(raw, 10) : NaN
+      if (Number.isFinite(n) && n >= MIN_HEIGHT && n <= MAX_HEIGHT) return n
+    } catch { /* ignore */ }
+    return 480
+  })
   const scrollRef = useRef<HTMLDivElement>(null)
   const dataRef = useRef<TranscriptResponse | null>(null)
+  const dragRef = useRef<{ startY: number; startH: number } | null>(null)
+
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreen])
+
+  const onDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault()
+    const startY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    dragRef.current = { startY, startH: height }
+    const onMove = (ev: MouseEvent | TouchEvent) => {
+      if (!dragRef.current) return
+      const y = 'touches' in ev ? ev.touches[0].clientY : (ev as MouseEvent).clientY
+      const newH = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, dragRef.current.startH + (y - dragRef.current.startY)))
+      setHeight(newH)
+    }
+    const onUp = () => {
+      dragRef.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.removeEventListener('touchmove', onMove)
+      document.removeEventListener('touchend', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    document.addEventListener('touchmove', onMove)
+    document.addEventListener('touchend', onUp)
+  }, [height])
+
+  useEffect(() => {
+    try { localStorage.setItem('quadtodo.transcriptHeight', String(height)) } catch { /* ignore */ }
+  }, [height])
 
   useEffect(() => {
     dataRef.current = data
@@ -290,6 +344,27 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     }
   }, [composer, sendSessionInput])
 
+  /** 粘贴图片：走 Live 同一机制 —— 发 Ctrl+V (0x16) 给 PTY，Claude Code 自己读 OS 剪贴板 */
+  const handleComposerPaste = useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    let hasImage = false
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) { hasImage = true; break }
+    }
+    if (!hasImage) return
+    e.preventDefault()
+    try {
+      await sendAiInput(sessionId, '\x16')
+      message.success('已粘贴图片到 Claude（将随下一条消息一起提交）', 1.5)
+    } catch (err: any) {
+      const msg = err?.message === 'session_not_found'
+        ? '会话已结束：请先发一条消息激活/恢复会话后再粘贴图片'
+        : (err?.message || '粘贴图片失败')
+      message.error(msg)
+    }
+  }, [sessionId])
+
   const handleSendEnter = useCallback(async () => {
     setSending(true)
     try {
@@ -314,8 +389,20 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
 
   const statusMeta = sessionStatusMeta(data?.session.status)
 
+  const wrapperClassName = [
+    'tv-wrapper',
+    fullscreen ? 'tv-wrapper--fullscreen' : '',
+    fillHeight ? 'tv-wrapper--fill' : '',
+  ].filter(Boolean).join(' ')
+
+  const wrapperStyle: React.CSSProperties = fullscreen
+    ? {}
+    : fillHeight
+      ? {}
+      : { height }
+
   return (
-    <div className="tv-wrapper">
+    <div className={wrapperClassName} style={wrapperStyle}>
       <div className="tv-toolbar">
         <Input
           size="small"
@@ -341,6 +428,14 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           {data.source === 'jsonl' ? '结构化' : data.source === 'ptylog' ? '日志降级' : '无数据'}
         </Tag>}
         {data && <Tag color={statusMeta.color}>{statusMeta.text}</Tag>}
+        <Tooltip title={fullscreen ? '退出全屏 (Esc)' : '全屏'}>
+          <Button
+            size="small"
+            type="text"
+            icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+            onClick={() => setFullscreen(v => !v)}
+          />
+        </Tooltip>
       </div>
       <div className="tv-body" ref={scrollRef}>
         {loading && !data && <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>}
@@ -364,13 +459,14 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
         <Input.TextArea
           value={composer}
           onChange={(e) => setComposer(e.target.value)}
-          placeholder="继续这段会话，Enter 发送，Shift+Enter 换行"
+          placeholder="继续这段会话，Enter 发送，Shift+Enter 换行，Cmd/Ctrl+V 粘贴图片"
           autoSize={{ minRows: 2, maxRows: 6 }}
           onPressEnter={(e) => {
             if (e.shiftKey) return
             e.preventDefault()
             void handleSendMessage()
           }}
+          onPaste={handleComposerPaste}
         />
         <div className="tv-composer-actions">
           <span className="tv-composer-hint">
@@ -386,6 +482,19 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           </div>
         </div>
       </div>
+      {!fullscreen && !fillHeight && (
+        <div
+          className="tv-resize-handle"
+          onMouseDown={onDragStart}
+          onTouchStart={onDragStart}
+          title="拖动调整高度"
+        >
+          <div className="tv-resize-grip" />
+        </div>
+      )}
+      {fullscreen && (
+        <div className="tv-fullscreen-hint">按 Esc 或点击右上角退出全屏</div>
+      )}
     </div>
   )
 }

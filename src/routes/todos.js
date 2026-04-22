@@ -211,7 +211,7 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
     }
   })
 
-  router.get('/:id/ai-sessions/:sessionId/transcript', (req, res) => {
+  router.get('/:id/ai-sessions/:sessionId/transcript', async (req, res) => {
     try {
       const todo = db.getTodo(req.params.id)
       if (!todo) {
@@ -226,7 +226,7 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
       const liveSession = typeof getLiveSession === 'function'
         ? getLiveSession(session.sessionId)
         : null
-      const result = loadTranscript({
+      const result = await loadTranscript({
         tool: session.tool,
         nativeSessionId: session.nativeSessionId,
         cwd: session.cwd || todo.workDir || null,
@@ -296,7 +296,7 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
         return
       }
 
-      const transcript = loadTranscript({
+      const transcript = await loadTranscript({
         tool: session.tool,
         nativeSessionId: session.nativeSessionId,
         cwd: session.cwd || sourceTodo.workDir || null,

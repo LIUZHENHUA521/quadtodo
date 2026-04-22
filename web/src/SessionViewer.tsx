@@ -54,8 +54,9 @@ export default function SessionViewer(props: Props) {
         <AiTerminalMini {...props} fillHeight={fillHeight} />
       </div>
       <div style={{
-        display: mode === 'transcript' ? 'block' : 'none',
-        ...(fillHeight ? { flex: 1, minHeight: 0, overflow: 'auto' } : { height: 440 }),
+        display: mode === 'transcript' ? 'flex' : 'none',
+        flexDirection: 'column',
+        ...(fillHeight ? { flex: 1, minHeight: 0 } : {}),
       }}>
         {mode === 'transcript' && (
           <TranscriptView
@@ -65,6 +66,7 @@ export default function SessionViewer(props: Props) {
             autoRefreshMs={isRunning ? 5000 : 0}
             resumeTarget={props.resumeTarget}
             onSessionRecovered={props.onSessionRecovered}
+            fillHeight={fillHeight}
           />
         )}
       </div>
