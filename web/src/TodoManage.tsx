@@ -11,7 +11,7 @@ import {
   CodeOutlined, DesktopOutlined, SendOutlined, EditOutlined,
   DownOutlined, UpOutlined, CloseOutlined, RightOutlined,
   DashboardOutlined, FileTextOutlined, ExportOutlined,
-  BookOutlined, LineChartOutlined, TrophyOutlined,
+  BookOutlined, LineChartOutlined, TrophyOutlined, BranchesOutlined,
 } from '@ant-design/icons'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
@@ -46,7 +46,8 @@ import ReportDrawer from './ReportDrawer'
 import PetView from './pet/PetView'
 import TranscriptSearchDrawer from './transcripts/TranscriptSearchDrawer'
 import { useAiSessionStore } from './store/aiSessionStore'
-import { getTranscriptStats } from './api'
+import { getTranscriptStats, listPipelineTemplates, listPipelineRunsForTodo, startPipelineRun, PipelineTemplate, PipelineRun } from './api'
+import PipelineRunDrawer from './pipeline/PipelineRunDrawer'
 import './TodoManage.css'
 
 const { TextArea } = Input
@@ -742,6 +743,50 @@ export default function TodoManage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailRule, setDetailRule] = useState<RecurringRule | null>(null)
   const [memorizing, setMemorizing] = useState(false)
+  // Pipeline state
+  const [pipelineTemplates, setPipelineTemplates] = useState<PipelineTemplate[]>([])
+  const [pipelineDrawerOpen, setPipelineDrawerOpen] = useState(false)
+  const [pipelineActiveRun, setPipelineActiveRun] = useState<PipelineRun | null>(null)
+  const [pipelineActiveTemplate, setPipelineActiveTemplate] = useState<PipelineTemplate | null>(null)
+  const [pipelineActiveTodo, setPipelineActiveTodo] = useState<Todo | null>(null)
+  const [pipelineStarting, setPipelineStarting] = useState(false)
+  useEffect(() => {
+    listPipelineTemplates().then(setPipelineTemplates).catch(() => { /* silent */ })
+  }, [])
+
+  const handleStartPipeline = useCallback(async (todo: Todo) => {
+    if (!pipelineTemplates.length) { message.warning('没有可用的 pipeline 模板'); return }
+    if (!todo.workDir) { message.error('当前任务未配置工作目录（workDir），无法创建 worktree'); return }
+    // If there's an existing running pipeline, reuse it
+    try {
+      const runs = await listPipelineRunsForTodo(todo.id)
+      const running = runs.find(r => r.status === 'running')
+      if (running) {
+        const tpl = pipelineTemplates.find(t => t.id === running.templateId) || pipelineTemplates[0]
+        setPipelineActiveRun(running)
+        setPipelineActiveTemplate(tpl)
+        setPipelineActiveTodo(todo)
+        setPipelineDrawerOpen(true)
+        return
+      }
+    } catch { /* fall through to start new */ }
+
+    // Only 1 built-in template for now — use it directly
+    const tpl = pipelineTemplates[0]
+    setPipelineStarting(true)
+    try {
+      const run = await startPipelineRun(todo.id, tpl.id)
+      setPipelineActiveRun(run)
+      setPipelineActiveTemplate(tpl)
+      setPipelineActiveTodo(todo)
+      setPipelineDrawerOpen(true)
+      message.success(`已启动 pipeline：${tpl.name}`)
+    } catch (e: any) {
+      message.error(e?.message || '启动 pipeline 失败')
+    } finally {
+      setPipelineStarting(false)
+    }
+  }, [pipelineTemplates])
   const [todoCoverage, setTodoCoverage] = useState<Record<string, boolean>>({})  // todoId → already applied
 
   // 重复规则编辑 Modal
@@ -1975,6 +2020,18 @@ export default function TodoManage() {
               </Button>
             )}
             {detailTodo && (
+              <Tooltip title="coder ↔ reviewer 自动循环，每个 agent 独立 worktree">
+                <Button
+                  size="small"
+                  icon={<BranchesOutlined />}
+                  loading={pipelineStarting}
+                  onClick={() => detailTodo && handleStartPipeline(detailTodo)}
+                >
+                  启动 Pipeline
+                </Button>
+              </Tooltip>
+            )}
+            {detailTodo && (
               <Button size="small" onClick={() => { setDetailOpen(false); handleEdit(detailTodo) }}>编辑</Button>
             )}
           </Space>
@@ -2200,6 +2257,22 @@ export default function TodoManage() {
           </Modal>
         )
       })()}
+
+      <PipelineRunDrawer
+        open={pipelineDrawerOpen}
+        runId={pipelineActiveRun?.id ?? null}
+        todoId={pipelineActiveTodo?.id ?? null}
+        template={pipelineActiveTemplate}
+        todoStatus={pipelineActiveTodo?.status ?? 'ai_running'}
+        cwd={pipelineActiveTodo?.workDir ?? null}
+        onClose={() => {
+          setPipelineDrawerOpen(false)
+          setPipelineActiveRun(null)
+          setPipelineActiveTemplate(null)
+          setPipelineActiveTodo(null)
+          fetchTodos()
+        }}
+      />
     </div>
   )
 }

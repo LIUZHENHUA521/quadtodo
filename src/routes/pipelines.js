@@ -77,5 +77,44 @@ export function createPipelinesRouter({ db, orchestrator }) {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
   })
 
+  router.post('/runs/:id/merge', async (req, res) => {
+    try {
+      if (!orchestrator?.mergeRun) return res.status(503).json({ ok: false, error: 'orchestrator_unavailable' })
+      const strategy = req.body?.strategy === 'merge' ? 'merge' : 'squash'
+      const run = await orchestrator.mergeRun(req.params.id, { strategy })
+      res.json({ ok: true, run })
+    } catch (e) {
+      const code = ['not_found', 'run_not_done', 'no_writer_to_merge', 'todo_missing_workDir'].includes(e.message) ? 400 : 500
+      res.status(code).json({ ok: false, error: e.message })
+    }
+  })
+
+  router.post('/runs/:id/cleanup', async (req, res) => {
+    try {
+      if (!orchestrator?.cleanupRunWorktrees) return res.status(503).json({ ok: false, error: 'orchestrator_unavailable' })
+      const result = await orchestrator.cleanupRunWorktrees(req.params.id)
+      res.json({ ok: true, ...result })
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+  })
+
+  router.post('/runs/:id/accept', async (req, res) => {
+    try {
+      if (!orchestrator?.acceptRun) return res.status(503).json({ ok: false, error: 'orchestrator_unavailable' })
+      const run = await orchestrator.acceptRun(req.params.id)
+      res.json({ ok: true, run })
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+  })
+
+  router.post('/runs/:id/extend', async (req, res) => {
+    try {
+      if (!orchestrator?.extendRun) return res.status(503).json({ ok: false, error: 'orchestrator_unavailable' })
+      const run = await orchestrator.extendRun(req.params.id)
+      res.json({ ok: true, run })
+    } catch (e) {
+      const code = ['not_found', 'run_not_stopped', 'no_limit_to_extend', 'no_prior_handoff'].includes(e.message) ? 400 : 500
+      res.status(code).json({ ok: false, error: e.message })
+    }
+  })
+
   return router
 }

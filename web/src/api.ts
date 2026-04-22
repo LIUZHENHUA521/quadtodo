@@ -666,3 +666,124 @@ export async function getDoneReport(since: number, until: number): Promise<DoneR
   )
   return body
 }
+
+// ─── Multi-agent Pipelines ───
+
+export interface PipelineRoleConfig {
+  key: string
+  name: string
+  systemPrompt: string
+  tool: AiTool
+  writeAccess: boolean
+  worktree: 'own' | 'attach_to_writer'
+}
+export interface PipelineEdgeRule {
+  from: string
+  event: 'done' | 'handoff'
+  verdict?: 'approved' | 'rejected'
+  to: string
+}
+export interface PipelineTemplate {
+  id: string
+  name: string
+  description: string
+  roles: PipelineRoleConfig[]
+  edges: PipelineEdgeRule[]
+  maxIterations: number
+  isBuiltin: boolean
+  createdAt: number
+  updatedAt: number
+}
+export interface PipelineAgentInstance {
+  role: string
+  round: number
+  sessionId: string
+  worktreePath: string | null
+  branch: string | null
+  status: 'idle' | 'running' | 'done' | 'stopped' | 'failed'
+  startedAt: number
+  completedAt: number | null
+  artifactSha: string | null
+}
+export interface PipelineMessage {
+  at: number
+  from: string
+  to: string
+  kind: 'started' | 'spawn' | 'handoff' | 'done' | 'resume' | 'finalize' | 'limit'
+  verdict?: string | null
+  reason?: string | null
+}
+export interface PipelineRun {
+  id: string
+  todoId: string
+  templateId: string
+  status: 'running' | 'done' | 'stopped' | 'failed'
+  startedAt: number
+  endedAt: number | null
+  iterationCount: number
+  baseBranch: string | null
+  baseSha: string | null
+  agents: PipelineAgentInstance[]
+  messages: PipelineMessage[]
+}
+
+export async function listPipelineTemplates(): Promise<PipelineTemplate[]> {
+  const body = await jsonFetch<{ ok: true; templates: PipelineTemplate[] }>(`/api/pipelines/templates`)
+  return body.templates
+}
+
+export async function listPipelineRunsForTodo(todoId: string): Promise<PipelineRun[]> {
+  const body = await jsonFetch<{ ok: true; runs: PipelineRun[] }>(`/api/pipelines/runs/todo/${todoId}`)
+  return body.runs
+}
+
+export async function getPipelineRun(id: string): Promise<PipelineRun> {
+  const body = await jsonFetch<{ ok: true; run: PipelineRun }>(`/api/pipelines/runs/${id}`)
+  return body.run
+}
+
+export async function startPipelineRun(todoId: string, templateId: string): Promise<PipelineRun> {
+  const body = await jsonFetch<{ ok: true; run: PipelineRun }>(`/api/pipelines/runs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ todoId, templateId }),
+  })
+  return body.run
+}
+
+export async function stopPipelineRun(id: string): Promise<PipelineRun> {
+  const body = await jsonFetch<{ ok: true; run: PipelineRun }>(`/api/pipelines/runs/${id}/stop`, {
+    method: 'POST',
+  })
+  return body.run
+}
+
+export async function mergePipelineRun(id: string, strategy: 'squash' | 'merge'): Promise<PipelineRun> {
+  const body = await jsonFetch<{ ok: true; run: PipelineRun }>(`/api/pipelines/runs/${id}/merge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ strategy }),
+  })
+  return body.run
+}
+
+export async function cleanupPipelineRun(id: string): Promise<{ removed: number }> {
+  const body = await jsonFetch<{ ok: true; removed: number }>(`/api/pipelines/runs/${id}/cleanup`, {
+    method: 'POST',
+  })
+  return { removed: body.removed }
+}
+
+export async function acceptPipelineRun(id: string): Promise<PipelineRun> {
+  const body = await jsonFetch<{ ok: true; run: PipelineRun }>(`/api/pipelines/runs/${id}/accept`, {
+    method: 'POST',
+  })
+  return body.run
+}
+
+export async function extendPipelineRun(id: string): Promise<PipelineRun> {
+  const body = await jsonFetch<{ ok: true; run: PipelineRun }>(`/api/pipelines/runs/${id}/extend`, {
+    method: 'POST',
+  })
+  return body.run
+}

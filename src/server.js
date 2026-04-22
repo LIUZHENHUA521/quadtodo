@@ -23,6 +23,7 @@ import { createRecurringRulesRouter } from "./routes/recurringRules.js";
 import { createStatsRouter } from "./routes/stats.js";
 import { createReportsRouter } from "./routes/reports.js";
 import { createPipelinesRouter } from "./routes/pipelines.js";
+import { createOrchestrator } from "./orchestrator.js";
 import { createWikiRouter } from "./routes/wiki.js";
 import { createWikiService } from "./wiki/index.js";
 
@@ -761,8 +762,9 @@ export function createServer(opts = {}) {
 		getPricing: () => loadConfig({ rootDir: configRootDir }).pricing,
 	}));
 	app.use("/api/reports", createReportsRouter({ db }));
-	// Phase A: pipelines router（orchestrator 会在 Phase C 接入；现在仅支持模板 CRUD）
-	app.use("/api/pipelines", createPipelinesRouter({ db, orchestrator: null }));
+	// Multi-agent pipeline orchestrator
+	const orchestrator = createOrchestrator({ db, pty, aiTerminal: ait, logDir });
+	app.use("/api/pipelines", createPipelinesRouter({ db, orchestrator }));
 
 	const wikiConfig = (initialConfig && initialConfig.wiki) || {
 		wikiDir: join(process.env.HOME || process.cwd(), ".quadtodo", "wiki"),
