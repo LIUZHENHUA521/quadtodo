@@ -4,11 +4,11 @@ import request from 'supertest'
 import { openDb } from '../src/db.js'
 import { createTodosRouter } from '../src/routes/todos.js'
 
-function makeApp() {
+function makeApp(opts = {}) {
   const db = openDb(':memory:')
   const app = express()
   app.use(express.json())
-  app.use('/api/todos', createTodosRouter({ db }))
+  app.use('/api/todos', createTodosRouter({ db, getLiveSession: opts.getLiveSession }))
   return { app, db }
 }
 
@@ -130,5 +130,40 @@ describe('routes/todos', () => {
     const res = await request(app).get('/api/todos?keyword=login')
     expect(res.body.list).toHaveLength(2)
     expect(res.body.list.some(item => item.id === parent.body.todo.id)).toBe(true)
+  })
+
+  it('GET /api/todos/:id/ai-sessions/:sessionId/transcript falls back to live outputHistory when no files exist', async () => {
+    ;({ app, db } = makeApp({
+      getLiveSession: (sessionId) => sessionId === 'live-s1'
+        ? {
+            outputHistory: ['first line\n', '\u001b[31msecond line\u001b[0m'],
+            lastOutputAt: 123456,
+          }
+        : null,
+    }))
+    const todo = db.createTodo({
+      title: 'Live transcript',
+      quadrant: 1,
+      aiSessions: [
+        {
+          sessionId: 'live-s1',
+          tool: 'claude',
+          nativeSessionId: null,
+          status: 'running',
+          startedAt: 1,
+          completedAt: null,
+          prompt: 'hello',
+        },
+      ],
+    })
+
+    const res = await request(app).get(`/api/todos/${todo.id}/ai-sessions/live-s1/transcript`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.source).toBe('ptylog')
+    expect(res.body.turns).toHaveLength(1)
+    expect(res.body.turns[0].role).toBe('raw')
+    expect(res.body.turns[0].content).toContain('first line')
+    expect(res.body.turns[0].content).toContain('second line')
   })
 })

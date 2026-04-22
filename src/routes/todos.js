@@ -3,7 +3,7 @@ import { loadTranscript } from '../transcript.js'
 import { summarizeTurns } from '../summarize.js'
 import { buildTodoExport, renderTodoMarkdown } from '../export/todoMarkdown.js'
 
-export function createTodosRouter({ db, logDir, getPricing, getTools }) {
+export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSession }) {
   const router = Router()
 
   router.get('/', (req, res) => {
@@ -223,12 +223,17 @@ export function createTodosRouter({ db, logDir, getPricing, getTools }) {
         res.status(404).json({ ok: false, error: 'session_not_found' })
         return
       }
+      const liveSession = typeof getLiveSession === 'function'
+        ? getLiveSession(session.sessionId)
+        : null
       const result = loadTranscript({
         tool: session.tool,
         nativeSessionId: session.nativeSessionId,
         cwd: session.cwd || todo.workDir || null,
         sessionId: session.sessionId,
         logDir,
+        liveOutputHistory: liveSession?.outputHistory || null,
+        liveTimestamp: liveSession?.lastOutputAt || Date.now(),
       })
       const since = Number(req.query.since)
       const turns = Number.isFinite(since) && since > 0
@@ -268,6 +273,9 @@ export function createTodosRouter({ db, logDir, getPricing, getTools }) {
         res.status(404).json({ ok: false, error: 'session_not_found' })
         return
       }
+      const liveSession = typeof getLiveSession === 'function'
+        ? getLiveSession(session.sessionId)
+        : null
 
       const {
         targetTodoId,
@@ -294,6 +302,8 @@ export function createTodosRouter({ db, logDir, getPricing, getTools }) {
         cwd: session.cwd || sourceTodo.workDir || null,
         sessionId: session.sessionId,
         logDir,
+        liveOutputHistory: liveSession?.outputHistory || null,
+        liveTimestamp: liveSession?.lastOutputAt || Date.now(),
       })
 
       const allTurns = transcript.turns || []

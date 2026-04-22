@@ -406,6 +406,27 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     }
   })
 
+  router.post('/input', (req, res) => {
+    try {
+      const { sessionId, data } = req.body || {}
+      if (!sessionId || typeof data !== 'string') {
+        res.status(400).json({ ok: false, error: 'missing sessionId or data' })
+        return
+      }
+      const session = sessions.get(sessionId)
+      if (!session) {
+        res.status(404).json({ ok: false, error: 'session_not_found' })
+        return
+      }
+      clearPendingConfirm(session)
+      pty.write(sessionId, data)
+      res.json({ ok: true })
+    } catch (e) {
+      console.error('[ai-terminal/input]', e)
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
   // ─── WebSocket hooks (called from server.js on upgrade) ───
 
   function addBrowser(sessionId, ws) {

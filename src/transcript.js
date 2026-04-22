@@ -153,11 +153,18 @@ function loadFromPtyLog(logDir, sessionId) {
   return [{ role: 'raw', content: stripAnsi(raw), timestamp: statSync(file).mtimeMs }]
 }
 
+function loadFromLiveOutputHistory(outputHistory, timestamp) {
+  if (!Array.isArray(outputHistory) || outputHistory.length === 0) return null
+  const raw = outputHistory.join('')
+  if (!raw) return null
+  return [{ role: 'raw', content: stripAnsi(raw), timestamp: timestamp || Date.now() }]
+}
+
 /**
- * @param {{ tool: 'claude'|'codex', nativeSessionId?: string|null, cwd?: string|null, sessionId: string, logDir?: string|null }} opts
+ * @param {{ tool: 'claude'|'codex', nativeSessionId?: string|null, cwd?: string|null, sessionId: string, logDir?: string|null, liveOutputHistory?: string[]|null, liveTimestamp?: number|null }} opts
  * @returns {{ source: 'jsonl'|'ptylog'|'empty', turns: Array<object>, filePath: string|null }}
  */
-export function loadTranscript({ tool, nativeSessionId, cwd, sessionId, logDir }) {
+export function loadTranscript({ tool, nativeSessionId, cwd, sessionId, logDir, liveOutputHistory, liveTimestamp }) {
   try {
     let filePath = null
     if (tool === 'claude' && nativeSessionId && cwd) {
@@ -176,5 +183,7 @@ export function loadTranscript({ tool, nativeSessionId, cwd, sessionId, logDir }
   }
   const ptyTurns = loadFromPtyLog(logDir, sessionId)
   if (ptyTurns) return { source: 'ptylog', turns: ptyTurns, filePath: null }
+  const liveTurns = loadFromLiveOutputHistory(liveOutputHistory, liveTimestamp)
+  if (liveTurns) return { source: 'ptylog', turns: liveTurns, filePath: null }
   return { source: 'empty', turns: [], filePath: null }
 }

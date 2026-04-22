@@ -626,6 +626,7 @@ export function createServer(opts = {}) {
 		logDir,
 		getPricing: () => loadConfig({ rootDir: configRootDir }).pricing,
 		getTools: () => runtimeConfig.tools,
+		getLiveSession: (sessionId) => ait.sessions.get(sessionId) || null,
 	}));
 	app.use("/api/templates", createTemplatesRouter({ db }));
 	app.use("/api/recurring-rules", createRecurringRulesRouter({ db }));

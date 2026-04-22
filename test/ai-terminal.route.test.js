@@ -317,6 +317,16 @@ describe('routes/ai-terminal', () => {
     expect(r.status).toBe(404)
   })
 
+  it('POST /input writes to pty for running session', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const exec = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+    const r = await request(ctx.app).post('/api/ai-terminal/input')
+      .send({ sessionId: exec.body.sessionId, data: 'continue\r' })
+    expect(r.status).toBe(200)
+    expect(ctx.pty.writes).toContainEqual({ id: exec.body.sessionId, data: 'continue\r' })
+  })
+
   it('broadcastToSession sends to all ws browsers for that session', async () => {
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
     const { body } = await request(ctx.app).post('/api/ai-terminal/exec')

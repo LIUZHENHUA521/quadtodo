@@ -365,6 +365,13 @@ export async function stopAiExec(sessionId: string): Promise<void> {
   })
 }
 
+export async function sendAiInput(sessionId: string, data: string): Promise<void> {
+  await jsonFetch('/api/ai-terminal/input', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, data }),
+  })
+}
+
 export async function getStatus(): Promise<{ version: string; activeSessions: number }> {
   return jsonFetch('/api/status')
 }

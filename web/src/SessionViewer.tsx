@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Segmented } from 'antd'
 import AiTerminalMini from './AiTerminalMini'
 import TranscriptView from './TranscriptView'
@@ -42,7 +42,7 @@ export default function SessionViewer(props: Props) {
           onChange={(v) => setMode(v as ViewMode)}
           options={[
             { label: 'Live 终端', value: 'live' },
-            { label: '对话历史', value: 'transcript' },
+            { label: 'Chat 续聊', value: 'transcript' },
           ]}
         />
       </div>
@@ -63,6 +63,8 @@ export default function SessionViewer(props: Props) {
             sessionId={sessionId}
             onFork={onFork}
             autoRefreshMs={isRunning ? 5000 : 0}
+            resumeTarget={props.resumeTarget}
+            onSessionRecovered={props.onSessionRecovered}
           />
         )}
       </div>
