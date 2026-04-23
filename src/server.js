@@ -846,7 +846,7 @@ export function createServer(opts = {}) {
 					return;
 				}
 				if (msg.type === "pong") return;
-				ait.handleBrowserMessage(sessionId, msg);
+				ait.handleBrowserMessage(sessionId, msg, ws);
 			} catch {
 				/* ignore */
 			}

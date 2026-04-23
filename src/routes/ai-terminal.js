@@ -452,6 +452,30 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     const session = sessions.get(sessionId)
     if (!session) return
     session.browsers.delete(ws)
+    // 这条浏览器走了之后，剩下的浏览器里最小尺寸可能变大，重算一次让 PTY
+    // 恢复到能充分利用剩余窗口的尺寸；没有浏览器时什么都不用发，等下一个进来再说。
+    if (session.browsers.size > 0) applyAggregatedResize(session)
+  }
+
+  // 同一个 session 被多个网页同时打开时（比如你在另一个 tab/window 又开了一遍
+  // 同一个 todo），每个 tab 的 xterm fit 出的 cols/rows 都不一样，谁最后发谁
+  // 赢就会在两个尺寸之间来回抖，Claude 的 TUI 不停重排、scrollback 全是残影。
+  // 取所有在线浏览器上报尺寸的 **最小值** 发给 PTY：最窄的窗口看得下，更宽的
+  // tab 只是右边留空白，整体输出保持稳定。
+  function applyAggregatedResize(session) {
+    let cols = Infinity
+    let rows = Infinity
+    for (const b of session.browsers) {
+      const sz = b.__quadtodoSize
+      if (!sz) continue
+      if (sz.cols < cols) cols = sz.cols
+      if (sz.rows < rows) rows = sz.rows
+    }
+    if (!Number.isFinite(cols) || !Number.isFinite(rows)) return
+    if (session.lastAppliedCols === cols && session.lastAppliedRows === rows) return
+    session.lastAppliedCols = cols
+    session.lastAppliedRows = rows
+    pty.resize(session.sessionId, cols, rows)
   }
 
   function clearPendingConfirm(session) {
@@ -479,13 +503,24 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     broadcastToSession(session, { type: 'pending_cleared' })
   }
 
-  function handleBrowserMessage(sessionId, msg) {
+  function handleBrowserMessage(sessionId, msg, ws) {
     if (msg.type === 'input') {
       const session = sessions.get(sessionId)
       clearPendingConfirm(session)
       pty.write(sessionId, msg.data)
     } else if (msg.type === 'resize') {
-      pty.resize(sessionId, msg.cols, msg.rows)
+      const cols = Number(msg.cols)
+      const rows = Number(msg.rows)
+      if (!Number.isFinite(cols) || !Number.isFinite(rows) || cols <= 0 || rows <= 0) return
+      const session = sessions.get(sessionId)
+      if (!session) return
+      if (ws && session.browsers.has(ws)) {
+        ws.__quadtodoSize = { cols, rows }
+        applyAggregatedResize(session)
+      } else {
+        // 没拿到 ws 兜底走老路径，保留对非 WS 调用方的兼容
+        pty.resize(sessionId, cols, rows)
+      }
     } else if (msg.type === 'set_auto_mode') {
       const session = sessions.get(sessionId)
       if (!session) return
