@@ -358,22 +358,41 @@ body {
 /* ─── 允许复制：聊天续聊 / 历史会话卡片里的文案 ───
    .todo-card 有 user-select:none + cursor:grab；
    .todo-history-item 是 <button> 默认也不可选。
-   这里给具体的文案类名开绿灯，鼠标移上去变文本光标，可以拖蓝复制 */
+   这里给具体的文案类名开绿灯，鼠标移上去变文本光标，可以拖蓝复制。
+   重要：规则只 scope 在 TranscriptView (.tv-*) / 历史卡 (.todo-history-*) / xterm 之下，
+        绝不污染 xterm 的事件——否则 xterm 的 hidden textarea 拿不到键盘事件、退格回显会错位。 */
 .todo-card .tv-md,
-.todo-card .tv-md *,
+.todo-card .tv-md p,
+.todo-card .tv-md span,
+.todo-card .tv-md li,
+.todo-card .tv-md pre,
+.todo-card .tv-md code,
+.todo-card .tv-md blockquote,
 .todo-card .tv-plain,
 .todo-card .tv-raw-pre,
 .todo-card .tv-tool-pre,
 .todo-card .tv-code-pre,
 .todo-card .tv-code-pre *,
-.todo-card pre,
-.todo-card code,
 .todo-history-item .todo-history-native-id,
 .todo-history-item .todo-history-command,
 .todo-history-item .todo-history-tool,
 .todo-history-item .todo-history-time {
   user-select: text;
   -webkit-user-select: text;
+  cursor: text;
+}
+
+/* xterm 的防御性护栏：无论上面的规则怎么变化，
+   .xterm 内部永远不能被 cursor:text 干扰，否则点击选不中不会触发 hidden textarea 获焦。
+   只保留 xterm 自己的 cursor 逻辑（默认 text over rendered rows；grab 被 parent 压制）。 */
+.todo-card .xterm,
+.todo-card .xterm * {
+  /* xterm 自己会管 user-select / cursor 的正确行为，我们只需要不给它强加 cursor:text */
+  cursor: auto;
+}
+.todo-card .xterm .xterm-screen,
+.todo-card .xterm .xterm-viewport {
+  /* 鼠标在终端区域显示 xterm 期望的 text caret；点击时 xterm 会 focus 自己的 textarea */
   cursor: text;
 }
 

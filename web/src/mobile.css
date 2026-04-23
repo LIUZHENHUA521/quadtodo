@@ -125,10 +125,11 @@
     height: calc(100dvh * 0.9) !important;
   }
 
-  /* ── 嵌入终端（xterm）在手机上可用但建议横屏 ── */
-  .todo-terminal-panel {
-    padding: 6px;
-  }
+  /* ── 嵌入终端（xterm）在手机上可用但建议横屏 ──
+     注意：**故意不改 .todo-terminal-panel 的 padding**，也不改 xterm 容器尺寸。
+     xterm 的 FitAddon 会按当前容器宽度去算 cols/rows，一旦这里跟 PTY 不一致，
+     退格/输入会出现回显错位（看上去像"乱码"）。手机上终端就让它保持和桌面一致的
+     padding，用户自己滚动就好；并排模式强制堆叠只影响没启用 side-by-side 的场景。 */
   .todo-terminal-body.side-by-side {
     grid-template-columns: 1fr; /* 手机上并排无意义，强制堆叠 */
   }

@@ -219,6 +219,13 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   // jsonl 只有消息收尾才落盘，Chat 续聊 tab 过去只能等全文返回才显示；
   // 服务端现在会推 PTY 实时渲染文本，展示为列表最末的"实时"伪 turn
   const [liveOutput, setLiveOutput] = useState<string | null>(null)
+  const [liveExpanded, setLiveExpanded] = useState<boolean>(() => {
+    // 默认折叠；用户手动展开后 session 内保持选择
+    try { return localStorage.getItem('quadtodo.liveExpanded') === '1' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('quadtodo.liveExpanded', liveExpanded ? '1' : '0') } catch { /* ignore */ }
+  }, [liveExpanded])
   const [fullscreen, setFullscreen] = useState(false)
   const [height, setHeight] = useState<number>(() => {
     try {
@@ -764,17 +771,67 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
             onToggleCollapse={handleToggleCollapse}
           />
         ))}
-        {liveOutput && (
-          <div className="tv-turn tv-role-raw tv-turn-live">
-            <div className="tv-turn-header">
-              <Tag className="tv-turn-tag" color="processing">实时</Tag>
-              <span className="tv-live-pulse">生成中</span>
-            </div>
-            <pre className="tv-raw-pre">{liveOutput}</pre>
-          </div>
-        )}
         {(() => {
-          if (liveOutput) return null
+          // 只在"真正在等 AI 回复"时才展示实时 PTY 输出 + "生成中"。
+          // 否则（比如 Claude CLI 回完话后闲置在 prompt，PTY 仍会推 banner / scrollback），
+          // 让 liveOutput 静默——避免 "生成中" 一直挂着。
+          if (!liveOutput) return null
+          const status = data?.session.status
+          const lastTurn = displayedTurns[displayedTurns.length - 1]
+          // AI 真的在"忙"的判定：
+          //   - status=pending_confirm（等待用户确认工具调用）→ 忙
+          //   - status=running 且下列之一：刚发送还没收 turn / 无 turn / 最后一条
+          //     是 user/tool_use/tool_result/thinking（都意味着 AI 还在下一步）→ 忙
+          //   - 最后一条是 assistant → 普通回复刚结束，不显示（这正是之前"一直挂着"的修复点）
+          const nonIdleRoles = new Set(['user', 'tool_use', 'tool_result', 'thinking'])
+          const activelyGenerating =
+            status === 'pending_confirm' ||
+            (status === 'running' && (sending || !lastTurn || nonIdleRoles.has(lastTurn.role)))
+          if (!activelyGenerating) return null
+          // liveOutput 里是整个 PTY outputHistory，会带上 banner / 之前消息 / 模板……
+          // 展示时只留尾部若干行（AI 当前正在吐字的部分），避免重复显示已经在上方聊天气泡里
+          // 呈现过的历史内容。
+          const TAIL_LINES = 10
+          const lines = liveOutput.split('\n')
+          const truncated = lines.length > TAIL_LINES
+          const visible = truncated
+            ? lines.slice(lines.length - TAIL_LINES).join('\n')
+            : liveOutput
+          return (
+            <div className="tv-turn tv-role-raw tv-turn-live">
+              <div className="tv-turn-header">
+                <Tag className="tv-turn-tag" color="processing">实时</Tag>
+                <span className="tv-live-pulse">生成中</span>
+                <div style={{ flex: 1 }} />
+                {liveExpanded && truncated && (
+                  <span style={{ fontSize: 11, color: '#999', marginRight: 6 }}>
+                    仅最新 {TAIL_LINES} 行
+                  </span>
+                )}
+                <Button
+                  size="small"
+                  type="text"
+                  icon={liveExpanded ? <DownOutlined /> : <RightOutlined />}
+                  onClick={() => setLiveExpanded((v) => !v)}
+                >
+                  {liveExpanded ? '折叠' : '展开实时输出'}
+                </Button>
+              </div>
+              {liveExpanded && <pre className="tv-raw-pre">{visible}</pre>}
+            </div>
+          )
+        })()}
+        {(() => {
+          if (liveOutput) {
+            // 如果上面的实时块会渲染（真在生成），这里就不再叠"AI 思考中"——避免双重指示
+            const status0 = data?.session.status
+            const lastTurn0 = displayedTurns[displayedTurns.length - 1]
+            const nonIdleRoles = new Set(['user', 'tool_use', 'tool_result', 'thinking'])
+            const active0 =
+              status0 === 'pending_confirm' ||
+              (status0 === 'running' && (sending || !lastTurn0 || nonIdleRoles.has(lastTurn0.role)))
+            if (active0) return null // 上面那块已经在显示了
+          }
           const status = data?.session.status
           // 等待用户确认是独立状态，始终提示一下
           if (status === 'pending_confirm') {
