@@ -73,4 +73,48 @@ describe('buildReport', () => {
 		expect(r.summary.sessionCount).toBe(0)
 		expect(r.topTodos).toEqual([])
 	})
+
+	it('混合模型时各维度按 primary_model 分别计价后再汇总', () => {
+		db.createTodo({ title: 'A', quadrant: 1 })
+		const a = db.listTodos()[0]
+		db.createTodo({ title: 'B', quadrant: 2 })
+		const b = db.listTodos()[1]
+		seed(db, [
+			// Sonnet: 100k in + 20k out = 0.3 + 0.3 = $0.60
+			{ id: 's1', startedAt: 1000, endedAt: 2000, active: 100, input: 100_000, output: 20_000, model: 'claude-sonnet-4-6', todoId: a.id },
+			// Opus: 1M in + 200k out = 15 + 15 = $30.00
+			{ id: 's2', startedAt: 3000, endedAt: 4000, active: 200, input: 1_000_000, output: 200_000, model: 'claude-opus-4-6', todoId: b.id },
+			// Haiku: 500k in + 100k out = 0.5 + 0.5 = $1.00
+			{ id: 's3', startedAt: 5000, endedAt: 6000, active: 300, input: 500_000, output: 100_000, model: 'claude-haiku-4-5', todoId: b.id },
+		])
+
+		const r = buildReport(db, { since: 0, until: 9000, pricing: DEFAULT_PRICING })
+
+		// summary.cost 必须是三段成本相加，不是 合计token × sonnet单价
+		expect(r.summary.cost.usd).toBeCloseTo(31.60, 6)
+		// CNY = USD × 7.2
+		expect(r.summary.cost.cny).toBeCloseTo(31.60 * 7.2, 6)
+
+		// byModel 各行用各自模型的单价，不再全部按 default 计
+		const opus = r.byModel.find(x => x.key === 'claude-opus-4-6')
+		const sonnet = r.byModel.find(x => x.key === 'claude-sonnet-4-6')
+		const haiku = r.byModel.find(x => x.key === 'claude-haiku-4-5')
+		expect(opus.cost.usd).toBeCloseTo(30, 6)
+		expect(sonnet.cost.usd).toBeCloseTo(0.6, 6)
+		expect(haiku.cost.usd).toBeCloseTo(1, 6)
+
+		// topTodos: b 包含 opus + haiku 两个 session，必须各自算再求和 = 31
+		const todoB = r.topTodos.find(x => x.todoId === b.id)
+		expect(todoB.cost.usd).toBeCloseTo(31, 6)
+		const todoA = r.topTodos.find(x => x.todoId === a.id)
+		expect(todoA.cost.usd).toBeCloseTo(0.6, 6)
+
+		// byTool: claude 桶包含全部三个 session
+		const byToolClaude = r.byTool.find(x => x.key === 'claude')
+		expect(byToolClaude.cost.usd).toBeCloseTo(31.60, 6)
+
+		// byQuadrant: Q2 包含 opus + haiku
+		const q2 = r.byQuadrant.find(x => x.key === 2)
+		expect(q2.cost.usd).toBeCloseTo(31, 6)
+	})
 })

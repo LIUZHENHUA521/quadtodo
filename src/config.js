@@ -236,6 +236,10 @@ function cloneDefaultPricing() {
 function defaultConfig() {
 	return {
 		port: 5677,
+		// 监听地址。默认只绑定回环接口（本机安全）。
+		// 要让同网段其他设备（含 Tailscale 虚拟网段 100.x.x.x）访问，可设为 "0.0.0.0"。
+		// CLI 上也可以用 `quadtodo start --expose` / `--host 0.0.0.0` 临时覆盖。
+		host: "127.0.0.1",
 		defaultTool: "claude",
 		defaultCwd: homedir(),
 		tools: resolveToolsConfig(),

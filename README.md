@@ -47,11 +47,26 @@ quadtodo start              # 启动服务并自动打开浏览器
 
 停止：在前台会话按 Ctrl+C，或在另一个终端里 `quadtodo stop`。
 
+## 手机访问（Tailscale 私网）
+
+想在外面用手机继续看待办 / 接 AI 会话？详见 **[docs/MOBILE.md](docs/MOBILE.md)** —— 基于 Tailscale 私有 mesh VPN，不暴露公网，配置 5 分钟。
+
+> **安全提醒**：quadtodo 内置 shell + AI 终端能力，**绝对不要**直接暴露到公网。Tailscale 私网是推荐的访问方式。
+
+快速上手：
+
+```bash
+# 一次性把监听地址改成 0.0.0.0（否则 Tailscale 网卡也不可达）
+quadtodo config set host 0.0.0.0
+quadtodo start
+# 或者：quadtodo start --expose
+```
+
 ## 命令
 
 | 命令 | 作用 |
 |---|---|
-| `quadtodo start [--port 5677] [--no-open] [--cwd <path>]` | 启动服务 |
+| `quadtodo start [--port 5677] [--host 0.0.0.0] [--expose] [--no-open] [--cwd <path>]` | 启动服务（`--expose` = `--host 0.0.0.0`） |
 | `quadtodo stop` | 停止服务（SIGTERM 3 秒后 SIGKILL） |
 | `quadtodo status` | 查看运行状态 + 活跃会话数 |
 | `quadtodo doctor` | 环境自检 |
@@ -66,6 +81,7 @@ quadtodo start              # 启动服务并自动打开浏览器
 ```json
 {
   "port": 5677,
+  "host": "127.0.0.1",
   "defaultTool": "claude",
   "defaultCwd": "~",
   "tools": {

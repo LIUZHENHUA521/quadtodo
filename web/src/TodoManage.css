@@ -347,6 +347,28 @@ body {
   cursor: text;
 }
 
+/* ─── 允许复制：聊天续聊 / 历史会话卡片里的文案 ───
+   .todo-card 有 user-select:none + cursor:grab；
+   .todo-history-item 是 <button> 默认也不可选。
+   这里给具体的文案类名开绿灯，鼠标移上去变文本光标，可以拖蓝复制 */
+.todo-card .tv-md,
+.todo-card .tv-md *,
+.todo-card .tv-plain,
+.todo-card .tv-raw-pre,
+.todo-card .tv-tool-pre,
+.todo-card .tv-code-pre,
+.todo-card .tv-code-pre *,
+.todo-card pre,
+.todo-card code,
+.todo-history-item .todo-history-native-id,
+.todo-history-item .todo-history-command,
+.todo-history-item .todo-history-tool,
+.todo-history-item .todo-history-time {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
 .todo-card-shell {
   display: flex;
   flex-direction: column;

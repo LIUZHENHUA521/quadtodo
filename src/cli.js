@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
+import { networkInterfaces } from 'node:os'
 import { join, dirname, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
@@ -29,6 +30,79 @@ function pidFile(rootDir = DEFAULT_ROOT_DIR) {
 
 function isAlive(pid) {
   try { process.kill(pid, 0); return true } catch { return false }
+}
+
+// Tailscale 私网段：100.64.0.0 / 10 (RFC 6598 CGNAT)
+function isTailscaleIPv4(addr) {
+  if (!addr || typeof addr !== 'string') return false
+  const parts = addr.split('.').map(Number)
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return false
+  return parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127
+}
+
+// 枚举本机可用于访问的地址：区分 Tailscale / LAN / loopback。
+// 返回 { tailscale: [...], lan: [...], loopback: [...] }，每项带 name + address。
+export function collectReachableAddresses() {
+  const out = { tailscale: [], lan: [], loopback: [] }
+  const ifs = networkInterfaces()
+  for (const [name, entries] of Object.entries(ifs)) {
+    for (const entry of entries || []) {
+      if (entry.family !== 'IPv4') continue
+      if (entry.internal) {
+        out.loopback.push({ name, address: entry.address })
+      } else if (isTailscaleIPv4(entry.address) || /tailscale|utun/i.test(name)) {
+        // 兜底：macOS 下 Tailscale 通常是 utunN 接口，配合 100.x 判定更稳
+        if (isTailscaleIPv4(entry.address)) {
+          out.tailscale.push({ name, address: entry.address })
+        } else {
+          out.lan.push({ name, address: entry.address })
+        }
+      } else {
+        out.lan.push({ name, address: entry.address })
+      }
+    }
+  }
+  return out
+}
+
+export function buildStartupBanner({ port, host, addresses = collectReachableAddresses() }) {
+  const lines = []
+  const url = (addr) => `http://${addr}:${port}`
+  const isLoopbackOnly = host === '127.0.0.1' || host === 'localhost'
+
+  if (isLoopbackOnly) {
+    lines.push(`quadtodo listening on ${url('127.0.0.1')}  (loopback only)`)
+    lines.push('')
+    lines.push('⚠️  To access from phone via Tailscale, run:')
+    lines.push('     quadtodo config set host 0.0.0.0')
+    lines.push('   or start with:')
+    lines.push('     quadtodo start --expose')
+  } else {
+    lines.push(`quadtodo listening on ${url(host === '0.0.0.0' || host === '::' ? 'all-interfaces' : host)}  (port ${port})`)
+    lines.push('')
+    lines.push('⚠️  SECURITY: quadtodo exposes a shell + AI terminal. Reachable URLs:')
+    if (addresses.tailscale.length) {
+      lines.push('   Tailscale (recommended — private mesh VPN):')
+      for (const item of addresses.tailscale) {
+        lines.push(`     ${url(item.address)}    [${item.name}]`)
+      }
+      lines.push('   Tip: with MagicDNS you can also use  http://<your-mac-name>:' + port)
+    } else {
+      lines.push('   ❌ No Tailscale interface detected.')
+      lines.push('      Install Tailscale on this Mac + your phone, sign into the same account.')
+      lines.push('      Guide: docs/MOBILE.md')
+    }
+    if (addresses.lan.length) {
+      lines.push('   LAN (same-WiFi only — anyone on the same network can reach these):')
+      for (const item of addresses.lan) {
+        lines.push(`     ${url(item.address)}    [${item.name}]`)
+      }
+    }
+    lines.push('')
+    lines.push('   Do NOT put this URL on the public internet without an auth layer.')
+  }
+
+  return lines.join('\n')
 }
 
 // ─── exported helpers (for tests) ───
@@ -112,10 +186,15 @@ program.command('start')
   .option('-p, --port <port>', 'override port', (v) => Number(v))
   .option('--no-open', 'do not auto-open browser')
   .option('--cwd <path>', 'default cwd for AI terminal sessions')
+  .option('--host <host>', 'bind address (e.g. 0.0.0.0 to allow Tailscale/LAN access)')
+  .option('--expose', 'shorthand for --host 0.0.0.0 (bind all interfaces)')
   .action(async (cmdOpts) => {
     const rootDir = DEFAULT_ROOT_DIR
     const cfg = loadConfig({ rootDir })
     const defaultCwd = cmdOpts.cwd || cfg.defaultCwd || process.env.HOME || process.cwd()
+    const host = cmdOpts.expose
+      ? '0.0.0.0'
+      : (cmdOpts.host || cfg.host || '127.0.0.1')
 
     const pf = pidFile(rootDir)
     if (existsSync(pf)) {
@@ -139,10 +218,12 @@ program.command('start')
     })
 
     try {
-      await srv.listen(port)
+      await srv.listen(port, host)
     } catch (e) {
       if (e.code === 'EADDRINUSE') {
         console.error(`port ${port} in use — run 'quadtodo config set port <newPort>' or stop whoever holds it`)
+      } else if (e.code === 'EADDRNOTAVAIL') {
+        console.error(`host ${host} not available on this machine — try --host 0.0.0.0`)
       } else {
         console.error(`listen failed: ${e.message}`)
       }
@@ -150,14 +231,14 @@ program.command('start')
     }
 
     writeFileSync(pf, String(process.pid))
-    const url = `http://127.0.0.1:${port}`
-    console.log(`quadtodo listening on ${url}`)
+    console.log(buildStartupBanner({ port, host }))
     console.log(`AI terminal default cwd: ${defaultCwd}`)
 
     if (cmdOpts.open !== false) {
       try {
         const { default: open } = await import('open')
-        open(url)
+        // 浏览器自动打开仍走 127.0.0.1（避免 0.0.0.0 在浏览器里非法）
+        open(`http://127.0.0.1:${port}`)
       } catch (e) {
         console.warn(`could not auto-open browser: ${e.message}`)
       }

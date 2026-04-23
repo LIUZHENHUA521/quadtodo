@@ -1,0 +1,226 @@
+/* ─────────────────────────────────────────────────────────────
+ * 移动端"能用"档样式 — 在 ≤768px 下生效
+ * 原则：
+ *   - 不动桌面布局，所有规则都在 @media (max-width: 768px) 内
+ *   - 四象限改为竖向堆叠
+ *   - 所有 Drawer / Modal 改为全屏
+ *   - 触摸目标放大到 ≥44px
+ *   - 适配 iOS 安全区（刘海、Home 条）
+ * ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  /* ── 页面级：整体缩小外边距 ── */
+  body {
+    font-size: 14px;
+  }
+
+  /* TodoManage 最外层容器有 padding:16（inline style），抽屉 sticky-header
+     依赖 -16 的负 margin；这里统一靠 body 补回安全区即可 */
+
+  /* ── 顶部工具栏 / 筛选栏 ── */
+  .todo-sticky-header {
+    margin: -8px -8px 0;
+    padding: 8px 8px 4px;
+    padding-top: calc(8px + env(safe-area-inset-top));
+  }
+
+  /* ── 四象限主视图：竖向堆叠 ── */
+  .todo-board {
+    min-height: auto;
+  }
+
+  .todo-board-row {
+    flex-direction: column;
+    min-height: auto;
+  }
+
+  /* 上下两行之间的 handle：在堆叠视图里它反倒成为了分区线，保留但变细 */
+  .todo-divider-h {
+    height: 4px;
+    cursor: default;
+    pointer-events: none; /* 手机上不支持拖拽 resize */
+  }
+  .todo-divider-h::after {
+    display: none;
+  }
+
+  /* 每行里左右两个象限的竖向分隔线：堆叠视图下直接隐藏 */
+  .todo-divider-v {
+    display: none;
+  }
+
+  /* 每个象限给一个合理的最小高度，避免 4 个象限都挤成一行 */
+  .todo-quadrant {
+    flex: none;
+    min-height: 160px;
+    padding: 10px;
+  }
+
+  .todo-quadrant + .todo-quadrant {
+    border-top: 1px solid #e8e8e8;
+  }
+
+  /* 优先级视图 */
+  .todo-priority-board {
+    min-height: auto;
+    padding: 8px;
+  }
+
+  /* ── 触摸目标 ≥44×44（WCAG + iOS HIG） ── */
+  .ant-btn-sm,
+  .ant-btn {
+    min-height: 36px;
+  }
+  .todo-sticky-header .ant-btn-sm {
+    min-height: 40px;
+    padding-inline: 12px;
+  }
+
+  /* 待办卡片上的操作按钮（小图标按钮）放大 */
+  .todo-card .ant-btn-icon-only.ant-btn-sm {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  /* 卡片本身触摸区加大 */
+  .todo-card {
+    padding: 14px 14px 12px;
+  }
+
+  /* ── Drawer 全屏化 ── */
+  .ant-drawer-content-wrapper {
+    /* antd 会给 Drawer 设置 inline width；用 !important 在移动端强制全屏 */
+    width: 100% !important;
+    max-width: 100vw !important;
+  }
+  .ant-drawer-body {
+    padding: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+  .ant-drawer-header {
+    padding: 12px;
+  }
+
+  /* ── Modal 全屏化（留一点边） ── */
+  .ant-modal {
+    max-width: calc(100vw - 16px) !important;
+    margin: 8px auto !important;
+    top: 8px !important;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .ant-modal-body {
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
+  }
+
+  /* ── 筛选栏：搜索框占满一行 ── */
+  .todo-sticky-header .ant-input-affix-wrapper,
+  .todo-sticky-header .ant-input {
+    width: 100% !important;
+    min-width: 0;
+  }
+
+  /* ── iOS Safari 的 100vh 问题：避免底部抽屉被地址栏遮挡 ── */
+  .ant-drawer.ant-drawer-bottom .ant-drawer-content-wrapper {
+    height: calc(100dvh * 0.9) !important;
+  }
+
+  /* ── 嵌入终端（xterm）在手机上可用但建议横屏 ── */
+  .todo-terminal-panel {
+    padding: 6px;
+  }
+  .todo-terminal-body.side-by-side {
+    grid-template-columns: 1fr; /* 手机上并排无意义，强制堆叠 */
+  }
+
+  /* ── 顶栏菜单按钮的汉堡 Drawer：紧凑垂直列表 ── */
+  .mobile-menu-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .mobile-menu-actions .ant-btn {
+    justify-content: flex-start;
+    height: 48px;
+    font-size: 15px;
+  }
+  .mobile-menu-actions .ant-btn .anticon {
+    font-size: 18px;
+  }
+
+  /* ── 详情抽屉里左右并排的表单在窄屏下堆叠 ── */
+  .ant-drawer-body .ant-form-item .ant-col {
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
+
+  /* ── 历史会话卡片（恢复/本地继续/Fork/删除） ── */
+  /* 桌面下是 horizontal flex + 右侧 margin-left:auto 动作栏。
+     窄屏下改为 body 在上、动作栏在下单独一行，且允许 session id / 命令换行 */
+  .todo-history-item {
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .todo-history-actions {
+    margin-left: 0;
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 14px;
+    padding-top: 6px;
+    border-top: 1px dashed rgba(31, 42, 68, 0.08);
+  }
+  .todo-history-link,
+  .todo-history-delete {
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 6px;
+    font-size: 13px;
+  }
+  .todo-history-native-id,
+  .todo-history-command {
+    white-space: normal;
+    word-break: break-all;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.45;
+  }
+  /* 桌面下 .todo-history-box 里标题固定 88px 宽；在手机上放行让它紧凑 */
+  .todo-history-box {
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+  }
+  .todo-history-title {
+    min-width: 0;
+    padding-top: 0;
+  }
+}
+
+/* 更窄屏（≤380px，iPhone SE / mini）再进一步压缩 */
+@media (max-width: 380px) {
+  .todo-sticky-header {
+    margin: -6px -6px 0;
+    padding: 6px;
+  }
+  .todo-quadrant {
+    padding: 8px;
+    min-height: 140px;
+  }
+  .todo-card {
+    padding: 12px 12px 10px;
+  }
+}
+
+/* iOS 安全区：仅移动端触发；桌面 env() 返回 0 所以影响很小，但还是只在 ≤768px
+   生效避免干扰桌面布局 */
+@media (max-width: 768px) {
+  @supports (padding: max(0px)) {
+    .todo-sticky-header {
+      padding-left: max(8px, env(safe-area-inset-left));
+      padding-right: max(8px, env(safe-area-inset-right));
+    }
+  }
+}

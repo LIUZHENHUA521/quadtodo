@@ -7,3 +7,6 @@ web/tsconfig.tsbuildinfo
 .DS_Store
 .vscode/
 .idea/
+
+# quadtodo multi-agent worktrees
+.quadtodo-worktrees/

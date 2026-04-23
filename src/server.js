@@ -865,10 +865,10 @@ export function createServer(opts = {}) {
 		});
 	}
 
-	function listen(port) {
+	function listen(port, host = "127.0.0.1") {
 		return new Promise((resolve, reject) => {
 			httpServer.once("error", reject);
-			httpServer.listen(port, "127.0.0.1", () => {
+			httpServer.listen(port, host, () => {
 				httpServer.removeListener("error", reject);
 				resolve(httpServer.address());
 			});

@@ -12,7 +12,9 @@ import {
   DownOutlined, UpOutlined, CloseOutlined, RightOutlined,
   DashboardOutlined, FileTextOutlined, ExportOutlined,
   BookOutlined, LineChartOutlined, TrophyOutlined, BranchesOutlined,
+  MenuOutlined,
 } from '@ant-design/icons'
+import { useIsMobile } from './hooks/useIsMobile'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
   useSensor, useSensors, DragOverlay, DragStartEvent,
@@ -324,6 +326,8 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                     type="button"
                     className={`todo-history-item ${isCurrent ? 'active' : ''}`}
                     onClick={() => {
+                      // 如果用户正在拖蓝选中里面的 session id / 命令文字，就别触发展开
+                      if (typeof window !== 'undefined' && window.getSelection()?.toString()) return
                       onShowTerminal(todo.id)
                       setExpandedTerminal({ todoId: todo.id, sessionId: session.sessionId })
                     }}
@@ -807,6 +811,8 @@ export default function TodoManage() {
   const [transcriptDrawerOpen, setTranscriptDrawerOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [unboundTranscripts, setUnboundTranscripts] = useState(0)
+  const isMobile = useIsMobile()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'priority' | 'pet'>(() => {
     const saved = localStorage.getItem('quadtodo:viewMode')
     return saved === 'priority' || saved === 'list' ? saved : 'list'
@@ -1539,53 +1545,64 @@ export default function TodoManage() {
         <Button type="primary" icon={<PlusOutlined />} size="small" onClick={handleCreate}>
           新建
         </Button>
-        <Tooltip title="启动 AI 终端时自动将标题和描述填入 prompt">
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#666' }}>
-            自动填入 <Switch size="small" checked={autoFillPrompt} onChange={toggleAutoFillPrompt} />
-          </span>
-        </Tooltip>
-        <Button
-          icon={<DashboardOutlined />}
-          size="small"
-          onClick={() => setDashboardOpen(true)}
-          title="AI 工作面板"
-        >AI 面板</Button>
-        <Button
-          icon={<SearchOutlined />}
-          size="small"
-          onClick={() => setTranscriptDrawerOpen(true)}
-          title="历史会话找回"
-        >找回</Button>
-        <Button
-          icon={<FileTextOutlined />}
-          size="small"
-          onClick={() => setTemplateDrawerOpen(true)}
-          title="Prompt 模板库"
-        >模板</Button>
-        <Button
-          icon={<SettingOutlined />}
-          size="small"
-          onClick={() => setSettingsOpen(true)}
-          title="设置"
-        >设置</Button>
-        <Button
-          size="small"
-          icon={<TrophyOutlined />}
-          onClick={() => setReportOpen(true)}
-          title="每日完成报表"
-        >报表</Button>
-        <Button
-          size="small"
-          icon={<BookOutlined />}
-          onClick={() => setWikiOpen(true)}
-          title="记忆"
-        >记忆</Button>
-        <Button
-          size="small"
-          icon={<LineChartOutlined />}
-          onClick={() => setStatsOpen(true)}
-          title="统计"
-        >统计</Button>
+        {isMobile ? (
+          <Button
+            icon={<MenuOutlined />}
+            size="small"
+            onClick={() => setMobileMenuOpen(true)}
+            title="更多"
+          >菜单</Button>
+        ) : (
+          <>
+            <Tooltip title="启动 AI 终端时自动将标题和描述填入 prompt">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#666' }}>
+                自动填入 <Switch size="small" checked={autoFillPrompt} onChange={toggleAutoFillPrompt} />
+              </span>
+            </Tooltip>
+            <Button
+              icon={<DashboardOutlined />}
+              size="small"
+              onClick={() => setDashboardOpen(true)}
+              title="AI 工作面板"
+            >AI 面板</Button>
+            <Button
+              icon={<SearchOutlined />}
+              size="small"
+              onClick={() => setTranscriptDrawerOpen(true)}
+              title="历史会话找回"
+            >找回</Button>
+            <Button
+              icon={<FileTextOutlined />}
+              size="small"
+              onClick={() => setTemplateDrawerOpen(true)}
+              title="Prompt 模板库"
+            >模板</Button>
+            <Button
+              icon={<SettingOutlined />}
+              size="small"
+              onClick={() => setSettingsOpen(true)}
+              title="设置"
+            >设置</Button>
+            <Button
+              size="small"
+              icon={<TrophyOutlined />}
+              onClick={() => setReportOpen(true)}
+              title="每日完成报表"
+            >报表</Button>
+            <Button
+              size="small"
+              icon={<BookOutlined />}
+              onClick={() => setWikiOpen(true)}
+              title="记忆"
+            >记忆</Button>
+            <Button
+              size="small"
+              icon={<LineChartOutlined />}
+              onClick={() => setStatsOpen(true)}
+              title="统计"
+            >统计</Button>
+          </>
+        )}
       </div>
 
       {/* 筛选栏 */}
@@ -2177,6 +2194,56 @@ export default function TodoManage() {
           <div style={{ color: '#999', fontSize: 12 }}>保存后只影响未来新生成的实例，不会回写已存在的待办。</div>
         </Form>
       </Modal>
+
+      {/* 移动端菜单：承载被折叠的次级工具按钮 */}
+      <Drawer
+        title="菜单"
+        placement="right"
+        open={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+      >
+        <div className="mobile-menu-actions">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0 4px', color: '#666' }}>
+            <span>启动 AI 终端时自动填入 prompt</span>
+            <Switch size="small" checked={autoFillPrompt} onChange={toggleAutoFillPrompt} />
+          </div>
+          <Button
+            icon={<DashboardOutlined />}
+            onClick={() => { setMobileMenuOpen(false); setDashboardOpen(true) }}
+            block
+          >AI 面板</Button>
+          <Button
+            icon={<SearchOutlined />}
+            onClick={() => { setMobileMenuOpen(false); setTranscriptDrawerOpen(true) }}
+            block
+          >找回历史会话</Button>
+          <Button
+            icon={<FileTextOutlined />}
+            onClick={() => { setMobileMenuOpen(false); setTemplateDrawerOpen(true) }}
+            block
+          >Prompt 模板</Button>
+          <Button
+            icon={<TrophyOutlined />}
+            onClick={() => { setMobileMenuOpen(false); setReportOpen(true) }}
+            block
+          >每日报表</Button>
+          <Button
+            icon={<BookOutlined />}
+            onClick={() => { setMobileMenuOpen(false); setWikiOpen(true) }}
+            block
+          >记忆</Button>
+          <Button
+            icon={<LineChartOutlined />}
+            onClick={() => { setMobileMenuOpen(false); setStatsOpen(true) }}
+            block
+          >统计</Button>
+          <Button
+            icon={<SettingOutlined />}
+            onClick={() => { setMobileMenuOpen(false); setSettingsOpen(true) }}
+            block
+          >设置</Button>
+        </div>
+      </Drawer>
 
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <StatsDrawer open={statsOpen} onClose={() => setStatsOpen(false)} />

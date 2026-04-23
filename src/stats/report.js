@@ -10,6 +10,7 @@ function addTokens(a, b) {
 }
 
 const ZERO = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
+const ZERO_COST = { usd: 0, cny: 0 }
 
 function fileTokens(f) {
 	return {
@@ -20,8 +21,16 @@ function fileTokens(f) {
 	}
 }
 
-function costOf(tokens, model, pricing) {
-	return estimateCost(tokens, model, pricing)
+function addCost(a, b) {
+	return { usd: a.usd + b.usd, cny: a.cny + b.cny }
+}
+
+// 每个 transcript_file 按其自身 primary_model 计价。混合模型的桶（summary /
+// byTool / byQuadrant / timeline / 某个 todo 下同时跑了 Opus 和 Sonnet）必须先
+// 逐文件算成本再求和，否则"合并 token 后按单一费率算"会把 Opus 的钱按
+// Sonnet 价打折（低估 5x），或把 Haiku 按 Sonnet 价虚高（高估 3x）。
+function fileCost(f, pricing) {
+	return estimateCost(fileTokens(f), f.primary_model, pricing)
 }
 
 function pickBucketSize(since, until) {
@@ -57,12 +66,14 @@ export function buildReport(db, { since, until = Date.now(), pricing, topN = 10 
 
 	// summary
 	let totalTokens = { ...ZERO }
+	let totalCost = { ...ZERO_COST }
 	let totalActive = 0
 	let totalWall = 0
 	const coveredTodos = new Set()
 	let unbound = 0
 	for (const f of files) {
 		totalTokens = addTokens(totalTokens, fileTokens(f))
+		totalCost = addCost(totalCost, fileCost(f, pricing))
 		totalActive += f.active_ms || 0
 		const tid = effectiveTodoId(f)
 		if (tid) coveredTodos.add(tid)
@@ -70,18 +81,17 @@ export function buildReport(db, { since, until = Date.now(), pricing, topN = 10 
 	}
 	for (const l of logs) totalWall += l.duration_ms || 0
 
-	const totalCost = costOf(totalTokens, null, pricing)
-
 	// topTodos: group files by effective todoId（bound 或 通过 nativeId 回填）
 	const todoAgg = new Map()
 	for (const f of files) {
 		const tid = effectiveTodoId(f)
 		if (!tid) continue
 		const bucket = todoAgg.get(tid) || {
-			todoId: tid, activeMs: 0, tokens: { ...ZERO }, sessions: 0, models: new Map(),
+			todoId: tid, activeMs: 0, tokens: { ...ZERO }, cost: { ...ZERO_COST }, sessions: 0, models: new Map(),
 		}
 		bucket.activeMs += f.active_ms || 0
 		bucket.tokens = addTokens(bucket.tokens, fileTokens(f))
+		bucket.cost = addCost(bucket.cost, fileCost(f, pricing))
 		bucket.sessions += 1
 		if (f.primary_model) bucket.models.set(f.primary_model, (bucket.models.get(f.primary_model) || 0) + 1)
 		todoAgg.set(tid, bucket)
@@ -105,7 +115,7 @@ export function buildReport(db, { since, until = Date.now(), pricing, topN = 10 
 				activeMs: b.activeMs,
 				wallClockMs: todoWall.get(b.todoId) || 0,
 				tokens: b.tokens,
-				cost: costOf(b.tokens, topModel, pricing),
+				cost: b.cost,
 				sessionCount: b.sessions,
 				primaryModel: topModel,
 			}
@@ -130,20 +140,19 @@ export function buildReport(db, { since, until = Date.now(), pricing, topN = 10 
 	const timelineMap = new Map()
 	for (const f of files) {
 		const b = Math.floor((f.started_at || since) / bucketSize) * bucketSize
-		const cur = timelineMap.get(b) || { t: b, wallClockMs: 0, activeMs: 0, tokens: { ...ZERO } }
+		const cur = timelineMap.get(b) || { t: b, wallClockMs: 0, activeMs: 0, tokens: { ...ZERO }, cost: { ...ZERO_COST } }
 		cur.activeMs += f.active_ms || 0
 		cur.tokens = addTokens(cur.tokens, fileTokens(f))
+		cur.cost = addCost(cur.cost, fileCost(f, pricing))
 		timelineMap.set(b, cur)
 	}
 	for (const l of logs) {
 		const b = Math.floor(l.completed_at / bucketSize) * bucketSize
-		const cur = timelineMap.get(b) || { t: b, wallClockMs: 0, activeMs: 0, tokens: { ...ZERO } }
+		const cur = timelineMap.get(b) || { t: b, wallClockMs: 0, activeMs: 0, tokens: { ...ZERO }, cost: { ...ZERO_COST } }
 		cur.wallClockMs += l.duration_ms || 0
 		timelineMap.set(b, cur)
 	}
-	const timeline = [...timelineMap.values()]
-		.sort((a, b) => a.t - b.t)
-		.map(e => ({ ...e, cost: costOf(e.tokens, null, pricing) }))
+	const timeline = [...timelineMap.values()].sort((a, b) => a.t - b.t)
 
 	return {
 		range: { since, until, label: rangeLabel(since, until) },
@@ -170,22 +179,23 @@ function aggregateBy(files, logs, keyF, keyL, pricing, { includeWall = true } = 
 	for (const f of files) {
 		const k = keyF(f)
 		if (k == null) continue
-		const cur = m.get(k) || { key: k, sessions: 0, activeMs: 0, wallClockMs: 0, tokens: { ...ZERO } }
+		const cur = m.get(k) || { key: k, sessions: 0, activeMs: 0, wallClockMs: 0, tokens: { ...ZERO }, cost: { ...ZERO_COST } }
 		cur.sessions += 1
 		cur.activeMs += f.active_ms || 0
 		cur.tokens = addTokens(cur.tokens, fileTokens(f))
+		cur.cost = addCost(cur.cost, fileCost(f, pricing))
 		m.set(k, cur)
 	}
 	if (includeWall) {
 		for (const l of logs) {
 			const k = keyL(l)
 			if (k == null) continue
-			const cur = m.get(k) || { key: k, sessions: 0, activeMs: 0, wallClockMs: 0, tokens: { ...ZERO } }
+			const cur = m.get(k) || { key: k, sessions: 0, activeMs: 0, wallClockMs: 0, tokens: { ...ZERO }, cost: { ...ZERO_COST } }
 			cur.wallClockMs += l.duration_ms || 0
 			m.set(k, cur)
 		}
 	}
-	return [...m.values()].map(e => ({ ...e, cost: estimateCost(e.tokens, null, pricing) }))
+	return [...m.values()]
 }
 
 function rangeLabel(since, until) {

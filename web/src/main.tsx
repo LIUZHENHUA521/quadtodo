@@ -6,6 +6,7 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import '@xterm/xterm/css/xterm.css'
 import './TodoManage.css'
+import './mobile.css'
 import TodoManage from './TodoManage'
 
 dayjs.locale('zh-cn')

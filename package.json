@@ -33,6 +33,11 @@
   ],
   "scripts": {
     "start": "node src/cli.js start",
+    "start:expose": "node src/cli.js start --expose",
+    "stop": "node src/cli.js stop",
+    "status": "node src/cli.js status",
+    "doctor": "node src/cli.js doctor",
+    "config": "node src/cli.js config",
     "mira:proxy": "cd mira-proxy && node server.js",
     "claude:mira": "./claude-mira.sh",
     "test": "vitest run",
