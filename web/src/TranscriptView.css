@@ -215,6 +215,41 @@
   border-radius: 2px;
 }
 
+/* TodoWrite 工具调用结构化展示：和 Claude TUI 一致的 checkbox 列表 */
+.tv-todos {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tv-todo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.tv-todo-icon {
+  width: 14px;
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: center;
+}
+.tv-todo-text {
+  flex: 1;
+  min-width: 0;
+}
+.tv-todo-done .tv-todo-icon { color: #52c41a; }
+.tv-todo-done .tv-todo-text { color: #8c8c8c; text-decoration: line-through; }
+.tv-todo-active .tv-todo-icon { color: #1677ff; }
+.tv-todo-active .tv-todo-text { color: #1677ff; font-weight: 500; }
+.tv-todo-pending .tv-todo-icon { color: #bfbfbf; }
+.tv-todo-pending .tv-todo-text { color: #333; }
+
 /* AI 生成中的 loading 占位：没有 liveOutput 前用三点呼吸显示还在算；
    liveOutput 来了之后换成"生成中..."的呼吸标签 */
 .tv-thinking {

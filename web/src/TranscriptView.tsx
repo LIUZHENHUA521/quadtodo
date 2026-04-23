@@ -96,6 +96,53 @@ interface TurnItemProps {
   onToggleCollapse: (i: number) => void
 }
 
+interface TodoItem {
+  content: string
+  activeForm?: string
+  status?: string
+}
+
+function tryParseTodoWriteInput(raw: string): TodoItem[] | null {
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    const todos = (parsed as { todos?: unknown }).todos
+    if (!Array.isArray(todos)) return null
+    const list: TodoItem[] = []
+    for (const t of todos) {
+      if (t && typeof t === 'object' && typeof (t as TodoItem).content === 'string') {
+        list.push(t as TodoItem)
+      }
+    }
+    return list.length ? list : null
+  } catch {
+    return null
+  }
+}
+
+function TodoWriteList({ todos, keyword }: { todos: TodoItem[]; keyword: string }) {
+  return (
+    <ul className="tv-todos">
+      {todos.map((t, i) => {
+        const status = t.status || 'pending'
+        const cls = status === 'completed' ? 'tv-todo-done'
+          : status === 'in_progress' ? 'tv-todo-active'
+          : 'tv-todo-pending'
+        const icon = status === 'completed' ? '✓'
+          : status === 'in_progress' ? '▶'
+          : '○'
+        const text = status === 'in_progress' && t.activeForm ? t.activeForm : t.content
+        return (
+          <li key={i} className={`tv-todo ${cls}`}>
+            <span className="tv-todo-icon" aria-hidden>{icon}</span>
+            <span className="tv-todo-text">{highlightKeyword(text, keyword)}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 const TurnItem = React.memo(function TurnItem({ turn, index, keyword, canFork, collapsed, onFork, onToggleCollapse }: TurnItemProps) {
   const meta = ROLE_META[turn.role] || { label: turn.role, cls: '' }
   const isTool = turn.role === 'tool_use' || turn.role === 'tool_result' || turn.role === 'thinking'
@@ -105,6 +152,12 @@ const TurnItem = React.memo(function TurnItem({ turn, index, keyword, canFork, c
   const body = useMemo(() => {
     if (isTool) {
       if (collapsed) return null
+      // TodoWrite 的 input 是结构化 JSON，原样 pre 展示只看到一坨 escape 字符，
+      // 把它渲染成带状态图标的清单，跟 Claude TUI 里一致
+      if (turn.role === 'tool_use' && turn.toolName === 'TodoWrite') {
+        const todos = tryParseTodoWriteInput(turn.content)
+        if (todos) return <TodoWriteList todos={todos} keyword={keyword} />
+      }
       return <pre className="tv-tool-pre">{highlightKeyword(turn.content, keyword)}</pre>
     }
     if (isRaw) return <pre className="tv-raw-pre">{highlightKeyword(turn.content, keyword)}</pre>
@@ -118,7 +171,7 @@ const TurnItem = React.memo(function TurnItem({ turn, index, keyword, canFork, c
         </ReactMarkdown>
       </div>
     )
-  }, [turn.content, turn.role, keyword, collapsed, isTool, isRaw])
+  }, [turn.content, turn.role, turn.toolName, keyword, collapsed, isTool, isRaw])
 
   const handleToggle = useCallback(() => onToggleCollapse(index), [onToggleCollapse, index])
   const handleFork = useCallback(() => onFork(index), [onFork, index])
