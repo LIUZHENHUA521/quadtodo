@@ -7,6 +7,10 @@
   border: 1px solid #e6e8ec;
   box-shadow: 0 6px 18px rgba(15, 20, 40, 0.05);
   position: relative;
+  /* 防止子节点（长 JSON / base64 tool result）把外框撑出视口；min-width:0
+     是 flex 子元素能真正按 100% 宽展开的前提 */
+  max-width: 100%;
+  min-width: 0;
 }
 
 .tv-wrapper--fill {
@@ -22,7 +26,11 @@
   border-radius: 0;
   border: none;
   box-shadow: none;
-  height: auto !important;
+  /* 移动端（特别是 iOS Safari）需要明确高度，否则 height:auto 会被内容撑高到
+     溢出视口并产生页面级滚动，tv-body 的内部滚动就失效了 */
+  height: 100dvh;
+  width: 100vw;
+  max-width: 100vw;
 }
 
 .tv-toolbar {
@@ -48,11 +56,15 @@
 .tv-body {
   flex: 1;
   overflow-y: auto;
+  /* tool_result 里常出现超长无空格的 token（JSON、base64、UUID 拼接），
+     显式关掉横向滚动，让它们只能竖向堆叠，防止整个 body 被撑宽产生页面级横滚 */
+  overflow-x: hidden;
   padding: 10px 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
+  min-width: 0;
   scroll-behavior: smooth;
 }
 
@@ -76,6 +88,9 @@
   border-radius: 8px;
   padding: 8px 12px;
   transition: box-shadow 0.15s ease;
+  /* flex 子项默认 min-width:auto，遇到超长 token 会把自己撑到和内容等宽 */
+  min-width: 0;
+  max-width: 100%;
 }
 
 .tv-turn:hover {
@@ -94,6 +109,9 @@
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
+  /* 工具名很长时（tool_use 里 toolName 会拼进 tag 文本）允许换行，
+     避免整行 nowrap 导致 header 把父容器撑宽 */
+  flex-wrap: wrap;
 }
 
 .tv-turn-tag {
@@ -104,6 +122,9 @@
   height: 18px;
   border-radius: 4px;
   font-weight: 500;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .tv-turn-time {
@@ -116,7 +137,10 @@
   font-size: 13.5px;
   line-height: 1.65;
   word-break: break-word;
+  overflow-wrap: anywhere;
   color: #1f2328;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .tv-md p { margin: 4px 0; }
@@ -161,7 +185,12 @@
   font-size: 11.5px;
   line-height: 1.5;
   white-space: pre-wrap;
-  word-break: break-word;
+  /* break-word 对"整行无空格的长 token"不够用（比如 tool_result 里的 JSON、
+     base64、带斜杠的 UUID），在移动端会撑宽父容器；break-all + anywhere
+     一起上才能保证随时拆行 */
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  max-width: 100%;
   max-height: 360px;
   overflow-y: auto;
   color: #444;
@@ -174,8 +203,10 @@
   font-size: 13.5px;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
   line-height: 1.65;
   color: #1f2328;
+  max-width: 100%;
 }
 
 .tv-highlight {
