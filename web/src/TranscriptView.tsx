@@ -163,6 +163,9 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   const [allToolsCollapsed, setAllToolsCollapsed] = useState(false)
   const [composer, setComposer] = useState('')
   const [optimisticTurns, setOptimisticTurns] = useState<LocalTurn[]>([])
+  // jsonl 只有消息收尾才落盘，Chat 续聊 tab 过去只能等全文返回才显示；
+  // 服务端现在会推 PTY 实时渲染文本，展示为列表最末的"实时"伪 turn
+  const [liveOutput, setLiveOutput] = useState<string | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
   const [height, setHeight] = useState<number>(() => {
     try {
@@ -257,6 +260,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     setOptimisticTurns([])
     setCollapsedTools({})
     setAllToolsCollapsed(false)
+    setLiveOutput(null)
     void fetchData('reset')
   }, [fetchData])
 
@@ -264,7 +268,10 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   // 关键：仅在 Chat tab 激活时才开 SSE —— 否则每个运行中的 session 永远挂一条 SSE，
   // 叠加 Live 的 WS，很快打满浏览器单源 6 条并发限制，所有新请求 pending。
   useEffect(() => {
-    if (!autoRefreshMs || !active) return
+    if (!autoRefreshMs || !active) {
+      setLiveOutput(null)
+      return
+    }
     let es: EventSource | null = null
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     let fallbackTimer: ReturnType<typeof setInterval> | null = null
@@ -293,6 +300,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           session: payload.session,
         })
         setOptimisticTurns([])
+        setLiveOutput(null)
         retriedOnce = false
         stopFallback()
       } catch { /* ignore */ }
@@ -305,7 +313,18 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           turns: [...current.turns, ...(payload.turns as TranscriptTurn[])],
           total: payload.total,
         } : current)
-        if (payload.turns?.length) setOptimisticTurns([])
+        if (payload.turns?.length) {
+          setOptimisticTurns([])
+          // 真实 turn 收尾了，清掉"实时"伪 turn 避免重复显示；后续还有输出
+          // 就会被下一个 live-output 事件再写回来
+          setLiveOutput(null)
+        }
+      } catch { /* ignore */ }
+    }
+    const handleLiveOutput = (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data)
+        if (typeof payload?.content === 'string') setLiveOutput(payload.content)
       } catch { /* ignore */ }
     }
     const handleStreamUnsupported = () => {
@@ -321,6 +340,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
         es = evt
         evt.addEventListener('snapshot', handleSnapshot as EventListener)
         evt.addEventListener('turn-added', handleTurnAdded as EventListener)
+        evt.addEventListener('live-output', handleLiveOutput as EventListener)
         evt.addEventListener('stream-not-supported', handleStreamUnsupported as EventListener)
         evt.onerror = () => {
           if (disposed) return
@@ -342,6 +362,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
       closeES()
       if (retryTimer) clearTimeout(retryTimer)
       stopFallback()
+      setLiveOutput(null)
     }
   }, [autoRefreshMs, fetchData, todoId, sessionId, active])
 
@@ -657,6 +678,15 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
             onToggleCollapse={handleToggleCollapse}
           />
         ))}
+        {liveOutput && (
+          <div className="tv-turn tv-role-raw tv-turn-live">
+            <div className="tv-turn-header">
+              <Tag className="tv-turn-tag" color="processing">实时</Tag>
+              <span className="tv-turn-time">生成中...</span>
+            </div>
+            <pre className="tv-raw-pre">{liveOutput}</pre>
+          </div>
+        )}
       </div>
       {unreadCount > 0 && (
         <button className="tv-unread-pill" onClick={jumpToLatest}>

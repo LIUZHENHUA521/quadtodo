@@ -1,10 +1,10 @@
 import { Router } from 'express'
 import { watch as fsWatch } from 'node:fs'
-import { loadTranscript } from '../transcript.js'
+import { loadTranscript, renderPtyLogText } from '../transcript.js'
 import { summarizeTurns } from '../summarize.js'
 import { buildTodoExport, renderTodoMarkdown } from '../export/todoMarkdown.js'
 
-export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSession }) {
+export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSession, getPty }) {
   const router = Router()
 
   router.get('/', (req, res) => {
@@ -319,12 +319,23 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
     let debounceTimer = null
     let keepaliveTimer = null
     let lastTotal = initial.turns.length
+    // Live PTY streaming：Claude Code 的 jsonl 只在每条消息"收尾"时才落盘，
+    // token 级别的增量看不到；订阅 PTY 输出并渲染成文本，让 Chat 续聊 tab
+    // 也能实时看到正在生成的内容。
+    let ptyListener = null
+    let liveDebounceTimer = null
+    let lastLiveContent = ''
+    const pty = typeof getPty === 'function' ? getPty() : null
     const cleanup = () => {
       if (closed) return
       closed = true
       if (debounceTimer) clearTimeout(debounceTimer)
+      if (liveDebounceTimer) clearTimeout(liveDebounceTimer)
       if (keepaliveTimer) clearInterval(keepaliveTimer)
       try { watcher?.close() } catch { /* ignore */ }
+      if (ptyListener && pty) {
+        try { pty.off('output', ptyListener) } catch { /* ignore */ }
+      }
       try { res.end() } catch { /* ignore */ }
     }
     req.on('close', cleanup)
@@ -382,6 +393,41 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
     } catch (e) {
       sendEvent('error', { message: `watch failed: ${e.message}` })
       cleanup()
+    }
+
+    // ─── 订阅 PTY 输出，边生成边推送 ───
+    if (pty && typeof pty.on === 'function') {
+      const emitLive = async () => {
+        if (closed) return
+        const live = typeof getLiveSession === 'function' ? getLiveSession(session.sessionId) : null
+        if (!live?.outputHistory?.length) return
+        if (live.status !== 'running' && live.status !== 'pending_confirm') return
+        try {
+          const raw = live.outputHistory.join('')
+          const content = await renderPtyLogText(raw)
+          if (closed || content === lastLiveContent) return
+          lastLiveContent = content
+          sendEvent('live-output', {
+            content,
+            timestamp: live.lastOutputAt || Date.now(),
+          })
+        } catch (e) {
+          // 渲染失败就吞掉，不影响 jsonl 主通道
+          if (process.env.DEBUG) console.warn('[transcript stream] render live failed:', e?.message)
+        }
+      }
+      ptyListener = (payload) => {
+        if (!payload || payload.sessionId !== session.sessionId) return
+        if (closed || liveDebounceTimer) return
+        // 300ms 节流：xterm 每次重放 outputHistory 有成本；SSE 事件过密前端也会卡顿
+        liveDebounceTimer = setTimeout(() => {
+          liveDebounceTimer = null
+          void emitLive()
+        }, 300)
+      }
+      pty.on('output', ptyListener)
+      // 连上来时如果已经在生成（比如刷新页面），立刻推一次当前屏
+      setTimeout(() => { void emitLive() }, 0)
     }
   })
 
