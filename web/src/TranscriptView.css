@@ -215,6 +215,73 @@
   border-radius: 2px;
 }
 
+/* AI 生成中的 loading 占位：没有 liveOutput 前用三点呼吸显示还在算；
+   liveOutput 来了之后换成"生成中..."的呼吸标签 */
+.tv-thinking {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid #eef0f2;
+  border-left: 3px solid #52c41a;
+  border-radius: 8px;
+  padding: 8px 14px;
+  color: #555;
+  font-size: 13px;
+  max-width: 100%;
+}
+.tv-thinking-label {
+  opacity: 0.85;
+}
+.tv-thinking-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+.tv-thinking-dots i {
+  width: 6px;
+  height: 6px;
+  background: #52c41a;
+  border-radius: 50%;
+  display: inline-block;
+  animation: tvThinkingBounce 1.2s infinite ease-in-out both;
+}
+.tv-thinking-dots i:nth-child(1) { animation-delay: -0.32s; }
+.tv-thinking-dots i:nth-child(2) { animation-delay: -0.16s; }
+.tv-thinking-dots i:nth-child(3) { animation-delay: 0s; }
+@keyframes tvThinkingBounce {
+  0%, 80%, 100% { transform: scale(0.55); opacity: 0.35; }
+  40%           { transform: scale(1);    opacity: 1; }
+}
+
+/* 实时 turn 顶部"生成中"做个呼吸效果，和静态 Tag 区分开 */
+.tv-live-pulse {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #1677ff;
+  font-size: 11px;
+  animation: tvLivePulse 1.5s ease-in-out infinite;
+}
+.tv-live-pulse::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #1677ff;
+  box-shadow: 0 0 0 0 rgba(22, 119, 255, 0.5);
+  animation: tvLiveDot 1.5s ease-in-out infinite;
+}
+@keyframes tvLivePulse {
+  0%, 100% { opacity: 0.65; }
+  50%      { opacity: 1; }
+}
+@keyframes tvLiveDot {
+  0%   { box-shadow: 0 0 0 0   rgba(22, 119, 255, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(22, 119, 255, 0); }
+  100% { box-shadow: 0 0 0 0   rgba(22, 119, 255, 0); }
+}
+
 .tv-error {
   color: #ff4d4f;
   padding: 12px;

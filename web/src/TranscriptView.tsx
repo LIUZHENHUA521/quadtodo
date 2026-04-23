@@ -709,11 +709,23 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           <div className="tv-turn tv-role-raw tv-turn-live">
             <div className="tv-turn-header">
               <Tag className="tv-turn-tag" color="processing">实时</Tag>
-              <span className="tv-turn-time">生成中...</span>
+              <span className="tv-live-pulse">生成中</span>
             </div>
             <pre className="tv-raw-pre">{liveOutput}</pre>
           </div>
         )}
+        {!liveOutput
+          && (data?.session.status === 'running' || data?.session.status === 'pending_confirm')
+          && (
+            <div className="tv-thinking" aria-live="polite">
+              <span className="tv-thinking-label">
+                {data?.session.status === 'pending_confirm' ? '等待确认' : 'AI 思考中'}
+              </span>
+              <span className="tv-thinking-dots" aria-hidden="true">
+                <i /><i /><i />
+              </span>
+            </div>
+          )}
       </div>
       {unreadCount > 0 && (
         <button className="tv-unread-pill" onClick={jumpToLatest}>
