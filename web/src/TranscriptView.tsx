@@ -708,6 +708,10 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           onPressEnter={(e) => {
             // 下拉打开时 Mentions 内部会拦截 Enter 做选项确认，不会走到这里
             if (e.shiftKey) return
+            // 中文等 IME 组字中按回车是在选候选词，不该触发发送；
+            // keyCode 229 是 Firefox 在组字期间的兜底信号
+            const native = e.nativeEvent as KeyboardEvent
+            if (native?.isComposing || native?.keyCode === 229) return
             e.preventDefault()
             void handleSendMessage()
           }}
