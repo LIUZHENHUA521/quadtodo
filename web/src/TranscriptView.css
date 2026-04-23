@@ -66,6 +66,14 @@
   min-height: 0;
   min-width: 0;
   scroll-behavior: smooth;
+  /* 移动端：没有这三行，iOS Safari 会把触摸拖动交给外层 html 的滚动条，
+     导致 Chat 续聊内容列表看起来"无法滚动"。
+     - -webkit-overflow-scrolling: 开启惯性滚动（iOS < 13 需要，新版本也兼容）
+     - overscroll-behavior: contain 防止滚动链冒泡到页面级滚动
+     - touch-action: pan-y 明确声明只接受竖向手势，不被外层横向滑动劫持 */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 /* 让滚动条更收敛 */
