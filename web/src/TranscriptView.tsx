@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Input, Button, Spin, Tag, Empty, Tooltip, Mentions, message } from 'antd'
+import { Input, Button, Spin, Tag, Empty, Tooltip, Mentions, Popconfirm, message } from 'antd'
 import {
   ReloadOutlined, BranchesOutlined, DownOutlined, RightOutlined, SearchOutlined, SendOutlined,
-  FullscreenOutlined, FullscreenExitOutlined,
+  FullscreenOutlined, FullscreenExitOutlined, StopOutlined, PoweroffOutlined,
 } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
-import { getTranscript, ResumeSessionInput, sendAiInput, startAiExec, TranscriptResponse, TranscriptTurn } from './api'
+import { getTranscript, ResumeSessionInput, sendAiInput, startAiExec, stopAiExec, TranscriptResponse, TranscriptTurn } from './api'
 import './TranscriptView.css'
 
 interface Props {
@@ -599,6 +599,33 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     }
   }, [sendSessionInput])
 
+  // Ctrl+C：发 \x03 信号让 Claude 打断当前生成（停止 tool / 文本输出），
+  // 会话保持存活，用户可以继续追问。对应终端里手动敲 Ctrl+C 的语义。
+  const handleInterrupt = useCallback(async () => {
+    try {
+      await sendAiInput(sessionId, '\x03')
+      message.success('已发送中断（Ctrl+C）', 1)
+    } catch (e: any) {
+      const msg = e?.message === 'session_not_found'
+        ? '会话已结束，无法中断'
+        : (e?.message || '中断失败')
+      message.error(msg)
+    }
+  }, [sessionId])
+
+  // 结束会话：kill 掉 PTY 进程。和中断不同，结束后需要 resume 才能再聊。
+  const handleEndSession = useCallback(async () => {
+    try {
+      await stopAiExec(sessionId)
+      message.success('会话已结束', 1.5)
+    } catch (e: any) {
+      const msg = e?.message === 'session_not_found'
+        ? '会话已经结束了'
+        : (e?.message || '结束会话失败')
+      message.error(msg)
+    }
+  }, [sessionId])
+
   const toggleAllTools = () => {
     const next = !allToolsCollapsed
     setAllToolsCollapsed(next)
@@ -721,7 +748,26 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           <span className="tv-composer-hint">
             {data?.session.status === 'pending_confirm' ? '当前等待确认，可直接发回车或补充说明。' : '支持在这里继续追问，必要时会自动恢复历史会话。'}
           </span>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {(data?.session.status === 'running' || data?.session.status === 'pending_confirm') && (
+              <>
+                <Tooltip title="发送 Ctrl+C（\x03）打断当前生成，会话保留，可继续追问">
+                  <Button icon={<StopOutlined />} onClick={() => { void handleInterrupt() }}>
+                    中断
+                  </Button>
+                </Tooltip>
+                <Popconfirm
+                  title="结束会话"
+                  description="将终止 PTY 进程，之后需要再发消息才会 resume 新会话。"
+                  okText="结束"
+                  okButtonProps={{ danger: true }}
+                  cancelText="取消"
+                  onConfirm={() => { void handleEndSession() }}
+                >
+                  <Button danger icon={<PoweroffOutlined />}>结束会话</Button>
+                </Popconfirm>
+              </>
+            )}
             <Button onClick={() => { void handleSendEnter() }} loading={sending}>
               发送回车
             </Button>
