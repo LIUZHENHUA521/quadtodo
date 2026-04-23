@@ -4,11 +4,19 @@ html {
   overflow-y: scroll;
 }
 
-/* AntD Drawer/Modal 打开时会给 body 加 overflow:hidden + padding-right 抵消滚动条宽度，
-   配合上面的 scrollbar-gutter 反而导致主内容区变宽抖动；这里强制锁住 */
+/* AntD Drawer/Modal 打开时 rc-util 的 ScrollLocker 会把以下 inline 样式打到
+   document.body 上：overflow:hidden、padding-right、以及部分版本的
+   width:calc(100% - <scrollbarSize>px) / margin-right。我们已经用
+   scrollbar-gutter + overflow-y:scroll 预留了滚动条空间，再加补偿只会把主内容
+   区往左挤。用 !important 全部反向锁住，关闭时也不会再反弹回来。 */
 body {
   padding-right: 0 !important;
+  margin-right: 0 !important;
   overflow: visible !important;
+  /* Chromium / Firefox / Safari 的 ScrollLocker 实现都会把 body 的 width
+     固定成 calc(100% - xxpx)；这里强制恢复成填满视口 */
+  width: auto !important;
+  min-width: 0 !important;
 }
 
 /* 常驻顶部工具栏 + 筛选栏 */
