@@ -773,18 +773,38 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
             <pre className="tv-raw-pre">{liveOutput}</pre>
           </div>
         )}
-        {!liveOutput
-          && (data?.session.status === 'running' || data?.session.status === 'pending_confirm')
-          && (
+        {(() => {
+          if (liveOutput) return null
+          const status = data?.session.status
+          // 等待用户确认是独立状态，始终提示一下
+          if (status === 'pending_confirm') {
+            return (
+              <div className="tv-thinking" aria-live="polite">
+                <span className="tv-thinking-label">等待确认</span>
+                <span className="tv-thinking-dots" aria-hidden="true">
+                  <i /><i /><i />
+                </span>
+              </div>
+            )
+          }
+          // "AI 思考中"只在真正等 AI 回复时才显示：
+          //   session 在跑 + 最后一条 turn 是 user 发来的消息（还没有 assistant
+          //   产出）。assistant / tool_use / thinking 等都意味着 AI 已经产出过
+          //   了，静态时不该再闪烁"思考中"。sending 兜底覆盖发送到 optimistic
+          //   turn 刷新前那一瞬。
+          if (status !== 'running') return null
+          const lastTurn = displayedTurns[displayedTurns.length - 1]
+          const waiting = sending || !lastTurn || lastTurn.role === 'user'
+          if (!waiting) return null
+          return (
             <div className="tv-thinking" aria-live="polite">
-              <span className="tv-thinking-label">
-                {data?.session.status === 'pending_confirm' ? '等待确认' : 'AI 思考中'}
-              </span>
+              <span className="tv-thinking-label">AI 思考中</span>
               <span className="tv-thinking-dots" aria-hidden="true">
                 <i /><i /><i />
               </span>
             </div>
-          )}
+          )
+        })()}
       </div>
       {unreadCount > 0 && (
         <button className="tv-unread-pill" onClick={jumpToLatest}>
