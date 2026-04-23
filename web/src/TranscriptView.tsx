@@ -178,6 +178,12 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   const scrollRef = useRef<HTMLDivElement>(null)
   const dataRef = useRef<TranscriptResponse | null>(null)
   const dragRef = useRef<{ startY: number; startH: number } | null>(null)
+  // 中文输入法组字状态。单靠 nativeEvent.isComposing 不够——某些浏览器（如
+  // 部分 macOS Chrome + 搜狗/微信输入法）在 compositionend 之前就派发
+  // keydown(Enter)，这时 isComposing 已为 false，Enter 会被当成提交。
+  // 所以同时维护 composingRef 和"刚结束组字的小窗口"作为兜底。
+  const composingRef = useRef(false)
+  const composingEndAtRef = useRef(0)
 
   useEffect(() => {
     if (!fullscreen) return
@@ -732,7 +738,17 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           ↓ {unreadCount} 条新消息
         </button>
       )}
-      <div className="tv-composer">
+      <div
+        className="tv-composer"
+        // 组字事件会冒泡到这里，即便 Antd Mentions 某些版本没把 onCompositionStart/End
+        // 直接透传给内部 textarea，也能稳定拿到。双写一份同名 props 给 Mentions 作为
+        // 保险：某些环境下外层 div 没拿到的情况还能兜住。
+        onCompositionStart={() => { composingRef.current = true }}
+        onCompositionEnd={() => {
+          composingRef.current = false
+          composingEndAtRef.current = performance.now()
+        }}
+      >
         <Mentions
           value={composer}
           onChange={(v) => setComposer(v)}
@@ -744,13 +760,20 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
             const v = String(option?.value || '').toLowerCase()
             return v.includes(input.toLowerCase())
           }}
+          onCompositionStart={() => { composingRef.current = true }}
+          onCompositionEnd={() => {
+            composingRef.current = false
+            composingEndAtRef.current = performance.now()
+          }}
           onPressEnter={(e) => {
             // 下拉打开时 Mentions 内部会拦截 Enter 做选项确认，不会走到这里
             if (e.shiftKey) return
-            // 中文等 IME 组字中按回车是在选候选词，不该触发发送；
-            // keyCode 229 是 Firefox 在组字期间的兜底信号
+            // 组字中：不论 React 合成事件还是原生 flag，任一命中都不发送
             const native = e.nativeEvent as KeyboardEvent
-            if (native?.isComposing || native?.keyCode === 229) return
+            if (composingRef.current || native?.isComposing || native?.keyCode === 229) return
+            // 有些浏览器在 compositionend 前就派 keydown(Enter)，composingRef 已经
+            // 被提前 reset；给 80ms 保护窗口吃掉这种"选完候选词后紧跟的 Enter"
+            if (performance.now() - composingEndAtRef.current < 80) return
             e.preventDefault()
             void handleSendMessage()
           }}
