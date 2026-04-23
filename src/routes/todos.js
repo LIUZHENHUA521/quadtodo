@@ -325,13 +325,18 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
     let ptyListener = null
     let liveDebounceTimer = null
     let lastLiveContent = ''
+    // resume 刚起来那会儿，新 session 的 jsonl 还没写出来。把 findClaudeFile
+    // 放进定时轮询里，等 Claude 写出新 jsonl 再补挂 fsWatch + 对齐 lastTotal。
+    let jsonlRecheckTimer = null
     const pty = typeof getPty === 'function' ? getPty() : null
+    const hasPty = pty && typeof pty.on === 'function'
     const cleanup = () => {
       if (closed) return
       closed = true
       if (debounceTimer) clearTimeout(debounceTimer)
       if (liveDebounceTimer) clearTimeout(liveDebounceTimer)
       if (keepaliveTimer) clearInterval(keepaliveTimer)
+      if (jsonlRecheckTimer) clearTimeout(jsonlRecheckTimer)
       try { watcher?.close() } catch { /* ignore */ }
       if (ptyListener && pty) {
         try { pty.off('output', ptyListener) } catch { /* ignore */ }
@@ -341,8 +346,8 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
     req.on('close', cleanup)
     req.on('error', cleanup)
 
-    // 仅 jsonl 源可推流；ptylog 源让前端降级到轮询
-    if (initial.source !== 'jsonl' || !initial.filePath) {
+    // 既没有 jsonl 也没有 PTY 订阅能力，才让前端降级去轮询
+    if ((initial.source !== 'jsonl' || !initial.filePath) && !hasPty) {
       sendEvent('stream-not-supported', { source: initial.source })
       cleanup()
       return
@@ -352,51 +357,83 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
       if (!closed) { try { res.write(': keepalive\n\n') } catch { cleanup() } }
     }, 15_000)
 
-    try {
-      watcher = fsWatch(initial.filePath, () => {
+    const handleJsonlChange = () => {
+      if (closed) return
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(async () => {
+        debounceTimer = null
         if (closed) return
-        if (debounceTimer) clearTimeout(debounceTimer)
-        debounceTimer = setTimeout(async () => {
-          debounceTimer = null
-          if (closed) return
-          try {
-            const parsed = await loadTranscript(loadArgs())
-            if (parsed.source !== 'jsonl') return
-            const newTotal = parsed.turns.length
-            if (newTotal > lastTotal) {
+        try {
+          const parsed = await loadTranscript(loadArgs())
+          if (parsed.source !== 'jsonl') return
+          const newTotal = parsed.turns.length
+          if (newTotal > lastTotal) {
+            sendEvent('turn-added', {
+              turns: parsed.turns.slice(lastTotal),
+              total: newTotal,
+            })
+            lastTotal = newTotal
+          } else if (newTotal < lastTotal) {
+            // 文件被重写/截断：重新整体下发
+            sendEvent('snapshot', {
+              source: 'jsonl',
+              turns: parsed.turns,
+              total: newTotal,
+              session: {
+                sessionId: session.sessionId, tool: session.tool,
+                nativeSessionId: session.nativeSessionId, status: session.status,
+                label: session.label || '',
+                startedAt: session.startedAt, completedAt: session.completedAt,
+              },
+            })
+            lastTotal = newTotal
+          }
+        } catch (e) {
+          console.warn('[transcript stream] re-parse failed:', e?.message)
+        }
+      }, 120)
+    }
+
+    const attachJsonlWatcher = (filePath) => {
+      if (closed || watcher) return
+      try {
+        watcher = fsWatch(filePath, handleJsonlChange)
+        watcher.on?.('error', () => cleanup())
+      } catch (e) {
+        sendEvent('error', { message: `watch failed: ${e.message}` })
+      }
+    }
+
+    if (initial.source === 'jsonl' && initial.filePath) {
+      attachJsonlWatcher(initial.filePath)
+    } else {
+      // resume 新 session 时老 nativeSessionId 对应的 jsonl 存在但和新会话无关，
+      // loadTranscript 在拿到 'native-session' 事件后会自动指向新路径；这里周期
+      // 重试直到新 jsonl 出现，再挂 fsWatch 把完成的 turn 推给前端。
+      const recheck = async () => {
+        jsonlRecheckTimer = null
+        if (closed || watcher) return
+        try {
+          const parsed = await loadTranscript(loadArgs())
+          if (parsed.source === 'jsonl' && parsed.filePath) {
+            if (parsed.turns.length > lastTotal) {
               sendEvent('turn-added', {
                 turns: parsed.turns.slice(lastTotal),
-                total: newTotal,
+                total: parsed.turns.length,
               })
-              lastTotal = newTotal
-            } else if (newTotal < lastTotal) {
-              // 文件被重写/截断：重新整体下发
-              sendEvent('snapshot', {
-                source: 'jsonl',
-                turns: parsed.turns,
-                total: newTotal,
-                session: {
-                  sessionId: session.sessionId, tool: session.tool,
-                  nativeSessionId: session.nativeSessionId, status: session.status,
-                  label: session.label || '',
-                  startedAt: session.startedAt, completedAt: session.completedAt,
-                },
-              })
-              lastTotal = newTotal
+              lastTotal = parsed.turns.length
             }
-          } catch (e) {
-            console.warn('[transcript stream] re-parse failed:', e?.message)
+            attachJsonlWatcher(parsed.filePath)
+            return
           }
-        }, 120)
-      })
-      watcher.on?.('error', () => cleanup())
-    } catch (e) {
-      sendEvent('error', { message: `watch failed: ${e.message}` })
-      cleanup()
+        } catch { /* ignore, just retry */ }
+        if (!closed) jsonlRecheckTimer = setTimeout(recheck, 1500)
+      }
+      jsonlRecheckTimer = setTimeout(recheck, 1500)
     }
 
     // ─── 订阅 PTY 输出，边生成边推送 ───
-    if (pty && typeof pty.on === 'function') {
+    if (hasPty) {
       const emitLive = async () => {
         if (closed) return
         const live = typeof getLiveSession === 'function' ? getLiveSession(session.sessionId) : null
