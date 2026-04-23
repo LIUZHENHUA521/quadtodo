@@ -19,7 +19,7 @@ function claudeProjectHash(absPath) {
 // Replay ANSI byte stream through a headless xterm so cursor motions (CUF/CUP/CHA…)
 // become real spaces rather than being deleted — TUIs like Claude Code render status
 // bars by moving the cursor between words instead of writing ASCII spaces.
-function renderPtyLogText(raw) {
+export function renderPtyLogText(raw) {
   return new Promise((resolve) => {
     const term = new Terminal({
       cols: 200,

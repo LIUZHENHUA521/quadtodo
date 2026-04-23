@@ -759,6 +759,7 @@ export function createServer(opts = {}) {
 		getPricing: () => loadConfig({ rootDir: configRootDir }).pricing,
 		getTools: () => runtimeConfig.tools,
 		getLiveSession: (sessionId) => ait.sessions.get(sessionId) || null,
+		getPty: () => pty,
 	}));
 	app.use("/api/templates", createTemplatesRouter({ db }));
 	app.use("/api/recurring-rules", createRecurringRulesRouter({ db }));
@@ -885,7 +886,7 @@ export function createServer(opts = {}) {
 					return;
 				}
 				if (msg.type === "pong") return;
-				ait.handleBrowserMessage(sessionId, msg);
+				ait.handleBrowserMessage(sessionId, msg, ws);
 			} catch {
 				/* ignore */
 			}

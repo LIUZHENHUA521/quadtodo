@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Input, Button, Spin, Tag, Empty, Tooltip, Mentions, message } from 'antd'
+import { Input, Button, Spin, Tag, Empty, Tooltip, Mentions, Popconfirm, message } from 'antd'
 import {
   ReloadOutlined, BranchesOutlined, DownOutlined, RightOutlined, SearchOutlined, SendOutlined,
-  FullscreenOutlined, FullscreenExitOutlined,
+  FullscreenOutlined, FullscreenExitOutlined, StopOutlined, PoweroffOutlined,
 } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
-import { getTranscript, ResumeSessionInput, sendAiInput, startAiExec, TranscriptResponse, TranscriptTurn } from './api'
+import { getTranscript, ResumeSessionInput, sendAiInput, startAiExec, stopAiExec, TranscriptResponse, TranscriptTurn } from './api'
 import './TranscriptView.css'
 
 interface Props {
@@ -96,6 +96,53 @@ interface TurnItemProps {
   onToggleCollapse: (i: number) => void
 }
 
+interface TodoItem {
+  content: string
+  activeForm?: string
+  status?: string
+}
+
+function tryParseTodoWriteInput(raw: string): TodoItem[] | null {
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    const todos = (parsed as { todos?: unknown }).todos
+    if (!Array.isArray(todos)) return null
+    const list: TodoItem[] = []
+    for (const t of todos) {
+      if (t && typeof t === 'object' && typeof (t as TodoItem).content === 'string') {
+        list.push(t as TodoItem)
+      }
+    }
+    return list.length ? list : null
+  } catch {
+    return null
+  }
+}
+
+function TodoWriteList({ todos, keyword }: { todos: TodoItem[]; keyword: string }) {
+  return (
+    <ul className="tv-todos">
+      {todos.map((t, i) => {
+        const status = t.status || 'pending'
+        const cls = status === 'completed' ? 'tv-todo-done'
+          : status === 'in_progress' ? 'tv-todo-active'
+          : 'tv-todo-pending'
+        const icon = status === 'completed' ? '✓'
+          : status === 'in_progress' ? '▶'
+          : '○'
+        const text = status === 'in_progress' && t.activeForm ? t.activeForm : t.content
+        return (
+          <li key={i} className={`tv-todo ${cls}`}>
+            <span className="tv-todo-icon" aria-hidden>{icon}</span>
+            <span className="tv-todo-text">{highlightKeyword(text, keyword)}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 const TurnItem = React.memo(function TurnItem({ turn, index, keyword, canFork, collapsed, onFork, onToggleCollapse }: TurnItemProps) {
   const meta = ROLE_META[turn.role] || { label: turn.role, cls: '' }
   const isTool = turn.role === 'tool_use' || turn.role === 'tool_result' || turn.role === 'thinking'
@@ -105,6 +152,12 @@ const TurnItem = React.memo(function TurnItem({ turn, index, keyword, canFork, c
   const body = useMemo(() => {
     if (isTool) {
       if (collapsed) return null
+      // TodoWrite 的 input 是结构化 JSON，原样 pre 展示只看到一坨 escape 字符，
+      // 把它渲染成带状态图标的清单，跟 Claude TUI 里一致
+      if (turn.role === 'tool_use' && turn.toolName === 'TodoWrite') {
+        const todos = tryParseTodoWriteInput(turn.content)
+        if (todos) return <TodoWriteList todos={todos} keyword={keyword} />
+      }
       return <pre className="tv-tool-pre">{highlightKeyword(turn.content, keyword)}</pre>
     }
     if (isRaw) return <pre className="tv-raw-pre">{highlightKeyword(turn.content, keyword)}</pre>
@@ -118,7 +171,7 @@ const TurnItem = React.memo(function TurnItem({ turn, index, keyword, canFork, c
         </ReactMarkdown>
       </div>
     )
-  }, [turn.content, turn.role, keyword, collapsed, isTool, isRaw])
+  }, [turn.content, turn.role, turn.toolName, keyword, collapsed, isTool, isRaw])
 
   const handleToggle = useCallback(() => onToggleCollapse(index), [onToggleCollapse, index])
   const handleFork = useCallback(() => onFork(index), [onFork, index])
@@ -163,6 +216,9 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   const [allToolsCollapsed, setAllToolsCollapsed] = useState(false)
   const [composer, setComposer] = useState('')
   const [optimisticTurns, setOptimisticTurns] = useState<LocalTurn[]>([])
+  // jsonl 只有消息收尾才落盘，Chat 续聊 tab 过去只能等全文返回才显示；
+  // 服务端现在会推 PTY 实时渲染文本，展示为列表最末的"实时"伪 turn
+  const [liveOutput, setLiveOutput] = useState<string | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
   const [height, setHeight] = useState<number>(() => {
     try {
@@ -175,6 +231,12 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   const scrollRef = useRef<HTMLDivElement>(null)
   const dataRef = useRef<TranscriptResponse | null>(null)
   const dragRef = useRef<{ startY: number; startH: number } | null>(null)
+  // 中文输入法组字状态。单靠 nativeEvent.isComposing 不够——某些浏览器（如
+  // 部分 macOS Chrome + 搜狗/微信输入法）在 compositionend 之前就派发
+  // keydown(Enter)，这时 isComposing 已为 false，Enter 会被当成提交。
+  // 所以同时维护 composingRef 和"刚结束组字的小窗口"作为兜底。
+  const composingRef = useRef(false)
+  const composingEndAtRef = useRef(0)
 
   useEffect(() => {
     if (!fullscreen) return
@@ -257,6 +319,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     setOptimisticTurns([])
     setCollapsedTools({})
     setAllToolsCollapsed(false)
+    setLiveOutput(null)
     void fetchData('reset')
   }, [fetchData])
 
@@ -264,7 +327,10 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   // 关键：仅在 Chat tab 激活时才开 SSE —— 否则每个运行中的 session 永远挂一条 SSE，
   // 叠加 Live 的 WS，很快打满浏览器单源 6 条并发限制，所有新请求 pending。
   useEffect(() => {
-    if (!autoRefreshMs || !active) return
+    if (!autoRefreshMs || !active) {
+      setLiveOutput(null)
+      return
+    }
     let es: EventSource | null = null
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     let fallbackTimer: ReturnType<typeof setInterval> | null = null
@@ -293,6 +359,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           session: payload.session,
         })
         setOptimisticTurns([])
+        setLiveOutput(null)
         retriedOnce = false
         stopFallback()
       } catch { /* ignore */ }
@@ -305,7 +372,18 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           turns: [...current.turns, ...(payload.turns as TranscriptTurn[])],
           total: payload.total,
         } : current)
-        if (payload.turns?.length) setOptimisticTurns([])
+        if (payload.turns?.length) {
+          setOptimisticTurns([])
+          // 真实 turn 收尾了，清掉"实时"伪 turn 避免重复显示；后续还有输出
+          // 就会被下一个 live-output 事件再写回来
+          setLiveOutput(null)
+        }
+      } catch { /* ignore */ }
+    }
+    const handleLiveOutput = (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data)
+        if (typeof payload?.content === 'string') setLiveOutput(payload.content)
       } catch { /* ignore */ }
     }
     const handleStreamUnsupported = () => {
@@ -321,6 +399,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
         es = evt
         evt.addEventListener('snapshot', handleSnapshot as EventListener)
         evt.addEventListener('turn-added', handleTurnAdded as EventListener)
+        evt.addEventListener('live-output', handleLiveOutput as EventListener)
         evt.addEventListener('stream-not-supported', handleStreamUnsupported as EventListener)
         evt.onerror = () => {
           if (disposed) return
@@ -342,6 +421,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
       closeES()
       if (retryTimer) clearTimeout(retryTimer)
       stopFallback()
+      setLiveOutput(null)
     }
   }, [autoRefreshMs, fetchData, todoId, sessionId, active])
 
@@ -578,6 +658,33 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     }
   }, [sendSessionInput])
 
+  // Ctrl+C：发 \x03 信号让 Claude 打断当前生成（停止 tool / 文本输出），
+  // 会话保持存活，用户可以继续追问。对应终端里手动敲 Ctrl+C 的语义。
+  const handleInterrupt = useCallback(async () => {
+    try {
+      await sendAiInput(sessionId, '\x03')
+      message.success('已发送中断（Ctrl+C）', 1)
+    } catch (e: any) {
+      const msg = e?.message === 'session_not_found'
+        ? '会话已结束，无法中断'
+        : (e?.message || '中断失败')
+      message.error(msg)
+    }
+  }, [sessionId])
+
+  // 结束会话：kill 掉 PTY 进程。和中断不同，结束后需要 resume 才能再聊。
+  const handleEndSession = useCallback(async () => {
+    try {
+      await stopAiExec(sessionId)
+      message.success('会话已结束', 1.5)
+    } catch (e: any) {
+      const msg = e?.message === 'session_not_found'
+        ? '会话已经结束了'
+        : (e?.message || '结束会话失败')
+      message.error(msg)
+    }
+  }, [sessionId])
+
   const toggleAllTools = () => {
     const next = !allToolsCollapsed
     setAllToolsCollapsed(next)
@@ -657,13 +764,44 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
             onToggleCollapse={handleToggleCollapse}
           />
         ))}
+        {liveOutput && (
+          <div className="tv-turn tv-role-raw tv-turn-live">
+            <div className="tv-turn-header">
+              <Tag className="tv-turn-tag" color="processing">实时</Tag>
+              <span className="tv-live-pulse">生成中</span>
+            </div>
+            <pre className="tv-raw-pre">{liveOutput}</pre>
+          </div>
+        )}
+        {!liveOutput
+          && (data?.session.status === 'running' || data?.session.status === 'pending_confirm')
+          && (
+            <div className="tv-thinking" aria-live="polite">
+              <span className="tv-thinking-label">
+                {data?.session.status === 'pending_confirm' ? '等待确认' : 'AI 思考中'}
+              </span>
+              <span className="tv-thinking-dots" aria-hidden="true">
+                <i /><i /><i />
+              </span>
+            </div>
+          )}
       </div>
       {unreadCount > 0 && (
         <button className="tv-unread-pill" onClick={jumpToLatest}>
           ↓ {unreadCount} 条新消息
         </button>
       )}
-      <div className="tv-composer">
+      <div
+        className="tv-composer"
+        // 组字事件会冒泡到这里，即便 Antd Mentions 某些版本没把 onCompositionStart/End
+        // 直接透传给内部 textarea，也能稳定拿到。双写一份同名 props 给 Mentions 作为
+        // 保险：某些环境下外层 div 没拿到的情况还能兜住。
+        onCompositionStart={() => { composingRef.current = true }}
+        onCompositionEnd={() => {
+          composingRef.current = false
+          composingEndAtRef.current = performance.now()
+        }}
+      >
         <Mentions
           value={composer}
           onChange={(v) => setComposer(v)}
@@ -675,9 +813,20 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
             const v = String(option?.value || '').toLowerCase()
             return v.includes(input.toLowerCase())
           }}
+          onCompositionStart={() => { composingRef.current = true }}
+          onCompositionEnd={() => {
+            composingRef.current = false
+            composingEndAtRef.current = performance.now()
+          }}
           onPressEnter={(e) => {
             // 下拉打开时 Mentions 内部会拦截 Enter 做选项确认，不会走到这里
             if (e.shiftKey) return
+            // 组字中：不论 React 合成事件还是原生 flag，任一命中都不发送
+            const native = e.nativeEvent as KeyboardEvent
+            if (composingRef.current || native?.isComposing || native?.keyCode === 229) return
+            // 有些浏览器在 compositionend 前就派 keydown(Enter)，composingRef 已经
+            // 被提前 reset；给 80ms 保护窗口吃掉这种"选完候选词后紧跟的 Enter"
+            if (performance.now() - composingEndAtRef.current < 80) return
             e.preventDefault()
             void handleSendMessage()
           }}
@@ -687,7 +836,36 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           <span className="tv-composer-hint">
             {data?.session.status === 'pending_confirm' ? '当前等待确认，可直接发回车或补充说明。' : '支持在这里继续追问，必要时会自动恢复历史会话。'}
           </span>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {(() => {
+              const canInterrupt = data?.session.status === 'running' || data?.session.status === 'pending_confirm'
+              return (
+                <>
+                  <Tooltip title={canInterrupt ? '发送 Ctrl+C 打断当前生成，会话保留，可继续追问' : '会话未在运行，无需打断'}>
+                    <Button
+                      icon={<StopOutlined />}
+                      disabled={!canInterrupt}
+                      onClick={() => { void handleInterrupt() }}
+                    >
+                      中断
+                    </Button>
+                  </Tooltip>
+                  <Popconfirm
+                    title="结束会话"
+                    description="将终止 PTY 进程，之后需要再发消息才会 resume 新会话。"
+                    okText="结束"
+                    okButtonProps={{ danger: true }}
+                    cancelText="取消"
+                    onConfirm={() => { void handleEndSession() }}
+                    disabled={!canInterrupt}
+                  >
+                    <Tooltip title={canInterrupt ? '终止 PTY 进程' : '会话已不在运行，无需结束'}>
+                      <Button danger disabled={!canInterrupt} icon={<PoweroffOutlined />}>结束会话</Button>
+                    </Tooltip>
+                  </Popconfirm>
+                </>
+              )
+            })()}
             <Button onClick={() => { void handleSendEnter() }} loading={sending}>
               发送回车
             </Button>
