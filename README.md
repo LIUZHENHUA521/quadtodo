@@ -47,6 +47,19 @@ quadtodo start              # 启动服务并自动打开浏览器
 
 停止：在前台会话按 Ctrl+C，或在另一个终端里 `quadtodo stop`。
 
+## 给 Claude Code 当知识库用（MCP）
+
+quadtodo 内置了一个 MCP Streamable HTTP 服务（`POST /mcp`），17 个工具覆盖 搜索 / 增删改 / 合并 / 归档 / 批量操作 / AI 会话日志检索。外部 Claude Code session 配上之后，可以用自然语言"帮我清理重复的 todo"、"最近一周我在忙啥"、"合并这三条关于登录的 todo"。
+
+一键接入：
+
+```bash
+quadtodo mcp install   # 把 quadtodo 写进 ~/.claude/settings.json 的 mcpServers
+quadtodo mcp status    # 健康检查
+```
+
+完整工具清单 + preview/confirm 安全模型 + ⌘K 面板说明：**[docs/MCP.md](docs/MCP.md)**。
+
 ## 手机访问（Tailscale 私网）
 
 想在外面用手机继续看待办 / 接 AI 会话？详见 **[docs/MOBILE.md](docs/MOBILE.md)** —— 基于 Tailscale 私有 mesh VPN，不暴露公网，配置 5 分钟。

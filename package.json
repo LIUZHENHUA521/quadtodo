@@ -50,6 +50,7 @@
     "access": "public"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@xterm/headless": "^6.0.0",
     "better-sqlite3": "^11.3.0",
     "commander": "^12.1.0",

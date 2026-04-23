@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
-import { networkInterfaces } from 'node:os'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs'
+import { homedir, networkInterfaces } from 'node:os'
 import { join, dirname, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
@@ -308,6 +308,108 @@ program.command('doctor')
       console.log(`${icon} ${c.name}${tail}`)
     }
     process.exit(report.ok ? 0 : 1)
+  })
+
+// ─── quadtodo mcp install / status ─────────────────────────────
+
+export function defaultClaudeSettingsPath() {
+  return join(homedir(), '.claude', 'settings.json')
+}
+
+export function buildMcpServerEntry({ host, port } = {}) {
+  const h = host && host !== '0.0.0.0' ? host : '127.0.0.1'
+  return {
+    type: 'http',
+    url: `http://${h}:${port}/mcp`,
+  }
+}
+
+/**
+ * Merge `quadtodo` 进 settings.json 的 mcpServers 段，不破坏现有条目。
+ * - 如果 settings.json 不存在：创建一个只含 mcpServers 的新文件
+ * - 如果存在且有效 JSON：merge
+ * - 如果存在但不是 JSON：报错（让用户自己先修好）
+ *
+ * 返回 { path, action: 'created'|'updated'|'unchanged', entry }
+ */
+export function installMcpIntoClaudeSettings({
+  settingsPath = defaultClaudeSettingsPath(),
+  host,
+  port,
+  name = 'quadtodo',
+} = {}) {
+  const entry = buildMcpServerEntry({ host, port })
+  let settings = {}
+  let existed = false
+  if (existsSync(settingsPath)) {
+    existed = true
+    const raw = readFileSync(settingsPath, 'utf8')
+    try {
+      settings = JSON.parse(raw)
+    } catch (e) {
+      const err = new Error(`settings.json exists but is not valid JSON: ${e.message}`)
+      err.code = 'invalid_settings'
+      throw err
+    }
+  } else {
+    const dir = dirname(settingsPath)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  }
+  if (!settings.mcpServers || typeof settings.mcpServers !== 'object') {
+    settings.mcpServers = {}
+  }
+  const existing = settings.mcpServers[name]
+  const same = existing && existing.type === entry.type && existing.url === entry.url
+  if (same) {
+    return { path: settingsPath, action: 'unchanged', entry }
+  }
+  settings.mcpServers[name] = entry
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2))
+  return { path: settingsPath, action: existed ? 'updated' : 'created', entry }
+}
+
+const mcpCmd = program.command('mcp').description('Claude Code MCP: install / status')
+
+mcpCmd.command('install')
+  .option('--settings <path>', 'path to claude settings.json', defaultClaudeSettingsPath())
+  .option('--host <host>', 'override host in the URL (useful when this Mac is accessed remotely)')
+  .action((opts) => {
+    const cfg = loadConfig()
+    try {
+      const out = installMcpIntoClaudeSettings({
+        settingsPath: opts.settings,
+        host: opts.host || cfg.host,
+        port: cfg.port,
+      })
+      const icon = out.action === 'unchanged' ? '=' : out.action === 'created' ? '+' : '~'
+      console.log(`${icon} ${out.action} ${out.path}`)
+      console.log(`   mcpServers.quadtodo.url = ${out.entry.url}`)
+      if (out.action === 'unchanged') {
+        console.log('   (already configured)')
+      } else {
+        console.log('   Claude Code 里输入 /mcp 可验证连接。')
+      }
+    } catch (e) {
+      console.error(`install failed: ${e.message}`)
+      process.exit(1)
+    }
+  })
+
+mcpCmd.command('status')
+  .action(async () => {
+    const cfg = loadConfig()
+    const port = cfg.port
+    const url = `http://127.0.0.1:${port}/mcp/health`
+    try {
+      const r = await fetch(url)
+      const body = await r.json()
+      console.log(`✓ ${url}`)
+      console.log(`  ${JSON.stringify(body)}`)
+    } catch (e) {
+      console.error(`✗ ${url} unreachable: ${e.message}`)
+      console.error(`  quadtodo 是不是没跑？试 'quadtodo start' 或 'npm start'`)
+      process.exit(1)
+    }
   })
 
 const cfgCmd = program.command('config').description('read/write ~/.quadtodo/config.json')

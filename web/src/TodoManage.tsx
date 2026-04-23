@@ -15,6 +15,8 @@ import {
   MenuOutlined,
 } from '@ant-design/icons'
 import { useIsMobile } from './hooks/useIsMobile'
+import CmdPalette from './CmdPalette'
+import './CmdPalette.css'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
   useSensor, useSensors, DragOverlay, DragStartEvent,
@@ -813,6 +815,7 @@ export default function TodoManage() {
   const [unboundTranscripts, setUnboundTranscripts] = useState(0)
   const isMobile = useIsMobile()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'priority' | 'pet'>(() => {
     const saved = localStorage.getItem('quadtodo:viewMode')
     return saved === 'priority' || saved === 'list' ? saved : 'list'
@@ -1234,6 +1237,36 @@ export default function TodoManage() {
     listComments(todo.id).then(setComments).catch(() => {}).finally(() => setCommentsLoading(false))
   }
 
+  // 根据 id 定位并打开详情。先查当前已加载的 todos；找不到（比如搜到已归档或未加载的 todo）
+  // 就直接 listTodos 取完整列表再找一次。
+  const openTodoById = useCallback(async (id: string) => {
+    const foundLocal = todos.find((t) => t.id === id)
+      || Object.values(childrenByParentId).flat().find((t: any) => t.id === id)
+    if (foundLocal) { openDetail(foundLocal as Todo); return }
+    try {
+      const all = await listTodos({})
+      const hit = all.find((t) => t.id === id)
+      if (hit) openDetail(hit)
+      else message.warning('找不到这条 todo（可能已归档，先在 ⌘K 结果里也勾选 "已归档" 以排查）')
+    } catch { /* ignore */ }
+  }, [todos, childrenByParentId])
+
+  // ⌘K / Ctrl+K 全局快捷键
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toLowerCase().includes('mac')
+      const combo = (isMac ? e.metaKey : e.ctrlKey) && e.key === 'k'
+      if (combo) {
+        e.preventDefault()
+        setCmdPaletteOpen((v) => !v)
+      } else if (e.key === 'Escape' && cmdPaletteOpen) {
+        setCmdPaletteOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [cmdPaletteOpen])
+
   const handleMemorize = useCallback(async (todo: Todo, force = false) => {
     if (memorizing) return
     const already = todoCoverage[todo.id]
@@ -1545,6 +1578,14 @@ export default function TodoManage() {
         <Button type="primary" icon={<PlusOutlined />} size="small" onClick={handleCreate}>
           新建
         </Button>
+        <Tooltip title={isMobile ? '全局搜索' : '全局搜索 (⌘K)'}>
+          <Button
+            icon={<SearchOutlined />}
+            size="small"
+            onClick={() => setCmdPaletteOpen(true)}
+            title="全局搜索"
+          />
+        </Tooltip>
         {isMobile ? (
           <Button
             icon={<MenuOutlined />}
@@ -2244,6 +2285,12 @@ export default function TodoManage() {
           >设置</Button>
         </div>
       </Drawer>
+
+      <CmdPalette
+        open={cmdPaletteOpen}
+        onClose={() => setCmdPaletteOpen(false)}
+        onJumpToTodo={openTodoById}
+      />
 
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <StatsDrawer open={statsOpen} onClose={() => setStatsOpen(false)} />

@@ -1,4 +1,5 @@
-import { Drawer, Descriptions, Alert, Typography, Form, Input, Button, Radio, Space, message, Tag, Switch } from 'antd'
+import { Drawer, Descriptions, Alert, Typography, Form, Input, InputNumber, Button, Radio, Space, message, Tag, Switch } from 'antd'
+import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import { getStatus, getConfig, updateConfig, AppConfig, pickDirectory, ToolDiagnostic } from './api'
 
@@ -122,6 +123,12 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           webhookCooldownMs: result.config.webhook.cooldownMs,
           notifyOnPendingConfirm: result.config.webhook.notifyOnPendingConfirm,
           notifyOnKeywordMatch: result.config.webhook.notifyOnKeywordMatch,
+          pricingCnyRate: result.config.pricing.cnyRate,
+          pricingDefault: { ...result.config.pricing.default },
+          pricingModels: Object.entries(result.config.pricing.models).map(([pattern, rate]) => ({
+            pattern,
+            ...rate,
+          })),
         })
         setErr(null)
       })
@@ -152,6 +159,26 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           notifyOnPendingConfirm: values.notifyOnPendingConfirm !== false,
           notifyOnKeywordMatch: values.notifyOnKeywordMatch !== false,
         },
+        pricing: {
+          cnyRate: Number(values.pricingCnyRate) || 7.2,
+          default: {
+            input: Number(values.pricingDefault?.input) || 0,
+            output: Number(values.pricingDefault?.output) || 0,
+            cacheRead: Number(values.pricingDefault?.cacheRead) || 0,
+            cacheWrite: Number(values.pricingDefault?.cacheWrite) || 0,
+          },
+          models: (values.pricingModels || []).reduce((acc: Record<string, any>, row: any) => {
+            const pattern = String(row?.pattern || '').trim()
+            if (!pattern) return acc
+            acc[pattern] = {
+              input: Number(row.input) || 0,
+              output: Number(row.output) || 0,
+              cacheRead: Number(row.cacheRead) || 0,
+              cacheWrite: Number(row.cacheWrite) || 0,
+            }
+            return acc
+          }, {}),
+        },
       })
       setConfig(result.config)
       setToolDiagnostics(result.toolDiagnostics)
@@ -160,6 +187,14 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         claudeBin: result.config.tools.claude.bin,
         codexCommand: joinCommandLine(result.config.tools.codex.command, result.config.tools.codex.args),
         codexBin: result.config.tools.codex.bin,
+        // normalizeConfig 会把默认 models 合回来（即使 UI 里被删也会复活），
+        // 用保存后的 config 重置 pricingModels 保证和服务端一致
+        pricingCnyRate: result.config.pricing.cnyRate,
+        pricingDefault: { ...result.config.pricing.default },
+        pricingModels: Object.entries(result.config.pricing.models).map(([pattern, rate]) => ({
+          pattern,
+          ...rate,
+        })),
       })
       message.success('设置已保存。默认目录和工具对新会话立即生效，端口需重启后生效。')
     } catch (e: any) {
@@ -423,6 +458,118 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         >
           <Input type="number" min={1000} step={1000} />
         </Form.Item>
+
+        <Paragraph style={{ marginTop: 24, marginBottom: 12 }}>
+          <Text strong>估算价目表</Text>
+          <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+            单位 $/1M tokens
+          </Text>
+        </Paragraph>
+
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="这里是估算成本用的单价表。保存后下次打开统计面板即生效，无需重启。"
+          description={
+            <>
+              模型匹配使用 glob（<Text code>*</Text> 匹配任意字符），按定义顺序逐条匹配，找不到时落到"默认费率"。
+              官方价目对照：<Text code>https://www.anthropic.com/pricing#api</Text>。
+              <br />
+              注意：删除 Opus / Sonnet / Haiku 等默认模型行后，下次打开此面板会自动恢复（系统始终保证默认项存在）。
+            </>
+          }
+        />
+
+        <Form.Item
+          name="pricingCnyRate"
+          label="CNY 汇率"
+          extra="USD → CNY 换算用；不会自动跟随实时汇率，自行维护。"
+          rules={[{ required: true, message: '请输入 CNY 汇率' }]}
+        >
+          <InputNumber min={0} step={0.1} style={{ width: 160 }} />
+        </Form.Item>
+
+        <Paragraph style={{ marginTop: 8, marginBottom: 8 }}>
+          <Text>默认费率（fallback）</Text>
+        </Paragraph>
+        <Space wrap size={[12, 8]} style={{ marginBottom: 12 }}>
+          <Form.Item name={['pricingDefault', 'input']} label="input" style={{ marginBottom: 0 }}>
+            <InputNumber min={0} step={0.01} style={{ width: 110 }} />
+          </Form.Item>
+          <Form.Item name={['pricingDefault', 'output']} label="output" style={{ marginBottom: 0 }}>
+            <InputNumber min={0} step={0.01} style={{ width: 110 }} />
+          </Form.Item>
+          <Form.Item name={['pricingDefault', 'cacheRead']} label="cacheRead" style={{ marginBottom: 0 }}>
+            <InputNumber min={0} step={0.01} style={{ width: 110 }} />
+          </Form.Item>
+          <Form.Item name={['pricingDefault', 'cacheWrite']} label="cacheWrite" style={{ marginBottom: 0 }}>
+            <InputNumber min={0} step={0.01} style={{ width: 110 }} />
+          </Form.Item>
+        </Space>
+
+        <Paragraph style={{ marginTop: 8, marginBottom: 8 }}>
+          <Text>按模型匹配</Text>
+        </Paragraph>
+        <Form.List name="pricingModels">
+          {(fields, { add, remove }) => (
+            <>
+              {fields.map(({ key, name, ...rest }) => (
+                <div
+                  key={key}
+                  style={{
+                    padding: 10,
+                    border: '1px solid #ece7dd',
+                    borderRadius: 6,
+                    marginBottom: 8,
+                    background: '#fcfaf5',
+                  }}
+                >
+                  <Space wrap size={[12, 4]} style={{ width: '100%' }}>
+                    <Form.Item
+                      {...rest}
+                      name={[name, 'pattern']}
+                      label="模型匹配"
+                      style={{ marginBottom: 0 }}
+                    >
+                      <Input placeholder="claude-opus-4-*" style={{ width: 200 }} />
+                    </Form.Item>
+                    <Form.Item {...rest} name={[name, 'input']} label="input" style={{ marginBottom: 0 }}>
+                      <InputNumber min={0} step={0.01} style={{ width: 100 }} />
+                    </Form.Item>
+                    <Form.Item {...rest} name={[name, 'output']} label="output" style={{ marginBottom: 0 }}>
+                      <InputNumber min={0} step={0.01} style={{ width: 100 }} />
+                    </Form.Item>
+                    <Form.Item {...rest} name={[name, 'cacheRead']} label="cacheRead" style={{ marginBottom: 0 }}>
+                      <InputNumber min={0} step={0.01} style={{ width: 100 }} />
+                    </Form.Item>
+                    <Form.Item {...rest} name={[name, 'cacheWrite']} label="cacheWrite" style={{ marginBottom: 0 }}>
+                      <InputNumber min={0} step={0.01} style={{ width: 100 }} />
+                    </Form.Item>
+                    <Button
+                      type="text"
+                      danger
+                      icon={<MinusCircleOutlined />}
+                      onClick={() => remove(name)}
+                    >
+                      删除
+                    </Button>
+                  </Space>
+                </div>
+              ))}
+              <Button
+                type="dashed"
+                onClick={() =>
+                  add({ pattern: '', input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
+                }
+                icon={<PlusOutlined />}
+                block
+              >
+                添加模型
+              </Button>
+            </>
+          )}
+        </Form.List>
       </Form>
 
       <Paragraph type="secondary">

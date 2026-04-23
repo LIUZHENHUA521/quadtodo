@@ -183,6 +183,7 @@ function rowToTodo(row) {
     recurringRuleId: row.recurring_rule_id ?? null,
     instanceDate: row.instance_date ?? null,
     completedAt: row.completed_at ?? null,
+    archivedAt: row.archived_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -296,10 +297,14 @@ export function openDb(file = ':memory:') {
     // 一次性回填：已完成的旧行用 updated_at 作为近似完成时间
     db.exec(`UPDATE todos SET completed_at = updated_at WHERE status = 'done' AND completed_at IS NULL`)
   }
+  if (!columns.some(col => col.name === 'archived_at')) {
+    db.exec(`ALTER TABLE todos ADD COLUMN archived_at INTEGER`)
+  }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_recurring ON todos(recurring_rule_id, instance_date)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_parent_sort ON todos(parent_id, sort_order)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_quad_parent_sort ON todos(quadrant, parent_id, sort_order)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_completed_at ON todos(completed_at)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_archived_at ON todos(archived_at)`)
 
   const tfCols = db.prepare(`PRAGMA table_info(transcript_files)`).all().map(c => c.name)
   for (const [name, type] of [
@@ -456,7 +461,7 @@ export function openDb(file = ':memory:') {
     stmts.deleteById.run(id)
   }
 
-  function listTodos({ quadrant, status, keyword } = {}) {
+  function listTodos({ quadrant, status, keyword, archived } = {}) {
     const where = []
     const params = []
     if (quadrant != null) {
@@ -471,6 +476,14 @@ export function openDb(file = ':memory:') {
       params.push('done')
     } else {
       where.push(`status != 'missed'`)
+    }
+    // archived: undefined|false → 只看未归档；true → 只看已归档；'all' → 都要
+    if (archived === true) {
+      where.push('archived_at IS NOT NULL')
+    } else if (archived === 'all') {
+      // no-op, 全部
+    } else {
+      where.push('archived_at IS NULL')
     }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
     const rows = db.prepare(`
@@ -495,6 +508,173 @@ export function openDb(file = ':memory:') {
       }
     }
     return todos.filter(todo => includeIds.has(todo.id) || (todo.parentId && includeIds.has(todo.parentId)))
+  }
+
+  function archiveTodo(id) {
+    const existing = stmts.getById.get(id)
+    if (!existing) throw new Error('todo_not_found')
+    if (existing.archived_at != null) return rowToTodo(existing)
+    const now = Date.now()
+    db.prepare(`UPDATE todos SET archived_at = ?, updated_at = ? WHERE id = ?`).run(now, now, id)
+    return rowToTodo(stmts.getById.get(id))
+  }
+
+  function unarchiveTodo(id) {
+    const existing = stmts.getById.get(id)
+    if (!existing) throw new Error('todo_not_found')
+    if (existing.archived_at == null) return rowToTodo(existing)
+    const now = Date.now()
+    db.prepare(`UPDATE todos SET archived_at = NULL, updated_at = ? WHERE id = ?`).run(now, id)
+    return rowToTodo(stmts.getById.get(id))
+  }
+
+  /**
+   * Preview/describe the impact of merging. 不做任何修改。
+   * 返回 { targetId, sources[], movedChildren, movedComments, movedSessions, movedSessionLogs,
+   *        movedCoverage, movedTranscripts, movedPipelineRuns, proposedTitle }
+   */
+  function describeMergeTodos({ targetId, sourceIds, titleStrategy = 'keep_target', manualTitle } = {}) {
+    if (!targetId) throw new Error('target_required')
+    if (!Array.isArray(sourceIds) || sourceIds.length === 0) throw new Error('sources_required')
+    const target = stmts.getById.get(targetId)
+    if (!target) throw new Error('target_not_found')
+    const uniqueSources = [...new Set(sourceIds)].filter((s) => s && s !== targetId)
+    if (uniqueSources.length === 0) throw new Error('sources_required')
+    const sources = []
+    for (const sid of uniqueSources) {
+      const row = stmts.getById.get(sid)
+      if (!row) throw new Error(`source_not_found:${sid}`)
+      sources.push(row)
+    }
+    const countOne = (sql, id) => db.prepare(sql).get(id)?.n || 0
+    let movedChildren = 0
+    let movedComments = 0
+    let movedSessions = 0
+    let movedSessionLogs = 0
+    let movedCoverage = 0
+    let movedTranscripts = 0
+    let movedPipelineRuns = 0
+    for (const src of sources) {
+      movedChildren += countOne(`SELECT COUNT(*) AS n FROM todos WHERE parent_id = ?`, src.id)
+      movedComments += countOne(`SELECT COUNT(*) AS n FROM comments WHERE todo_id = ?`, src.id)
+      movedSessions += normalizeAiSessions(src.ai_session ? JSON.parse(src.ai_session) : null).length
+      movedSessionLogs += countOne(`SELECT COUNT(*) AS n FROM ai_session_log WHERE todo_id = ?`, src.id)
+      movedCoverage += countOne(`SELECT COUNT(*) AS n FROM wiki_todo_coverage WHERE todo_id = ?`, src.id)
+      movedTranscripts += countOne(`SELECT COUNT(*) AS n FROM transcript_files WHERE bound_todo_id = ?`, src.id)
+      movedPipelineRuns += countOne(`SELECT COUNT(*) AS n FROM pipeline_runs WHERE todo_id = ?`, src.id)
+    }
+    let proposedTitle = target.title
+    if (titleStrategy === 'concat') {
+      proposedTitle = [target.title, ...sources.map((s) => s.title)].join(' + ')
+    } else if (titleStrategy === 'manual') {
+      if (!manualTitle || !String(manualTitle).trim()) throw new Error('manual_title_required')
+      proposedTitle = String(manualTitle).trim()
+    }
+    return {
+      targetId,
+      target: { id: target.id, title: target.title },
+      sources: sources.map((s) => ({ id: s.id, title: s.title })),
+      movedChildren,
+      movedComments,
+      movedSessions,
+      movedSessionLogs,
+      movedCoverage,
+      movedTranscripts,
+      movedPipelineRuns,
+      proposedTitle,
+    }
+  }
+
+  /**
+   * 事务化合并：把 sourceIds 的子任务、评论、ai_session JSON、ai_session_log、wiki_coverage、
+   * transcript_files、pipeline_runs 全部迁移到 targetId，然后删除 source todo。
+   * titleStrategy: 'keep_target' | 'concat' | 'manual'（manual 需 manualTitle）
+   */
+  function mergeTodos({ targetId, sourceIds, titleStrategy = 'keep_target', manualTitle } = {}) {
+    // 先复用 describe 做校验
+    const preview = describeMergeTodos({ targetId, sourceIds, titleStrategy, manualTitle })
+    const now = Date.now()
+    const run = db.transaction(() => {
+      const targetRow = stmts.getById.get(targetId)
+      let mergedSessions = normalizeAiSessions(targetRow.ai_session ? JSON.parse(targetRow.ai_session) : null)
+      for (const src of preview.sources) {
+        db.prepare(`UPDATE todos SET parent_id = ?, updated_at = ? WHERE parent_id = ?`).run(targetId, now, src.id)
+        db.prepare(`UPDATE comments SET todo_id = ? WHERE todo_id = ?`).run(targetId, src.id)
+        db.prepare(`UPDATE ai_session_log SET todo_id = ? WHERE todo_id = ?`).run(targetId, src.id)
+        db.prepare(`UPDATE wiki_todo_coverage SET todo_id = ? WHERE todo_id = ?`).run(targetId, src.id)
+        db.prepare(`UPDATE transcript_files SET bound_todo_id = ? WHERE bound_todo_id = ?`).run(targetId, src.id)
+        db.prepare(`UPDATE pipeline_runs SET todo_id = ? WHERE todo_id = ?`).run(targetId, src.id)
+        // ai_session JSON 合并
+        const srcRow = stmts.getById.get(src.id)
+        const srcSessions = normalizeAiSessions(srcRow.ai_session ? JSON.parse(srcRow.ai_session) : null)
+        mergedSessions = [...mergedSessions, ...srcSessions]
+        stmts.deleteById.run(src.id)
+      }
+      // 写回合并后的 ai_session + 可能的新标题
+      const fields = ['ai_session = ?', 'updated_at = ?']
+      const params = [mergedSessions.length ? JSON.stringify(mergedSessions) : null, now]
+      if (preview.proposedTitle !== targetRow.title) {
+        fields.push('title = ?')
+        params.push(preview.proposedTitle)
+      }
+      params.push(targetId)
+      db.prepare(`UPDATE todos SET ${fields.join(', ')} WHERE id = ?`).run(...params)
+    })
+    run()
+    return {
+      ...preview,
+      ok: true,
+      resultingTodo: rowToTodo(stmts.getById.get(targetId)),
+    }
+  }
+
+  /**
+   * 对一组 todo id 批量 patch。Patch 字段限白名单（quadrant/status/archived/dueDate）。
+   * archived: true → 设置 archived_at=now；false → 清空；不传则不改。
+   */
+  function bulkUpdateTodos({ ids, patch } = {}) {
+    if (!Array.isArray(ids) || ids.length === 0) throw new Error('ids_required')
+    if (!patch || typeof patch !== 'object') throw new Error('patch_required')
+    const allowed = ['quadrant', 'status', 'archived', 'dueDate']
+    const keys = Object.keys(patch).filter((k) => allowed.includes(k))
+    if (keys.length === 0) throw new Error('patch_empty')
+    const now = Date.now()
+    const changed = []
+    const run = db.transaction(() => {
+      for (const id of ids) {
+        const existing = stmts.getById.get(id)
+        if (!existing) continue
+        const sets = []
+        const params = []
+        if ('quadrant' in patch) {
+          sets.push('quadrant = ?')
+          params.push(Number(patch.quadrant))
+        }
+        if ('status' in patch) {
+          sets.push('status = ?')
+          params.push(String(patch.status))
+          if (patch.status === 'done') {
+            sets.push('completed_at = ?')
+            params.push(now)
+          }
+        }
+        if ('dueDate' in patch) {
+          sets.push('due_date = ?')
+          params.push(patch.dueDate == null ? null : Number(patch.dueDate))
+        }
+        if ('archived' in patch) {
+          sets.push('archived_at = ?')
+          params.push(patch.archived ? now : null)
+        }
+        sets.push('updated_at = ?')
+        params.push(now)
+        params.push(id)
+        db.prepare(`UPDATE todos SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+        changed.push(id)
+      }
+    })
+    run()
+    return { changedIds: changed, count: changed.length }
   }
 
   function listCompletedTodos({ since, until }) {
@@ -1345,6 +1525,11 @@ export function openDb(file = ':memory:') {
     listTodos,
     listCompletedTodos,
     countMissedInRange,
+    archiveTodo,
+    unarchiveTodo,
+    describeMergeTodos,
+    mergeTodos,
+    bulkUpdateTodos,
     nextSortOrder,
     addComment,
     listComments,

@@ -83,6 +83,19 @@ export interface Comment {
   createdAt: number
 }
 
+export interface PricingRate {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
+
+export interface PricingConfig {
+  default: PricingRate
+  models: Record<string, PricingRate>
+  cnyRate: number
+}
+
 export interface AppConfig {
   port: number
   defaultTool: AiTool
@@ -100,6 +113,7 @@ export interface AppConfig {
     notifyOnPendingConfirm: boolean
     notifyOnKeywordMatch: boolean
   }
+  pricing: PricingConfig
 }
 
 export interface ToolDiagnostic {
@@ -786,4 +800,39 @@ export async function extendPipelineRun(id: string): Promise<PipelineRun> {
     method: 'POST',
   })
   return body.run
+}
+
+// ─── 全局搜索（⌘K 面板 + MCP 复用同一端点） ───
+
+export type SearchScope = 'todos' | 'comments' | 'wiki' | 'ai_sessions'
+
+export interface SearchResultItem {
+  scope: SearchScope
+  todoId: string
+  todoTitle?: string
+  snippet: string
+  score: number
+  archived?: boolean
+  commentId?: string
+  sessionId?: string
+}
+
+export interface SearchResponse {
+  total: number
+  results: SearchResultItem[]
+}
+
+export async function searchAll(params: {
+  query: string
+  scopes?: SearchScope[]
+  limit?: number
+  includeArchived?: boolean
+}): Promise<SearchResponse> {
+  const q = new URLSearchParams()
+  q.set('q', params.query)
+  if (params.scopes?.length) q.set('scopes', params.scopes.join(','))
+  if (params.limit) q.set('limit', String(params.limit))
+  if (params.includeArchived) q.set('includeArchived', 'true')
+  const body = await jsonFetch<{ ok: true } & SearchResponse>(`/api/search?${q.toString()}`)
+  return { total: body.total, results: body.results }
 }

@@ -26,6 +26,9 @@ import { createPipelinesRouter } from "./routes/pipelines.js";
 import { createOrchestrator } from "./orchestrator.js";
 import { createWikiRouter } from "./routes/wiki.js";
 import { createWikiService } from "./wiki/index.js";
+import { createSearchRouter } from "./routes/search.js";
+import { createSearchService } from "./search/index.js";
+import { createMcpRouter } from "./mcp/server.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -415,6 +418,7 @@ export function createServer(opts = {}) {
 		try {
 			const current = loadConfig({ rootDir: configRootDir });
 			const nextToolsPatch = req.body?.tools || {};
+			const pricingPatch = req.body?.pricing;
 			const next = {
 				...current,
 				...req.body,
@@ -423,6 +427,15 @@ export function createServer(opts = {}) {
 					claude: mergeToolConfig(current.tools?.claude, nextToolsPatch.claude),
 					codex: mergeToolConfig(current.tools?.codex, nextToolsPatch.codex),
 				},
+				// 深合并 pricing：允许前端只发部分字段（如仅改 cnyRate）而不清空其他。
+				// models 字段整体替换，这样 UI 里删除条目才能落到磁盘。
+				pricing: pricingPatch
+					? {
+						cnyRate: pricingPatch.cnyRate ?? current.pricing.cnyRate,
+						default: pricingPatch.default ?? current.pricing.default,
+						models: pricingPatch.models ?? current.pricing.models,
+					}
+					: current.pricing,
 			};
 			saveConfig(next, { rootDir: configRootDir });
 
@@ -783,6 +796,33 @@ export function createServer(opts = {}) {
 		redactEnabled: wikiConfig.redact !== false,
 	});
 	app.use("/api/wiki", createWikiRouter({ service: wikiService }));
+
+	// 全局搜索：给 ⌘K 面板和 MCP 共用
+	const searchService = createSearchService({ db, wikiDir: wikiConfig.wikiDir });
+	try {
+		const initResult = searchService.init();
+		if (initResult?.rebuilt?.length) {
+			console.log(`[search] fts ready, rebuilt: ${initResult.rebuilt.join(", ")}`);
+		}
+	} catch (e) {
+		console.warn(`[search] fts init failed:`, e.message);
+	}
+	app.use("/api/search", createSearchRouter({ searchService }));
+
+	// MCP Streamable HTTP 端点：把 quadtodo 暴露给 Claude Code 等 MCP 客户端
+	try {
+		const mcp = createMcpRouter({
+			db,
+			searchService,
+			wikiDir: wikiConfig.wikiDir,
+			rootDir: configRootDir,
+			logDir,
+			getVersion: loadVersion,
+		});
+		app.use("/mcp", mcp.router);
+	} catch (e) {
+		console.warn("[mcp] init failed:", e.message);
+	}
 
 	// kick off wiki init in background (non-blocking)
 	Promise.resolve()

@@ -7,8 +7,11 @@ import {
   buildDoctorChecks,
   buildStartupBanner,
   collectReachableAddresses,
+  buildMcpServerEntry,
+  installMcpIntoClaudeSettings,
 } from '../src/cli.js'
 import { loadConfig, setConfigValue, getConfigValue } from '../src/config.js'
+import { writeFileSync } from 'node:fs'
 
 describe('cli helpers', () => {
   let rootDir
@@ -103,6 +106,59 @@ describe('cli helpers', () => {
           expect(item.address).toMatch(/^\d{1,3}(\.\d{1,3}){3}$/)
         }
       }
+    })
+  })
+
+  describe('buildMcpServerEntry / installMcpIntoClaudeSettings', () => {
+    it('builds a localhost url for 127.0.0.1', () => {
+      expect(buildMcpServerEntry({ host: '127.0.0.1', port: 5677 }))
+        .toEqual({ type: 'http', url: 'http://127.0.0.1:5677/mcp' })
+    })
+
+    it('rewrites 0.0.0.0 to 127.0.0.1 in the URL (browser/Claude cant hit 0.0.0.0)', () => {
+      expect(buildMcpServerEntry({ host: '0.0.0.0', port: 5677 }))
+        .toEqual({ type: 'http', url: 'http://127.0.0.1:5677/mcp' })
+    })
+
+    it('keeps a specific LAN host', () => {
+      expect(buildMcpServerEntry({ host: '192.168.1.5', port: 5678 }))
+        .toEqual({ type: 'http', url: 'http://192.168.1.5:5678/mcp' })
+    })
+
+    it('creates a fresh settings.json when missing', () => {
+      const path = join(rootDir, 'settings.json')
+      const out = installMcpIntoClaudeSettings({ settingsPath: path, host: '127.0.0.1', port: 5677 })
+      expect(out.action).toBe('created')
+      const parsed = JSON.parse(readFileSync(path, 'utf8'))
+      expect(parsed.mcpServers.quadtodo.url).toBe('http://127.0.0.1:5677/mcp')
+    })
+
+    it('merges into existing settings.json preserving other fields', () => {
+      const path = join(rootDir, 'settings.json')
+      writeFileSync(path, JSON.stringify({
+        theme: 'dark',
+        mcpServers: { other: { type: 'stdio', command: 'foo' } },
+      }, null, 2))
+      const out = installMcpIntoClaudeSettings({ settingsPath: path, host: '127.0.0.1', port: 5677 })
+      expect(out.action).toBe('updated')
+      const parsed = JSON.parse(readFileSync(path, 'utf8'))
+      expect(parsed.theme).toBe('dark')
+      expect(parsed.mcpServers.other.command).toBe('foo')
+      expect(parsed.mcpServers.quadtodo.url).toBe('http://127.0.0.1:5677/mcp')
+    })
+
+    it('is idempotent when same entry already present', () => {
+      const path = join(rootDir, 'settings.json')
+      installMcpIntoClaudeSettings({ settingsPath: path, host: '127.0.0.1', port: 5677 })
+      const out = installMcpIntoClaudeSettings({ settingsPath: path, host: '127.0.0.1', port: 5677 })
+      expect(out.action).toBe('unchanged')
+    })
+
+    it('throws on invalid JSON in existing file', () => {
+      const path = join(rootDir, 'settings.json')
+      writeFileSync(path, '{ broken')
+      expect(() => installMcpIntoClaudeSettings({ settingsPath: path, host: '127.0.0.1', port: 5677 }))
+        .toThrow(/not valid JSON/)
     })
   })
 

@@ -133,9 +133,13 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     const timer = setTimeout(() => {
       pendingResizeRef.current = null
       const ws = wsRef.current
-      lastSentSizeRef.current = { cols, rows }
+      // 关键：只有真的 send 成功才标记"已发送"。之前无条件更新会导致 WS 还没 OPEN
+      // 时的那次 fit 把 lastSentSizeRef 占住，onopen 后的 doFit 看到"尺寸没变"直接
+      // return，后端 PTY 停留在默认 80 cols，Claude 按 80 画边框污染 scrollback —— 用户
+      // 手动拖一下宽度、cols 变化才会重新触发 send。
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'resize', cols, rows }))
+        lastSentSizeRef.current = { cols, rows }
       }
     }, RESIZE_STABILITY_MS)
     pendingResizeRef.current = { cols, rows, timer }
@@ -311,6 +315,9 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         reconnectCountRef.current = 0
         setWsConnected(true)
         lastPongRef.current = Date.now()
+        // 新连接/重连都要强制把当前 cols/rows 重新发给后端：清掉"已发送"记录，
+        // 避免 doFit → scheduleResizeSend 看到尺寸没变就 early-return。
+        lastSentSizeRef.current = null
         term.writeln('\x1b[36m--- Terminal connected ---\x1b[0m\r')
         if (!resumeTargetRef.current?.nativeSessionId && status === 'ai_running') {
           term.writeln('\x1b[90m--- 正在注入任务上下文，请稍候... ---\x1b[0m\r')

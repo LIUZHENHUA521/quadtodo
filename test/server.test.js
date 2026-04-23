@@ -153,6 +153,41 @@ describe("server", () => {
 		expect(update.body.toolDiagnostics.codex.bin).not.toBe(staleBin);
 	});
 
+	it("PUT /api/config persists pricing edits and merges partial patches", async () => {
+		// 整份 pricing 替换：支持删除模型条目并覆盖 CNY 汇率
+		const full = await request(srv.app)
+			.put("/api/config")
+			.send({
+				pricing: {
+					cnyRate: 7.5,
+					default: { input: 4, output: 20, cacheRead: 0.4, cacheWrite: 5 },
+					models: {
+						"claude-opus-4-*": { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+					},
+				},
+			});
+		expect(full.status).toBe(200);
+		expect(full.body.config.pricing.cnyRate).toBe(7.5);
+		expect(full.body.config.pricing.default.input).toBe(4);
+		expect(full.body.config.pricing.models["claude-opus-4-*"].output).toBe(75);
+
+		// 部分 patch：只改 cnyRate，不应清掉 default / models
+		const partial = await request(srv.app)
+			.put("/api/config")
+			.send({ pricing: { cnyRate: 7.1 } });
+		expect(partial.status).toBe(200);
+		expect(partial.body.config.pricing.cnyRate).toBe(7.1);
+		expect(partial.body.config.pricing.default.input).toBe(4);
+		expect(partial.body.config.pricing.models["claude-opus-4-*"].output).toBe(75);
+
+		// 根本不带 pricing：应保留上一次值
+		const untouched = await request(srv.app)
+			.put("/api/config")
+			.send({ defaultCwd: workRootDir });
+		expect(untouched.status).toBe(200);
+		expect(untouched.body.config.pricing.cnyRate).toBe(7.1);
+	});
+
 	it("GET /api/config/workdirs returns default root and child directories", async () => {
 		const r = await request(srv.app).get("/api/config/workdirs");
 		expect(r.status).toBe(200);

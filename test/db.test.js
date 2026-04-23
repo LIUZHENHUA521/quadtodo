@@ -378,4 +378,169 @@ describe('transcript_files usage columns', () => {
       rmSync(tmpDir, { recursive: true })
     }
   })
+
+  // ─── M1: archived_at / merge / bulkUpdate ───
+  // 这些 describe 跟 'transcript_files usage columns' 平级但复用同一个 openDb helper；
+  // 上面的 describe 没有自己的 beforeEach，所以我这里重新声明一份。
+
+  let db
+  beforeEach(() => {
+    db = openDb(':memory:')
+  })
+
+  describe('archive / unarchive', () => {
+    it('archiveTodo sets archived_at and hides from default listTodos', () => {
+      const a = db.createTodo({ title: 'A', quadrant: 1 })
+      const b = db.createTodo({ title: 'B', quadrant: 1 })
+      const archived = db.archiveTodo(a.id)
+      expect(archived.archivedAt).toBeTypeOf('number')
+      const list = db.listTodos({})
+      expect(list.map(t => t.id)).not.toContain(a.id)
+      expect(list.map(t => t.id)).toContain(b.id)
+    })
+
+    it('archived:true filter shows only archived', () => {
+      const a = db.createTodo({ title: 'A', quadrant: 1 })
+      db.createTodo({ title: 'B', quadrant: 1 })
+      db.archiveTodo(a.id)
+      const list = db.listTodos({ archived: true })
+      expect(list.map(t => t.id)).toEqual([a.id])
+    })
+
+    it('archived:"all" shows both', () => {
+      const a = db.createTodo({ title: 'A', quadrant: 1 })
+      const b = db.createTodo({ title: 'B', quadrant: 1 })
+      db.archiveTodo(a.id)
+      const list = db.listTodos({ archived: 'all' })
+      expect(new Set(list.map(t => t.id))).toEqual(new Set([a.id, b.id]))
+    })
+
+    it('unarchiveTodo clears archived_at', () => {
+      const a = db.createTodo({ title: 'A', quadrant: 1 })
+      db.archiveTodo(a.id)
+      const restored = db.unarchiveTodo(a.id)
+      expect(restored.archivedAt).toBeNull()
+      expect(db.listTodos({}).map(t => t.id)).toContain(a.id)
+    })
+
+    it('archiveTodo on non-existent throws todo_not_found', () => {
+      expect(() => db.archiveTodo('does-not-exist')).toThrow(/todo_not_found/)
+    })
+  })
+
+  describe('describeMergeTodos / mergeTodos', () => {
+    it('describeMergeTodos counts all affected rows without mutating', () => {
+      const target = db.createTodo({ title: 'Target', quadrant: 1 })
+      const src = db.createTodo({ title: 'Source', quadrant: 1 })
+      const child = db.createTodo({ title: 'Child', quadrant: 1, parentId: src.id })
+      db.addComment(src.id, 'a note')
+      db.addComment(src.id, 'another note')
+      const preview = db.describeMergeTodos({ targetId: target.id, sourceIds: [src.id] })
+      expect(preview.movedComments).toBe(2)
+      expect(preview.movedChildren).toBe(1)
+      expect(preview.proposedTitle).toBe('Target')
+      // 源仍在
+      expect(db.getTodo(src.id)?.id).toBe(src.id)
+      expect(db.getTodo(child.id)?.parentId).toBe(src.id)
+    })
+
+    it('mergeTodos moves children, comments, and deletes sources', () => {
+      const target = db.createTodo({ title: 'T', quadrant: 1 })
+      const s1 = db.createTodo({ title: 'S1', quadrant: 1 })
+      const s2 = db.createTodo({ title: 'S2', quadrant: 1 })
+      const c1 = db.createTodo({ title: 'c1', quadrant: 1, parentId: s1.id })
+      db.addComment(s1.id, 'note-on-s1')
+      db.addComment(s2.id, 'note-on-s2')
+      const res = db.mergeTodos({ targetId: target.id, sourceIds: [s1.id, s2.id] })
+      expect(res.ok).toBe(true)
+      expect(db.getTodo(s1.id)).toBeNull()
+      expect(db.getTodo(s2.id)).toBeNull()
+      // 子节点迁到 target
+      expect(db.getTodo(c1.id)?.parentId).toBe(target.id)
+      // 评论迁到 target
+      expect(db.listComments(target.id).length).toBe(2)
+    })
+
+    it('mergeTodos concat strategy composes title', () => {
+      const target = db.createTodo({ title: 'T', quadrant: 1 })
+      const src = db.createTodo({ title: 'S', quadrant: 1 })
+      const res = db.mergeTodos({ targetId: target.id, sourceIds: [src.id], titleStrategy: 'concat' })
+      expect(res.proposedTitle).toBe('T + S')
+      expect(db.getTodo(target.id)?.title).toBe('T + S')
+    })
+
+    it('mergeTodos manual strategy uses given title', () => {
+      const target = db.createTodo({ title: 'T', quadrant: 1 })
+      const src = db.createTodo({ title: 'S', quadrant: 1 })
+      db.mergeTodos({ targetId: target.id, sourceIds: [src.id], titleStrategy: 'manual', manualTitle: 'Unified' })
+      expect(db.getTodo(target.id)?.title).toBe('Unified')
+    })
+
+    it('mergeTodos manual without manualTitle throws', () => {
+      const target = db.createTodo({ title: 'T', quadrant: 1 })
+      const src = db.createTodo({ title: 'S', quadrant: 1 })
+      expect(() => db.mergeTodos({ targetId: target.id, sourceIds: [src.id], titleStrategy: 'manual' }))
+        .toThrow(/manual_title_required/)
+    })
+
+    it('mergeTodos refuses missing target or source', () => {
+      const src = db.createTodo({ title: 'S', quadrant: 1 })
+      expect(() => db.mergeTodos({ targetId: 'nope', sourceIds: [src.id] })).toThrow(/target_not_found/)
+      const target = db.createTodo({ title: 'T', quadrant: 1 })
+      expect(() => db.mergeTodos({ targetId: target.id, sourceIds: ['nope'] })).toThrow(/source_not_found/)
+    })
+
+    it('mergeTodos ignores duplicate and self-target source ids', () => {
+      const target = db.createTodo({ title: 'T', quadrant: 1 })
+      const src = db.createTodo({ title: 'S', quadrant: 1 })
+      db.mergeTodos({ targetId: target.id, sourceIds: [src.id, src.id, target.id] })
+      // src 被删、target 还在
+      expect(db.getTodo(src.id)).toBeNull()
+      expect(db.getTodo(target.id)?.id).toBe(target.id)
+    })
+
+    it('mergeTodos is transactional: a bad source does not partially merge earlier ones', () => {
+      const target = db.createTodo({ title: 'T', quadrant: 1 })
+      const s1 = db.createTodo({ title: 'S1', quadrant: 1 })
+      db.addComment(s1.id, 'should stay on s1')
+      expect(() => db.mergeTodos({ targetId: target.id, sourceIds: [s1.id, 'nope'] })).toThrow()
+      // describeMergeTodos 在事务外抛错，所以 s1 应完整存在
+      expect(db.getTodo(s1.id)?.id).toBe(s1.id)
+      expect(db.listComments(s1.id).length).toBe(1)
+    })
+  })
+
+  describe('bulkUpdateTodos', () => {
+    it('archives multiple todos in one pass', () => {
+      const a = db.createTodo({ title: 'A', quadrant: 1 })
+      const b = db.createTodo({ title: 'B', quadrant: 1 })
+      const c = db.createTodo({ title: 'C', quadrant: 1 })
+      const res = db.bulkUpdateTodos({ ids: [a.id, b.id], patch: { archived: true } })
+      expect(res.count).toBe(2)
+      expect(db.getTodo(a.id)?.archivedAt).toBeTypeOf('number')
+      expect(db.getTodo(b.id)?.archivedAt).toBeTypeOf('number')
+      expect(db.getTodo(c.id)?.archivedAt).toBeNull()
+    })
+
+    it('marks status=done and stamps completedAt', () => {
+      const a = db.createTodo({ title: 'A', quadrant: 1 })
+      db.bulkUpdateTodos({ ids: [a.id], patch: { status: 'done' } })
+      const updated = db.getTodo(a.id)
+      expect(updated.status).toBe('done')
+      expect(updated.completedAt).toBeTypeOf('number')
+    })
+
+    it('skips missing ids silently', () => {
+      const a = db.createTodo({ title: 'A', quadrant: 1 })
+      const res = db.bulkUpdateTodos({ ids: [a.id, 'nope'], patch: { quadrant: 2 } })
+      expect(res.count).toBe(1)
+      expect(res.changedIds).toEqual([a.id])
+    })
+
+    it('rejects empty patch / empty ids', () => {
+      expect(() => db.bulkUpdateTodos({ ids: [], patch: { quadrant: 1 } })).toThrow(/ids_required/)
+      const a = db.createTodo({ title: 'A', quadrant: 1 })
+      expect(() => db.bulkUpdateTodos({ ids: [a.id], patch: {} })).toThrow(/patch_empty/)
+    })
+  })
 })
