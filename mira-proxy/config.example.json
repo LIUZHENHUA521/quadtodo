@@ -1,0 +1,49 @@
+{
+	"provider": "mira",
+	"proxy_port": 8642,
+	"providers": {
+		"mira": {
+			"mira_session": "YOUR_MIRA_SESSION_COOKIE_HERE",
+			"mira_base_url": "https://mira.byteintl.net",
+			"default_model": "re-o-46",
+			"model_map": {
+				"claude-sonnet-4-20250514": "re-o-46",
+				"claude-3-5-sonnet-20241022": "re-o-46",
+				"gpt-4o": "re-o-46"
+			},
+			"completion_defaults": {
+				"messageType": 1,
+				"summaryAgent": "re-o-46",
+				"dataSources": ["manus"],
+				"comprehensive": 1,
+				"config": {
+					"online": true,
+					"mode": "quick",
+					"model": "re-o-46",
+					"tool_list": []
+				}
+			},
+			"anthropic_tool_map": {
+				"Bash": { "name": "bash", "scope": "GLOBAL" },
+				"Read": { "name": "read_file", "scope": "GLOBAL" },
+				"Write": { "name": "write_file", "scope": "GLOBAL" },
+				"Edit": { "name": "edit_file", "scope": "GLOBAL" },
+				"Glob": { "name": "glob", "scope": "GLOBAL" },
+				"Grep": { "name": "grep", "scope": "GLOBAL" }
+			},
+			"log_requests": true
+		},
+		"trae-cn": {
+			"trae_base_url": "https://trae.bytedance.com",
+			"trae_session": "YOUR_TRAE_SESSION_OR_ACCESS_TOKEN",
+			"default_model": "deepseek_r1",
+			"trae_models": ["deepseek_r1", "doubao_1_5_pro", "doubao_1_5_thinking"],
+			"model_map": {
+				"claude-sonnet-4-20250514": "doubao_1_5_thinking",
+				"claude-3-5-sonnet-20241022": "doubao_1_5_pro",
+				"gpt-4o": "deepseek_r1"
+			},
+			"log_requests": true
+		}
+	}
+}

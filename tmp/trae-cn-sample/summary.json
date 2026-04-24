@@ -1,0 +1,72 @@
+{
+  "latestSessionDir": "/Users/bytedance/Library/Application Support/Trae CN/logs/20260422T195131",
+  "filesScanned": 48,
+  "createSession": {
+    "observedInternalEvent": true,
+    "internalEventCount": 12,
+    "likelyExternalUrl": null,
+    "note": "Observed `chat create_session` only as local transport events; no external HTTP create-session URL found in logs."
+  },
+  "sendMessage": {
+    "observedInternalEvent": false,
+    "likelyExternalUrl": "https://copilot-cn.bytedance.net/api/ide/v1/super_completion_query",
+    "allCandidateUrls": [
+      "https://copilot-cn.bytedance.net/api/ide/v1/super_completion_query"
+    ]
+  },
+  "authHeaders": {
+    "source": "completion-log",
+    "headers": {
+      "X-App-Id": "6eefa01c-1036-4c7e-9ca5-d891f63bfcd8",
+      "Authorization": "Cloud-ID...<redacted>...mLqNGw",
+      "X-Device-Cpu": "Apple",
+      "X-Device-Id": "1220927890917370",
+      "X-Machine-Id": "6c71dbae84b078a1e0c883348cd7da01c653eaf50a80f84e6b06c17103187bb4",
+      "X-Device-Brand": "Mac15%2C6",
+      "X-Device-Type": "mac",
+      "X-Os-Version": "macOS%2015.6.1",
+      "x-ide-version-code": "20260212"
+    },
+    "headerKeys": [
+      "X-App-Id",
+      "Authorization",
+      "X-Device-Cpu",
+      "X-Device-Id",
+      "X-Machine-Id",
+      "X-Device-Brand",
+      "X-Device-Type",
+      "X-Os-Version",
+      "x-ide-version-code"
+    ],
+    "redacted": true
+  },
+  "response": {
+    "observedResponseHeaders": true,
+    "observedSSEHint": true,
+    "note": "Current Trae CN logs expose request URLs, headers, methods and response headers/status well; raw response body/SSE chunk payloads are not present in the scanned logs."
+  },
+  "completionContext": {
+    "triggerCount": 9,
+    "completeCount": 8,
+    "latestTrigger": {
+      "filePath": "/Users/bytedance/Library/Application Support/Trae CN/logs/20260422T195131/window2/renderer.log",
+      "type": "trigger",
+      "chatModel": "gpt-5.4",
+      "sessionId": "69e9c4808543205622340471",
+      "messageId": "69e9c8fd51b139e4faef530c",
+      "triggerMode": "hotkey",
+      "line": "2026-04-23T15:23:41.747+08:00 [info] [ai-chat][ai-chat][☕] event:  code_comp_trigger ; params:  {\"chat_model\":\"gpt-5.4\",\"chat_type\":\"builder\",\"session_id\":\"69e9c4808543205622340471\",\"message_id\":\"69e9c8fd51b139e4faef530c\",\"programming_language\":\"javascript\",\"agent_name\":\"Builder\",\"agent_id\":\"builder\",\"agent_type\":\"builder\",\"agent_source\":\"builtin\",\"is_auto_mode\":0,\"is_max_mode\":0,\"is_custom_model\":0,\"model_source\":1,\"is_plan_mode\":0,\"is_spec_mode\":0,\"is_privacy_mode\":0,\"is_flow_mode\":0,\"is_auto_fix\":1,\"is_auto_accept\":0,\"review_mode\":\"default\",\"is_auto_run\":0,\"task_notif_enable\":1,\"user_rules_enable\":0,\"project_rules_enable\":0,\"interject_query_count\":0,\"workspace_folders\":1,\"has_context\":0,\"has_workspace\":0,\"has_lint_error\":0,\"has_folder\":0,\"code_count\":0,\"file_count\":0,\"folder_count\":0,\"code_selection_count\":0,\"terminal_selection_count\":0,\"doc_count\":0,\"builtin_docsets_count\":0,\"custom_url_docsets_count\":0,\"local_files_docsets_count\":0,\"web_count\":0,\"has_web_search\":0,\"log_tag_count\":0,\"log_item_count\":0,\"web_element_count\":0,\"figma_element_count\":0,\"manual_rule_count\":0,\"auto_rule_count\":0,\"agents_md_count\":0,\"claude_md_count\":0,\"global_skill_count\":0,\"project_skill_count\":0,\"agents_skills_global_count\":0,\"agents_skills_project_count\":0,\"problem_item_count\":0,\"problem_file_count\":0,\"image_count\":0,\"asr_times\":0,\"trigger_mode\":\"hotkey\",\"is_opt\":0,\"insert_query_count\":0,\"tasks_list_enable\":1}"
+    },
+    "latestComplete": {
+      "filePath": "/Users/bytedance/Library/Application Support/Trae CN/logs/20260422T195131/window2/renderer.log",
+      "type": "complete",
+      "chatModel": "gpt-5.4",
+      "sessionId": "69e9c4808543205622340471",
+      "messageId": "69e9c61051b139e4faef530b",
+      "requestRoundCount": 72,
+      "toolCount": 72,
+      "duration": 707527,
+      "line": "2026-04-23T15:22:59.840+08:00 [info] [ai-chat][ai-chat][☕] event:  code_comp_complete_shown ; params:  {\"chat_model\":\"gpt-5.4\",\"chat_type\":\"builder\",\"session_id\":\"69e9c4808543205622340471\",\"message_id\":\"69e9c61051b139e4faef530b\",\"agent_name\":\"Builder\",\"agent_id\":\"builder\",\"agent_type\":\"builder\",\"agent_source\":\"builtin\",\"is_auto_mode\":0,\"is_max_mode\":0,\"shallow_memento_type\":\"disabled_by_remote\",\"is_custom_model\":0,\"model_source\":1,\"is_plan_mode\":0,\"is_spec_mode\":0,\"is_privacy_mode\":0,\"is_flow_mode\":0,\"is_auto_fix\":1,\"is_auto_accept\":0,\"review_mode\":\"default\",\"is_auto_run\":0,\"task_notif_enable\":1,\"user_rules_enable\":0,\"project_rules_enable\":0,\"interject_query_count\":0,\"is_reasoning_complete_shown\":1,\"is_reasoning_shown\":1,\"request_round_count\":72,\"tool_count\":72,\"duration\":707527,\"is_interrupted\":0,\"is_sound_notif\":1,\"sound_volume\":100}"
+    }
+  }
+}
