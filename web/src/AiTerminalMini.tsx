@@ -711,13 +711,18 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         borderRadius: 10, overflow: 'hidden', background: '#1a1a2e',
         display: 'flex', flexDirection: 'column' as const, width: '100%',
         flex: 1, minHeight: 0, height: '100%',
-        border: sessionStatus === 'ai_pending' ? '2px solid #ff4d4f' : '1px solid #303050',
-        boxShadow: '0 10px 24px rgba(8, 13, 30, 0.16)',
+        border: '1px solid #303050',
+        // 用 box-shadow 表达 pending 高亮，避免改 border 宽度引起 1px 布局抖动
+        boxShadow: sessionStatus === 'ai_pending'
+          ? '0 0 0 1px #ff4d4f, 0 10px 24px rgba(8, 13, 30, 0.16)'
+          : '0 10px 24px rgba(8, 13, 30, 0.16)',
       } : {
         borderRadius: 10, overflow: 'hidden', background: '#1a1a2e',
         display: 'flex', flexDirection: 'column' as const, width: '100%',
-        border: sessionStatus === 'ai_pending' ? '2px solid #ff4d4f' : '1px solid #303050',
-        boxShadow: '0 10px 24px rgba(8, 13, 30, 0.16)',
+        border: '1px solid #303050',
+        boxShadow: sessionStatus === 'ai_pending'
+          ? '0 0 0 1px #ff4d4f, 0 10px 24px rgba(8, 13, 30, 0.16)'
+          : '0 10px 24px rgba(8, 13, 30, 0.16)',
       }}
     >
       {/* 工具栏 */}
@@ -734,9 +739,6 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {todoId.slice(0, 40)}
         </span>
-        {sessionStatus === 'ai_pending' && (
-          <Tag color="error" style={{ fontSize: 10, lineHeight: '16px', margin: 0, animation: 'blink 1s infinite' }}>待确认</Tag>
-        )}
         {sessionStatus === 'ai_done' && (
           <Tag color="warning" style={{ fontSize: 10, lineHeight: '16px', margin: 0 }}>请验收</Tag>
         )}

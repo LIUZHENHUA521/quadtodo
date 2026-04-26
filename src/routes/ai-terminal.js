@@ -478,6 +478,12 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     pty.resize(session.sessionId, cols, rows)
   }
 
+  // \r=Enter \n=LF \x03=Ctrl+C \x04=Ctrl+D —— 这些才会真正让 Claude/Codex 的 confirm 提示推进
+  function isPendingClearingInput(data) {
+    if (typeof data !== 'string' || !data) return false
+    return /[\r\n\x03\x04]/.test(data)
+  }
+
   function clearPendingConfirm(session) {
     if (!session || session.status !== 'pending_confirm') return
     session.status = 'running'
@@ -506,7 +512,12 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
   function handleBrowserMessage(sessionId, msg, ws) {
     if (msg.type === 'input') {
       const session = sessions.get(sessionId)
-      clearPendingConfirm(session)
+      // 只有"决定性"按键才视为对 confirm 提示的真实回应：Enter / Ctrl+C / Ctrl+D。
+      // 普通可见字符（'a'、'y' 等）不会让 Claude TUI 推进，提示原样保留 —— 若此时清掉
+      // pending 状态，紧跟的回显输出会再次匹配 confirm 关键词，把状态翻回 pending_confirm。
+      // 浏览器侧每次按键都收到 pending_cleared → pending_confirm 一对消息，导致前端 border
+      // 在 1px ↔ 2px 之间反复，肉眼上就是"打字时终端布局抖动"。
+      if (isPendingClearingInput(msg.data)) clearPendingConfirm(session)
       pty.write(sessionId, msg.data)
     } else if (msg.type === 'resize') {
       const cols = Number(msg.cols)

@@ -468,6 +468,41 @@ describe('routes/ai-terminal', () => {
     expect(pendingEvents.length).toBe(2)
   })
 
+  it('non-decisive keystrokes do not clear pending_confirm (avoid border-width jitter on every keypress)', async () => {
+    ctx = makeApp({
+      notifier: {
+        detectConfirmMatch: () => 'Press Enter to confirm',
+        detectKeywordMatch: () => null,
+        canNotifyPendingConfirm: () => false,
+        notify: vi.fn(),
+      },
+      getWebhookConfig: () => ({ enabled: true }),
+    })
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+
+    const sent = []
+    const ws = { readyState: 1, OPEN: 1, send: (d) => sent.push(JSON.parse(d)) }
+    ctx.ait.addBrowser(body.sessionId, ws)
+
+    // 触发 pending_confirm
+    ctx.pty.emit('output', { sessionId: body.sessionId, data: 'Press Enter to confirm' })
+    expect(ctx.ait.sessions.get(body.sessionId).status).toBe('pending_confirm')
+
+    // 普通可见字符——不应清掉 pending（之前的实现会清掉，前端 border 抖动）
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'input', data: 'a' })
+    expect(ctx.ait.sessions.get(body.sessionId).status).toBe('pending_confirm')
+    expect(sent.some(m => m.type === 'pending_cleared')).toBe(false)
+    // 但按键仍会原样写入 PTY，让 TUI 看到字符
+    expect(ctx.pty.writes.some(w => w.id === body.sessionId && w.data === 'a')).toBe(true)
+
+    // Enter——决定性按键，应清掉 pending
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'input', data: '\r' })
+    expect(ctx.ait.sessions.get(body.sessionId).status).toBe('running')
+    expect(sent.some(m => m.type === 'pending_cleared')).toBe(true)
+  })
+
   describe('dashboard routes', () => {
     it('GET /sessions lists active sessions with todo metadata', async () => {
       const todo = ctx.db.createTodo({ title: 'Hello', quadrant: 2 })

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
-import { readdirSync, statSync, existsSync } from 'node:fs'
+import { readdirSync, statSync, existsSync, watch as fsWatch, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -31,8 +31,37 @@ function buildPermissionArgs(tool, mode) {
 
 const CLAUDE_SESSION_RE = /claude\s+--resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
 const CODEX_SESSION_RE = /codex\s+resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
+const CODEX_ROLLOUT_FILE_RE = /^rollout-.*-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/
 const MAX_LOG_BYTES = 512 * 1024
 const CODEX_SESSIONS_DIR = join(homedir(), '.codex', 'sessions')
+
+function codexTodayDir() {
+  const now = new Date()
+  return join(
+    CODEX_SESSIONS_DIR,
+    String(now.getFullYear()),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  )
+}
+
+// codex 0.124.0 无 --session-id / --rollout-path 预置能力；首个可靠的 session id 来源是
+// ~/.codex/sessions/<yyyy>/<mm>/<dd>/rollout-*-<uuid>.jsonl 文件出现的那一刻。
+// fs.watch 的事件延迟通常 <50ms，远优于 400ms 轮询；fs.watch 在部分 FS 不可靠，所以
+// 三路并行（fs.watch / 400ms 轮询 / stdout 正则），setNativeId 里处理去重与相互清理。
+function defaultCodexWatcherFactory(_spawnTime, onHit) {
+  const dayDir = codexTodayDir()
+  try { mkdirSync(dayDir, { recursive: true }) } catch { /* ignore */ }
+  try {
+    return fsWatch(dayDir, { persistent: false }, (_eventType, filename) => {
+      if (!filename) return
+      const m = filename.match(CODEX_ROLLOUT_FILE_RE)
+      if (m) onHit(m[1])
+    })
+  } catch {
+    return null
+  }
+}
 
 function detectCodexSessionFromFs(afterMs) {
   const now = new Date()
@@ -68,13 +97,24 @@ function defaultPtyFactory() {
 }
 
 export class PtyManager extends EventEmitter {
-  constructor({ tools, ptyFactory, promptDelayMs = 2000 } = {}) {
+  constructor({ tools, ptyFactory, promptDelayMs = 2000, codexWatcherFactory } = {}) {
     super()
     if (!tools) throw new Error('PtyManager: tools required')
     this.tools = tools
     this.ptyFactory = ptyFactory || defaultPtyFactory()
+    this.codexWatcherFactory = codexWatcherFactory || defaultCodexWatcherFactory
     this.promptDelayMs = promptDelayMs
     this.sessions = new Map()
+  }
+
+  // 任何一条探测路径命中 id，统一走这里：去重 + 清理其余两路 + emit。
+  _setNativeId(session, nativeId) {
+    if (!nativeId || session.nativeId === nativeId) return false
+    session.nativeId = nativeId
+    if (session.detectTimer) { clearInterval(session.detectTimer); session.detectTimer = null }
+    if (session.fsWatcher) { try { session.fsWatcher.close() } catch { /* ignore */ } session.fsWatcher = null }
+    this.emit('native-session', { sessionId: session.sessionId, nativeId })
+    return true
   }
 
   has(sessionId) {
@@ -149,6 +189,7 @@ export class PtyManager extends EventEmitter {
       nativeId: resumeNativeId || presetClaudeId || null,
       stopped: false,
       detectTimer: null,
+      fsWatcher: null,
     }
     this.sessions.set(sessionId, session)
 
@@ -157,9 +198,18 @@ export class PtyManager extends EventEmitter {
       this.emit('native-session', { sessionId, nativeId: presetClaudeId })
     }
 
-    // Codex 新会话：无 --session-id 支持，继续靠 FS 兜底。400ms × 30 次（旧方案 2000ms × 15 次）。
+    // Codex 新会话：codex CLI 无 --session-id / --rollout-path 预置能力。
+    // 三路并行探测 native id，首个命中即停（_setNativeId 内部去重 + 清理其余）：
+    //   1) fs.watch 当日 rollout 目录 —— 首选，通常 <50ms
+    //   2) 400ms 轮询 —— 兜底 fs.watch 不可靠的 FS（Docker volume / SMB 等）
+    //   3) PTY stdout 正则 —— 再兜底，见下方 proc.onData
     if (!resumeNativeId && tool === 'codex') {
       const spawnTime = Date.now() - 1000
+
+      session.fsWatcher = this.codexWatcherFactory(spawnTime, (id) => {
+        this._setNativeId(session, id)
+      })
+
       let detectAttempts = 0
       session.detectTimer = setInterval(() => {
         detectAttempts++
@@ -170,10 +220,7 @@ export class PtyManager extends EventEmitter {
         }
         const id = detectCodexSessionFromFs(spawnTime)
         if (id) {
-          clearInterval(session.detectTimer)
-          session.detectTimer = null
-          session.nativeId = id
-          this.emit('native-session', { sessionId, nativeId: id })
+          this._setNativeId(session, id)
         } else if (detectAttempts >= 30) {
           clearInterval(session.detectTimer)
           session.detectTimer = null
@@ -197,14 +244,7 @@ export class PtyManager extends EventEmitter {
         .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
       const sessionRe = tool === 'codex' ? CODEX_SESSION_RE : CLAUDE_SESSION_RE
       const m = stripped.match(sessionRe)
-      if (m && session.nativeId !== m[1]) {
-        session.nativeId = m[1]
-        if (session.detectTimer) {
-          clearInterval(session.detectTimer)
-          session.detectTimer = null
-        }
-        this.emit('native-session', { sessionId, nativeId: m[1] })
-      }
+      if (m) this._setNativeId(session, m[1])
       this.emit('output', { sessionId, data })
     })
 
@@ -221,6 +261,7 @@ export class PtyManager extends EventEmitter {
     proc.onExit(({ exitCode }) => {
       if (session.detectTimer) clearInterval(session.detectTimer)
       if (session.promptTimer) clearTimeout(session.promptTimer)
+      if (session.fsWatcher) { try { session.fsWatcher.close() } catch { /* ignore */ } session.fsWatcher = null }
       const fullLog = session.fullLog.join('')
       this.sessions.delete(sessionId)
       this.emit('done', {

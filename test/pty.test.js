@@ -138,6 +138,59 @@ describe('PtyManager', () => {
     ])
   })
 
+  it('fs.watch hit emits native-session and closes the watcher', () => {
+    const factory = makeFakePty()
+    let captured = null
+    const closeSpy = vi.fn()
+    const codexWatcherFactory = (_spawnTime, onHit) => {
+      captured = { onHit }
+      return { close: closeSpy }
+    }
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory, codexWatcherFactory })
+    const events = []
+    pm.on('native-session', (ev) => events.push(ev))
+    pm.start({ sessionId: 's1', tool: 'codex', prompt: null, cwd: '/tmp' })
+    expect(captured).not.toBeNull()
+    captured.onHit('abcdef12-3456-7890-abcd-ef1234567890')
+    expect(events).toEqual([
+      { sessionId: 's1', nativeId: 'abcdef12-3456-7890-abcd-ef1234567890' },
+    ])
+    expect(closeSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('fs.watch hit first → stdout regex with same id does not emit duplicate', () => {
+    const factory = makeFakePty()
+    let captured = null
+    const codexWatcherFactory = (_spawnTime, onHit) => {
+      captured = { onHit }
+      return { close: vi.fn() }
+    }
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory, codexWatcherFactory })
+    const events = []
+    pm.on('native-session', (ev) => events.push(ev))
+    pm.start({ sessionId: 's1', tool: 'codex', prompt: null, cwd: '/tmp' })
+    captured.onHit('abcdef12-3456-7890-abcd-ef1234567890')
+    factory.created[0]._emitData(
+      'codex resume abcdef12-3456-7890-abcd-ef1234567890 shown later',
+    )
+    expect(events).toHaveLength(1)
+  })
+
+  it('fs.watch factory returning null still allows stdout regex to emit', () => {
+    const factory = makeFakePty()
+    const codexWatcherFactory = () => null // simulate fs.watch failure (unsupported FS, ENOENT, etc.)
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory, codexWatcherFactory })
+    const events = []
+    pm.on('native-session', (ev) => events.push(ev))
+    pm.start({ sessionId: 's1', tool: 'codex', prompt: null, cwd: '/tmp' })
+    factory.created[0]._emitData(
+      'codex resume abcdef12-3456-7890-abcd-ef1234567890',
+    )
+    expect(events).toEqual([
+      { sessionId: 's1', nativeId: 'abcdef12-3456-7890-abcd-ef1234567890' },
+    ])
+  })
+
   it('emits done event on exit with full log', () => {
     const factory = makeFakePty()
     const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
