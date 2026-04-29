@@ -134,6 +134,39 @@
     grid-template-columns: 1fr; /* 手机上并排无意义，强制堆叠 */
   }
 
+  /* ── AI 终端工具栏：移动端可点击修复 ──
+     桌面下工具栏图标按钮 inline 写死了 20×20，手机上根本点不准（尤其右侧的全屏/关闭）。
+     这里只在 ≤768px 生效：允许工具栏换行 + 把按钮和可点击 Tag 撑到 ≥36×36 触摸目标。
+     注意：仅改工具栏区域，xterm 容器本身不动（避免 FitAddon 与 PTY cols/rows 错位）。 */
+  .xterm-terminal-toolbar {
+    flex-wrap: wrap !important;
+    row-gap: 6px !important;
+    column-gap: 8px !important;
+    padding: 8px !important;
+  }
+  /* todoId 标题不要独占一整行，留出按钮位 */
+  .xterm-terminal-toolbar-title {
+    flex: 0 1 auto !important;
+    max-width: 40vw;
+    min-width: 0;
+  }
+  /* 图标按钮统一撑到 36×36，覆盖 inline 的 width/height/minWidth:20 */
+  .xterm-terminal-toolbar .ant-btn {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    font-size: 14px !important;
+  }
+  /* 可点击的 Tag（跟随、自动模式、主题）也加大触摸面 */
+  .xterm-terminal-toolbar .ant-tag {
+    min-height: 28px;
+    padding: 4px 8px !important;
+    line-height: 18px !important;
+    display: inline-flex;
+    align-items: center;
+    margin: 0;
+  }
+
   /* ── 顶栏菜单按钮的汉堡 Drawer：紧凑垂直列表 ── */
   .mobile-menu-actions {
     display: flex;
@@ -197,6 +230,60 @@
   .todo-history-title {
     min-width: 0;
     padding-top: 0;
+  }
+}
+
+/* ── AI 终端方向键浮层 ──
+   桌面默认隐藏；≤768px 显示。+ 字形 D-pad，半透明，绝对定位在 wrapper 右下角。
+   wrapper 在嵌入模式下是 position: relative（borderRadius/overflow:hidden）；
+   在全屏模式下是 position: fixed —— 两种情况下 position: absolute 都会相对 wrapper。 */
+.ai-term-dpad {
+  display: none;
+  position: absolute;
+  right: 12px;
+  bottom: 14px;
+  z-index: 5;
+  grid-template-columns: 40px 40px 40px;
+  grid-template-rows: 40px 40px 40px;
+  gap: 4px;
+  pointer-events: none; /* 容器本身不拦事件，只让按钮接收 */
+}
+.ai-term-dpad .dpad-btn {
+  pointer-events: auto;
+  background: rgba(22, 33, 62, 0.78);
+  border: 1px solid rgba(160, 175, 220, 0.18);
+  color: #d6e0f5;
+  border-radius: 8px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+  transition: background 0.1s;
+}
+.ai-term-dpad .dpad-btn:active {
+  background: rgba(86, 156, 214, 0.55);
+}
+.ai-term-dpad .dpad-up    { grid-area: 1 / 2; }
+.ai-term-dpad .dpad-left  { grid-area: 2 / 1; }
+.ai-term-dpad .dpad-right { grid-area: 2 / 3; }
+.ai-term-dpad .dpad-down  { grid-area: 3 / 2; }
+
+/* 工具栏的 D-pad 显示/隐藏 toggle 按钮：桌面下不需要，移动端才显示 */
+.dpad-toggle-btn {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .ai-term-dpad {
+    display: grid;
+  }
+  .dpad-toggle-btn {
+    display: inline-flex !important;
   }
 }
 

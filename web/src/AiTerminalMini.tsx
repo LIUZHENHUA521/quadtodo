@@ -4,9 +4,10 @@
 
 import React, { useEffect, useRef, useCallback, useState } from 'react'
 import { Button, Tooltip, Tag, Dropdown, Modal, ColorPicker, Input, Divider, message } from 'antd'
-import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, CloseOutlined, VerticalAlignBottomOutlined, LockOutlined, UnlockOutlined, BgColorsOutlined, DeleteOutlined } from '@ant-design/icons'
+import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, CloseOutlined, VerticalAlignBottomOutlined, LockOutlined, UnlockOutlined, BgColorsOutlined, DeleteOutlined, UpOutlined, LeftOutlined, RightOutlined, DragOutlined } from '@ant-design/icons'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { CanvasAddon } from '@xterm/addon-canvas'
 import '@xterm/xterm/css/xterm.css'
 import { getTerminalWsUrl, startAiExec, stopAiExec, openTraeCN, TodoStatus, ResumeSessionInput, EditorKind } from './api'
 import { useTerminalTheme } from './hooks/useTerminalTheme'
@@ -56,6 +57,13 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   useEffect(() => { cwdRef.current = cwd ?? null }, [cwd])
   const wsRef = useRef<WebSocket | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
+  // 全屏 + 移动端软键盘：监听 visualViewport，让 fullscreen wrapper 仅覆盖可视区
+  // 而不是整个 layout viewport，否则键盘弹出后底部会被遮一半
+  const [vvSize, setVvSize] = useState<{ height: number; offsetTop: number } | null>(null)
+  // 移动端方向键浮层：手机软键盘没有 ↑↓←→，TUI / 命令历史用不了
+  const [dpadHidden, setDpadHidden] = useState<boolean>(() => {
+    try { return localStorage.getItem('quadtodo.dpadHidden') === '1' } catch { return false }
+  })
   const [sessionStatus, setSessionStatus] = useState<TodoStatus>(status)
   const [wsConnected, setWsConnected] = useState(false)
   const [sessionExpired, setSessionExpired] = useState(false)
@@ -216,6 +224,9 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(containerRef.current)
+    // Canvas 渲染器：移动端长 scrollback 滚动比默认 DOM 渲染器流畅得多。
+    // 装载失败也不影响核心功能，DOM 渲染会自动兜底。
+    try { term.loadAddon(new CanvasAddon()) } catch { /* 老浏览器回退 DOM */ }
     termRef.current = term
     fitRef.current = fit
 
@@ -604,6 +615,42 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     requestAnimationFrame(doFit)
   }, [fullscreen, height, doFit])
 
+  // 仅在全屏期间监听 visualViewport：键盘弹出/收起时同步压缩 wrapper 高度，
+  // 让终端可视区始终在键盘之上。非全屏不挂监听，避免无谓订阅。
+  // 注意：
+  //   1. 只听 'resize'，不听 'scroll' —— iOS Safari 在 xterm 内部滚动时也会 fire
+  //      vv.scroll，会把 setState 高频化并被误判成键盘变化。
+  //   2. 仅在 height 真的变化时才 setState（用 ref 缓存上次值），避免 React 频繁 render。
+  //   3. scrollToBottom 仅在键盘"首次弹出"时调一次，不要每次 resize 都调，
+  //      否则用户在键盘弹出后想往上翻历史会被打回底部。
+  useEffect(() => {
+    if (!fullscreen) {
+      setVvSize(null)
+      return
+    }
+    const vv = window.visualViewport
+    if (!vv) return
+    let lastH = -1
+    const update = () => {
+      const h = vv.height
+      if (Math.abs(h - lastH) < 1) return
+      const wasShorter = lastH > 0 && h < lastH - 50  // 高度骤降 → 键盘刚弹出
+      lastH = h
+      setVvSize({ height: h, offsetTop: vv.offsetTop })
+      if (wasShorter) {
+        const term = termRef.current
+        if (term) {
+          try { term.scrollToBottom() } catch { /* ignore */ }
+        }
+      }
+    }
+    update()
+    vv.addEventListener('resize', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+    }
+  }, [fullscreen])
+
   const handleStop = useCallback(async () => {
     await stopAiExec(sessionId)
   }, [sessionId])
@@ -629,6 +676,22 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
 
   const toggleFullscreen = useCallback(() => {
     setFullscreen(prev => !prev)
+  }, [])
+
+  // 方向键浮层：直接走和 term.onData 一样的 input 协议，发 ANSI 转义序列
+  const sendKey = useCallback((seq: string) => {
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'input', data: seq }))
+    }
+  }, [])
+
+  const toggleDpad = useCallback(() => {
+    setDpadHidden(prev => {
+      const next = !prev
+      try { localStorage.setItem('quadtodo.dpadHidden', next ? '1' : '0') } catch { /* ignore */ }
+      return next
+    })
   }, [])
 
   const onDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
@@ -705,7 +768,11 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     <div
       className="xterm-terminal-wrapper"
       style={fullscreen ? {
-        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        position: 'fixed',
+        top: vvSize?.offsetTop ?? 0,
+        left: 0, right: 0,
+        // 有 visualViewport 时用其高度（键盘弹出会缩小）；否则回退到 100dvh
+        height: vvSize ? vvSize.height : '100dvh',
         zIndex: 9999, background: '#1a1a2e', display: 'flex', flexDirection: 'column',
       } : fillHeight ? {
         borderRadius: 10, overflow: 'hidden', background: '#1a1a2e',
@@ -726,7 +793,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       }}
     >
       {/* 工具栏 */}
-      <div style={{
+      <div className="xterm-terminal-toolbar" style={{
         display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
         padding: '8px 10px', background: '#16213e', borderBottom: '1px solid #303050',
         fontSize: 11, color: '#888',
@@ -736,7 +803,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
           width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
           background: wsConnected ? '#52c41a' : '#ff4d4f',
         }} />
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span className="xterm-terminal-toolbar-title" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {todoId.slice(0, 40)}
         </span>
         {sessionStatus === 'ai_done' && (
@@ -915,6 +982,15 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             />
           </Tooltip>
         )}
+        <Tooltip title={dpadHidden ? '显示方向键' : '隐藏方向键'}>
+          <Button
+            className="dpad-toggle-btn"
+            type="text" size="small"
+            icon={<DragOutlined />}
+            style={{ color: dpadHidden ? '#666' : '#5b9bd5', fontSize: 12, width: 20, height: 20, minWidth: 20 }}
+            onClick={toggleDpad}
+          />
+        </Tooltip>
         <Tooltip title={fullscreen ? '退出全屏' : '全屏'}>
           <Button type="text" size="small"
             icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
@@ -933,7 +1009,12 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       {/* 终端 */}
       <div
         ref={containerRef}
-        onPointerDown={(e) => { e.stopPropagation(); focusTerm() }}
+        onPointerDown={(e) => {
+          e.stopPropagation()
+          // 仅鼠标按下立即聚焦；触摸交给浏览器的 click 抑制机制：
+          // 滑动滚动时浏览器不会 fire click → 不聚焦 → 不弹软键盘
+          if (e.pointerType === 'mouse') focusTerm()
+        }}
         onClick={focusTerm}
         onMouseDown={focusTerm}
         style={{
@@ -964,6 +1045,32 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       {fullscreen && (
         <div style={{ padding: '4px 8px', background: '#16213e', borderTop: '1px solid #303050', fontSize: 10, color: '#555', textAlign: 'center', flexShrink: 0 }}>
           按 ESC 或点击右上角退出全屏
+        </div>
+      )}
+      {/* 方向键浮层：仅移动端显示（CSS 控制），用户可通过工具栏的 DragOutlined 按钮收起 */}
+      {!dpadHidden && (
+        <div className="ai-term-dpad" aria-hidden="true">
+          {[
+            { cls: 'dpad-up', seq: '\x1b[A', label: '上', icon: <UpOutlined /> },
+            { cls: 'dpad-left', seq: '\x1b[D', label: '左', icon: <LeftOutlined /> },
+            { cls: 'dpad-right', seq: '\x1b[C', label: '右', icon: <RightOutlined /> },
+            { cls: 'dpad-down', seq: '\x1b[B', label: '下', icon: <DownOutlined /> },
+          ].map(b => (
+            <button
+              key={b.cls}
+              type="button"
+              className={`dpad-btn ${b.cls}`}
+              aria-label={b.label}
+              onPointerDown={(e) => {
+                // preventDefault 阻止按钮抢焦点（让 xterm 保持 focus），同时立即响应不等 click
+                e.preventDefault()
+                e.stopPropagation()
+                sendKey(b.seq)
+              }}
+            >
+              {b.icon}
+            </button>
+          ))}
         </div>
       )}
     </div>
