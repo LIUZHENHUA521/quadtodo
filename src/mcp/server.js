@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { registerReadTools } from './tools/read/index.js'
 import { registerWriteTools } from './tools/write/index.js'
 import { registerDestructiveTools } from './tools/destructive/index.js'
+import { registerOpenClawTools } from './tools/openclaw/index.js'
 import { createAuditLog } from './audit.js'
 import { createTranscriptScanner } from '../search/transcripts.js'
 
@@ -20,8 +21,15 @@ const SERVER_NAME = 'quadtodo'
  *   - searchService：createSearchService 返回
  *   - wikiDir：wiki .md 文件所在目录（用于 read_wiki）
  *   - getVersion()：可选，注入当前 quadtodo 版本
+ *   - aiTerminal：可选，{ spawnSession }，用于 start_ai_session
+ *   - openclaw：可选，OpenClaw bridge 句柄
+ *   - pending：可选，pending-question coordinator 句柄
+ *   - getConfig：可选，() => 当前配置快照
  */
-export function createMcpRouter({ db, searchService, wikiDir, rootDir, logDir, getVersion } = {}) {
+export function createMcpRouter({
+  db, searchService, wikiDir, rootDir, logDir, getVersion,
+  aiTerminal = null, openclaw = null, pending = null, getConfig = null,
+} = {}) {
   if (!db) throw new Error('db_required')
   if (!searchService) throw new Error('searchService_required')
 
@@ -36,6 +44,9 @@ export function createMcpRouter({ db, searchService, wikiDir, rootDir, logDir, g
   registerReadTools(server, { db, searchService, wikiDir, transcriptScanner })
   registerWriteTools(server, { db })
   registerDestructiveTools(server, { db, audit })
+  if (pending) {
+    registerOpenClawTools(server, { db, aiTerminal, openclaw, pending, getConfig })
+  }
 
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
   // 异步 connect；路由处理器会等这个 promise resolve 之后再调 handleRequest。

@@ -135,7 +135,7 @@ export class PtyManager extends EventEmitter {
     return out
   }
 
-  start({ sessionId, tool, prompt, cwd, resumeNativeId, permissionMode }) {
+  start({ sessionId, tool, prompt, cwd, resumeNativeId, permissionMode, extraEnv }) {
     const toolCfg = this.tools[tool]
     if (!toolCfg) throw new Error(`unknown tool: ${tool}`)
     const baseArgs = toolCfg.args || []
@@ -170,6 +170,7 @@ export class PtyManager extends EventEmitter {
           TERM: 'xterm-256color',
           TZ: process.env.TZ || 'America/Los_Angeles',
           FORCE_COLOR: '1',
+          ...(extraEnv && typeof extraEnv === 'object' ? extraEnv : {}),
         },
       })
     } catch (error) {

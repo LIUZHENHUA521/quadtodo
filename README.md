@@ -60,6 +60,12 @@ quadtodo mcp status    # 健康检查
 
 完整工具清单 + preview/confirm 安全模型 + ⌘K 面板说明：**[docs/MCP.md](docs/MCP.md)**。
 
+## 通过 OpenClaw 在微信里使用（双向）
+
+把 quadtodo 接到 [OpenClaw](https://openclaw.ai/) 的微信渠道，实现"在微信里跟 AI 助理说一句『帮我做：X』就自动建 todo + 启动 Claude Code，AI 卡到决策点又能在微信里推给你选"的工作流。
+
+详见 **[docs/OPENCLAW.md](docs/OPENCLAW.md)** —— 5 步启用清单 + P0 端到端验证表。
+
 ## 手机访问（Tailscale 私网）
 
 想在外面用手机继续看待办 / 接 AI 会话？详见 **[docs/MOBILE.md](docs/MOBILE.md)** —— 基于 Tailscale 私有 mesh VPN，不暴露公网，配置 5 分钟。

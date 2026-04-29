@@ -209,7 +209,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
   })
 
   // ─── 程序化 session 启动入口（供 orchestrator 等模块直接调用，跳过 HTTP） ───
-  function spawnSession({ todoId, prompt, tool, cwd, resumeNativeId, permissionMode, label }) {
+  function spawnSession({ todoId, prompt, tool, cwd, resumeNativeId, permissionMode, label, extraEnv, sessionId: externalSessionId }) {
     if (!todoId || typeof prompt !== 'string' || !tool) {
       const err = new Error('missing todoId, prompt, or tool'); err.code = 'bad_request'
       throw err
@@ -228,7 +228,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
       if (existing) return { sessionId: existing, reused: true }
     }
 
-    const sessionId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    const sessionId = externalSessionId || `ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
     const sessionCwd = resolveSessionCwd(cwd)
     const session = {
       sessionId,
@@ -276,6 +276,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
         cwd: sessionCwd,
         resumeNativeId: resumeNativeId || undefined,
         permissionMode: permissionMode || null,
+        extraEnv: extraEnv || undefined,
       })
     } catch (error) {
       sessions.delete(sessionId)

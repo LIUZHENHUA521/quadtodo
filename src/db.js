@@ -148,6 +148,22 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_todo ON pipeline_runs(todo_id);
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status);
+
+CREATE TABLE IF NOT EXISTS pending_questions (
+  ticket          TEXT PRIMARY KEY,
+  session_id      TEXT NOT NULL,
+  todo_id         TEXT,
+  question        TEXT NOT NULL,
+  options_json    TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'pending',
+  answer_text     TEXT,
+  chosen_index    INTEGER,
+  created_at      INTEGER NOT NULL,
+  answered_at     INTEGER,
+  timeout_ms      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pq_status_created ON pending_questions(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pq_session ON pending_questions(session_id);
 `
 
 const UNFINISHED = ['todo', 'ai_running', 'ai_pending', 'ai_done']
@@ -999,6 +1015,118 @@ export function openDb(file = ':memory:') {
     ptStmts.delete.run(id)
   }
 
+  // ─── pending_questions ──────────────────────────────────────────
+  // 配合 ask_user MCP 工具：AI 在 PTY 里发起问题时，写一行 pending；
+  // 用户在 OpenClaw（微信）回复后，通过 submit_user_reply 回填。
+  const pqStmts = {
+    insert: db.prepare(`
+      INSERT INTO pending_questions (
+        ticket, session_id, todo_id, question, options_json,
+        status, created_at, timeout_ms
+      ) VALUES (
+        @ticket, @session_id, @todo_id, @question, @options_json,
+        'pending', @created_at, @timeout_ms
+      )
+    `),
+    getByTicket: db.prepare(`SELECT * FROM pending_questions WHERE ticket = ?`),
+    listPending: db.prepare(`
+      SELECT * FROM pending_questions
+      WHERE status = 'pending'
+      ORDER BY created_at DESC
+    `),
+    listLatestPending: db.prepare(`
+      SELECT * FROM pending_questions
+      WHERE status = 'pending'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `),
+    setAnswered: db.prepare(`
+      UPDATE pending_questions
+      SET status = 'answered', answer_text = ?, chosen_index = ?, answered_at = ?
+      WHERE ticket = ? AND status = 'pending'
+    `),
+    setStatus: db.prepare(`
+      UPDATE pending_questions
+      SET status = ?, answered_at = ?
+      WHERE ticket = ? AND status = 'pending'
+    `),
+    sweepExpired: db.prepare(`
+      UPDATE pending_questions
+      SET status = 'timeout', answered_at = ?
+      WHERE status = 'pending' AND (created_at + timeout_ms) < ?
+    `),
+  }
+
+  function rowToPending(r) {
+    if (!r) return null
+    let options = []
+    try { options = JSON.parse(r.options_json) } catch {}
+    return {
+      ticket: r.ticket,
+      sessionId: r.session_id,
+      todoId: r.todo_id,
+      question: r.question,
+      options,
+      status: r.status,
+      answerText: r.answer_text,
+      chosenIndex: r.chosen_index,
+      createdAt: r.created_at,
+      answeredAt: r.answered_at,
+      timeoutMs: r.timeout_ms,
+    }
+  }
+
+  function createPendingQuestion({ ticket, sessionId, todoId, question, options, timeoutMs }) {
+    if (!ticket) throw new Error('ticket_required')
+    if (!sessionId) throw new Error('session_id_required')
+    if (!question) throw new Error('question_required')
+    if (!Array.isArray(options) || options.length === 0) throw new Error('options_required')
+    pqStmts.insert.run({
+      ticket,
+      session_id: sessionId,
+      todo_id: todoId || null,
+      question,
+      options_json: JSON.stringify(options),
+      created_at: Date.now(),
+      timeout_ms: Number(timeoutMs) || 600000,
+    })
+    return rowToPending(pqStmts.getByTicket.get(ticket))
+  }
+
+  function getPendingQuestion(ticket) {
+    return rowToPending(pqStmts.getByTicket.get(ticket))
+  }
+
+  function listPendingQuestions() {
+    return pqStmts.listPending.all().map(rowToPending)
+  }
+
+  function getLatestPendingQuestion() {
+    return rowToPending(pqStmts.listLatestPending.get())
+  }
+
+  function answerPendingQuestion(ticket, { answerText, chosenIndex }) {
+    const r = pqStmts.setAnswered.run(
+      answerText ?? null,
+      Number.isInteger(chosenIndex) ? chosenIndex : null,
+      Date.now(),
+      ticket,
+    )
+    if (r.changes === 0) return null
+    return rowToPending(pqStmts.getByTicket.get(ticket))
+  }
+
+  function setPendingStatus(ticket, status) {
+    if (!['timeout', 'cancelled'].includes(status)) throw new Error('invalid_status')
+    pqStmts.setStatus.run(status, Date.now(), ticket)
+    return rowToPending(pqStmts.getByTicket.get(ticket))
+  }
+
+  function sweepExpiredPendingQuestions() {
+    const r = pqStmts.sweepExpired.run(Date.now(), Date.now())
+    return r.changes
+  }
+
   function seedBuiltinTemplatesIfEmpty() {
     if (ptStmts.countAll.get().n > 0) return
     const now = Date.now()
@@ -1581,6 +1709,14 @@ export function openDb(file = ':memory:') {
     getPipelineRun,
     listActivePipelineRuns,
     findActivePipelineRunForTodo,
+    // pending_questions (open-claw 桥接)
+    createPendingQuestion,
+    getPendingQuestion,
+    listPendingQuestions,
+    getLatestPendingQuestion,
+    answerPendingQuestion,
+    setPendingStatus,
+    sweepExpiredPendingQuestions,
     close: () => db.close(),
   }
 }

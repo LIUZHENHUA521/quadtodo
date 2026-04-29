@@ -49,6 +49,21 @@ const DEFAULT_WEBHOOK_CONFIG = {
 	notifyOnKeywordMatch: true,
 };
 
+const DEFAULT_OPENCLAW_CONFIG = {
+	enabled: false,
+	gatewayUrl: "http://127.0.0.1:18789",
+	channel: "openclaw-weixin",
+	// 微信 peer id 兜底；正常情况下每个 ai-session 启动时 OpenClaw skill 会
+	// 显式传 routeUserId（per-session 路由），这里仅在 ad-hoc 调用时用。
+	targetUserId: "",
+	askUser: {
+		defaultTimeoutMs: 600_000,
+		maxConcurrent: 8,
+		// 出站消息每分钟上限，防风控
+		rateLimitPerMin: 6,
+	},
+};
+
 function detectBinary(name) {
 	try {
 		const result = execSync(`command -v ${name}`, {
@@ -244,6 +259,10 @@ function defaultConfig() {
 		defaultCwd: homedir(),
 		tools: resolveToolsConfig(),
 		webhook: { ...DEFAULT_WEBHOOK_CONFIG },
+		openclaw: {
+			...DEFAULT_OPENCLAW_CONFIG,
+			askUser: { ...DEFAULT_OPENCLAW_CONFIG.askUser },
+		},
 		// Clone DEFAULT_PRICING so user mutations (e.g. via setConfigValue) don't
 		// leak back into the module-level constant.
 		pricing: cloneDefaultPricing(),
@@ -291,6 +310,14 @@ function normalizeConfig(cfg = {}) {
 						.map((item) => String(item).trim())
 						.filter(Boolean)
 				: [...DEFAULT_WEBHOOK_CONFIG.keywords],
+		},
+		openclaw: {
+			...DEFAULT_OPENCLAW_CONFIG,
+			...(cfg.openclaw || {}),
+			askUser: {
+				...DEFAULT_OPENCLAW_CONFIG.askUser,
+				...(cfg.openclaw?.askUser || {}),
+			},
 		},
 		// Note on models merge precedence: user entries with the SAME key as a
 		// default (e.g. 'claude-opus-4-*') override the default. To override

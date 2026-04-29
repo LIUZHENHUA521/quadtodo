@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, realpathSync } from 'node:fs'
 import { homedir, networkInterfaces } from 'node:os'
 import { join, dirname, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -169,6 +169,74 @@ export async function doctorReport({ rootDir = DEFAULT_ROOT_DIR } = {}) {
       ok,
       detail: ok ? which.stdout.trim() : `${bin} not found in PATH`,
     })
+  }
+
+  // ─── OpenClaw 桥接（仅当启用时检查）─────────────────────
+  const oc = cfg?.openclaw || {}
+  if (oc.enabled) {
+    // 1. openclaw CLI 可用？
+    const ocCli = spawnSync('command', ['-v', 'openclaw'], {
+      encoding: 'utf8',
+      shell: '/bin/sh',
+    })
+    const ocCliOk = ocCli.status === 0 && ocCli.stdout.trim().length > 0
+    checks.push({
+      name: 'openclaw CLI',
+      ok: ocCliOk,
+      detail: ocCliOk ? ocCli.stdout.trim() : 'openclaw not in PATH (install via `npm i -g openclaw`)',
+    })
+
+    // 2. targetUserId 配置（fallback）
+    // 主路径下，每个 ai-session 启动时由 OpenClaw skill 显式传 routeUserId（per-session）。
+    // 这里的 targetUserId 只是 ad-hoc ask_user / 没绑 session 时的兜底。
+    // 因此空值仅警告，不算 fail。
+    if (oc.targetUserId) {
+      checks.push({
+        name: 'openclaw.targetUserId (fallback)',
+        ok: true,
+        detail: oc.targetUserId,
+      })
+    } else {
+      checks.push({
+        name: 'openclaw.targetUserId (fallback)',
+        ok: true,
+        detail: '空（per-session 路由仍可工作；如要 ad-hoc 推送，set via `quadtodo config set openclaw.targetUserId <peer-id>`）',
+      })
+    }
+
+    // 3. quadtodo skill 装好了吗（OpenClaw 端配置）
+    const skillFile = join(homedir(), '.openclaw', 'skills', 'quadtodo-claw', 'SKILL.md')
+    checks.push({
+      name: 'quadtodo-claw skill installed',
+      ok: existsSync(skillFile),
+      detail: existsSync(skillFile)
+        ? skillFile
+        : '缺失：参考 docs/OPENCLAW.md',
+    })
+
+    // 4. Claude Code hook 安装状态（主动推送）
+    try {
+      const { inspectHooks } = await import('./openclaw-hook-installer.js')
+      const hk = inspectHooks()
+      checks.push({
+        name: 'claude-code hook script',
+        ok: hk.scriptExists,
+        detail: hk.hookScriptPath + (hk.scriptExists ? '' : ' (missing — should be auto-installed)'),
+      })
+      checks.push({
+        name: 'claude-code hooks installed',
+        ok: hk.installed,
+        detail: hk.installed
+          ? `events: ${hk.eventsInstalled.join(', ')}`
+          : '缺失：跑 `quadtodo openclaw install-hook` 一次',
+      })
+    } catch (e) {
+      checks.push({
+        name: 'claude-code hooks',
+        ok: false,
+        detail: `inspect failed: ${e.message}`,
+      })
+    }
   }
 
   return { ok: checks.every(c => c.ok), checks }
@@ -412,6 +480,108 @@ mcpCmd.command('status')
     }
   })
 
+// ─── openclaw 子命令组：hook 安装 / 卸载 / 状态 ─────────────────
+const openclawCmd = program.command('openclaw').description('OpenClaw bridge: install/uninstall Claude Code hooks for proactive WeChat push')
+
+openclawCmd.command('install-hook')
+  .description('把 quadtodo 的 3 个 hook（Stop/Notification/SessionEnd）合并写入 ~/.claude/settings.json')
+  .action(async () => {
+    const { installHooks } = await import('./openclaw-hook-installer.js')
+    try {
+      const out = installHooks()
+      console.log(`✓ installed ${out.added.join(', ')} hooks`)
+      console.log(`  settings: ${out.settingsPath}`)
+      if (out.backup) console.log(`  backup:   ${out.backup}`)
+      console.log('')
+      console.log('完成。新的 PTY 会话启动后会自动通过 hook 推送状态到微信。')
+      console.log('注意：现存的 PTY 会话（重启前已经在跑的）env 已固定，不受影响；')
+      console.log('     新 quadtodo.start_ai_session 启动的 PTY 才会带 hook env。')
+    } catch (e) {
+      console.error(`install-hook failed: ${e.message}`)
+      if (e.code === 'malformed_settings') {
+        console.error(`  你的 ~/.claude/settings.json JSON 不合法，先修复再试。`)
+      }
+      process.exit(1)
+    }
+  })
+
+openclawCmd.command('uninstall-hook')
+  .description('从 ~/.claude/settings.json 移除 quadtodo 加的 hook entry，保留你其他 hook')
+  .action(async () => {
+    const { uninstallHooks } = await import('./openclaw-hook-installer.js')
+    try {
+      const out = uninstallHooks()
+      if (out.removed.length === 0) {
+        console.log('= no quadtodo hooks installed; nothing to remove')
+        return
+      }
+      console.log(`✓ removed quadtodo hooks from ${out.settingsPath}`)
+      for (const r of out.removed) console.log(`   ${r.event}: -${r.removedCount}`)
+      if (out.backup) console.log(`  backup: ${out.backup}`)
+    } catch (e) {
+      console.error(`uninstall-hook failed: ${e.message}`)
+      process.exit(1)
+    }
+  })
+
+openclawCmd.command('hook-status')
+  .description('查看 quadtodo hook 是否安装到 ~/.claude/settings.json')
+  .action(async () => {
+    const { inspectHooks } = await import('./openclaw-hook-installer.js')
+    const r = inspectHooks()
+    const icon = r.installed ? '✓' : '✗'
+    console.log(`${icon} hooks installed: ${r.installed}`)
+    console.log(`  events: ${r.eventsInstalled.length ? r.eventsInstalled.join(', ') : '(none)'}`)
+    console.log(`  settings: ${r.settingsPath}`)
+    console.log(`  hook script: ${r.hookScriptPath} (${r.scriptExists ? 'exists' : 'MISSING'})`)
+    if (r.error) console.log(`  ⚠️  ${r.error}`)
+  })
+
+openclawCmd.command('inbound')
+  .description('OpenClaw skill 单入口：转发一条用户消息到 quadtodo wizard，stdout 是给用户的回复')
+  .requiredOption('--from <peer>', '微信对端 user_id（OpenClaw 给的 from_user_id）')
+  .requiredOption('--text <text>', '用户原文')
+  .option('--port <port>', 'quadtodo 端口', (v) => Number(v))
+  .action(async (opts) => {
+    const cfg = loadConfig()
+    const port = opts.port || cfg.port || 5677
+    const url = `http://127.0.0.1:${port}/api/openclaw/inbound`
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: opts.from, text: opts.text }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
+        console.error(`✗ ${res.status} ${data.error || 'unknown'}`)
+        process.exit(1)
+      }
+      // 把 reply 直接打到 stdout — OpenClaw skill 会把它转发回微信用户
+      process.stdout.write(String(data.reply || ''))
+      // exit 0
+    } catch (e) {
+      console.error(`✗ inbound failed: ${e.message}`)
+      console.error(`  quadtodo 是不是没跑？试 'quadtodo status'`)
+      process.exit(1)
+    }
+  })
+
+openclawCmd.command('inbound-state')
+  .description('查看 wizard 当前进行中的 peer 列表（调试用）')
+  .action(async () => {
+    const cfg = loadConfig()
+    const port = cfg.port || 5677
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/openclaw/inbound/state`)
+      const data = await res.json()
+      console.log(JSON.stringify(data, null, 2))
+    } catch (e) {
+      console.error(`✗ ${e.message}`)
+      process.exit(1)
+    }
+  })
+
 const cfgCmd = program.command('config').description('read/write ~/.quadtodo/config.json')
 cfgCmd.command('get <key>').action((key) => {
   const v = getConfigValue(key)
@@ -426,10 +596,19 @@ cfgCmd.command('list').action(() => {
   console.log(JSON.stringify(loadConfig(), null, 2))
 })
 
-// 仅当被作为可执行脚本运行时才 parse（import 进来做测试时跳过）
-const isMain =
-  import.meta.url === `file://${process.argv[1]}` ||
-  (process.argv[1] && process.argv[1].endsWith('cli.js'))
+// 仅当被作为可执行脚本运行时才 parse（import 进来做测试时跳过）。
+// 用 realpath 比对，避免 npm link symlink 下 process.argv[1] !== import.meta.url 把判断打飞。
+const isMain = (() => {
+  if (!process.argv[1]) return false
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    // fallback：argv[1] 是 cli.js 或 bin 名 'quadtodo'
+    if (process.argv[1].endsWith('cli.js')) return true
+    if (/\/quadtodo$/.test(process.argv[1])) return true
+    return false
+  }
+})()
 if (isMain) {
   program.parseAsync(process.argv)
 }

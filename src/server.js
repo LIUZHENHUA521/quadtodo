@@ -29,6 +29,12 @@ import { createWikiService } from "./wiki/index.js";
 import { createSearchRouter } from "./routes/search.js";
 import { createSearchService } from "./search/index.js";
 import { createMcpRouter } from "./mcp/server.js";
+import { createOpenClawBridge } from "./openclaw-bridge.js";
+import { createPendingQuestionCoordinator } from "./pending-questions.js";
+import { createOpenClawHookHandler } from "./openclaw-hook.js";
+import { createOpenClawHookRouter } from "./routes/openclaw-hook.js";
+import { createOpenClawWizard } from "./openclaw-wizard.js";
+import { createOpenClawInboundRouter } from "./routes/openclaw-inbound.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -810,6 +816,30 @@ export function createServer(opts = {}) {
 	}
 	app.use("/api/search", createSearchRouter({ searchService }));
 
+	// OpenClaw 双向桥接：bridge（出站）+ pending-question 协调器（双向阻塞）
+	const openclawBridge = createOpenClawBridge({
+		getConfig: () => loadConfig({ rootDir: configRootDir }),
+	});
+	const pendingCoord = createPendingQuestionCoordinator({ db });
+	pendingCoord.start();
+
+	// Claude Code hook 主动推送处理器
+	const openclawHookHandler = createOpenClawHookHandler({
+		db,
+		openclaw: openclawBridge,
+	});
+	app.use("/api/openclaw/hook", createOpenClawHookRouter({ hookHandler: openclawHookHandler }));
+
+	// OpenClaw wizard 状态机：peer 维度的多轮向导，OpenClaw 是消息转发器
+	const openclawWizard = createOpenClawWizard({
+		db,
+		aiTerminal: ait,
+		openclaw: openclawBridge,
+		pending: pendingCoord,
+		getConfig: () => loadConfig({ rootDir: configRootDir }),
+	});
+	app.use("/api/openclaw/inbound", createOpenClawInboundRouter({ wizard: openclawWizard }));
+
 	// MCP Streamable HTTP 端点：把 quadtodo 暴露给 Claude Code 等 MCP 客户端
 	try {
 		const mcp = createMcpRouter({
@@ -819,6 +849,10 @@ export function createServer(opts = {}) {
 			rootDir: configRootDir,
 			logDir,
 			getVersion: loadVersion,
+			aiTerminal: ait,
+			openclaw: openclawBridge,
+			pending: pendingCoord,
+			getConfig: () => loadConfig({ rootDir: configRootDir }),
 		});
 		app.use("/mcp", mcp.router);
 	} catch (e) {
@@ -918,6 +952,7 @@ export function createServer(opts = {}) {
 
 	function close() {
 		return new Promise((resolve) => {
+			try { pendingCoord.stop() } catch { /* ignore */ }
 			ait.close();
 			wss.close(() => {
 				httpServer.close(() => {
@@ -932,5 +967,5 @@ export function createServer(opts = {}) {
 		});
 	}
 
-	return { app, httpServer, wss, db, pty, ait, listen, close };
+	return { app, httpServer, wss, db, pty, ait, listen, close, openclawBridge, pendingCoord };
 }
