@@ -42,6 +42,30 @@ describe('openclaw-hook helpers', () => {
     expect(m).toContain('[#hook]')
     expect(m).toContain('当前任务')
   })
+
+  it('buildMessage strips box-drawing chars from snippet', () => {
+    const ugly = '╭─────╮\n│ abc │\n╰─────╯\n请回 a/b/c'
+    const m = __test__.buildMessage({ event: 'stop', todoId: 'x', todoTitle: 'T', snippet: ugly })
+    expect(m).not.toMatch(/[╭╮╰╯─│]/)
+    expect(m).toContain('请回 a/b/c')
+    expect(m).toContain('（直接在这里回我，会转给 AI）')
+  })
+
+  it('buildMessage compacts blank lines', () => {
+    const m = __test__.buildMessage({
+      event: 'stop',
+      todoId: 'x', todoTitle: 'T',
+      snippet: 'line1\n\n\n\n\nline2',
+    })
+    expect(m).not.toContain('\n\n\n')
+    expect(m).toContain('line1\n\nline2')
+  })
+
+  it('buildMessage with snippet skips the legacy "去 Web UI 看" hint', () => {
+    const m = __test__.buildMessage({ event: 'stop', todoId: 'x', todoTitle: 'T', snippet: 'something' })
+    expect(m).not.toContain('Web UI')
+    expect(m).toContain('something')
+  })
 })
 
 describe('openclaw-hook handler', () => {

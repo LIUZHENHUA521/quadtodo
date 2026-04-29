@@ -827,6 +827,7 @@ export function createServer(opts = {}) {
 	const openclawHookHandler = createOpenClawHookHandler({
 		db,
 		openclaw: openclawBridge,
+		aiTerminal: ait,
 	});
 	app.use("/api/openclaw/hook", createOpenClawHookRouter({ hookHandler: openclawHookHandler }));
 
@@ -836,6 +837,7 @@ export function createServer(opts = {}) {
 		aiTerminal: ait,
 		openclaw: openclawBridge,
 		pending: pendingCoord,
+		pty,
 		getConfig: () => loadConfig({ rootDir: configRootDir }),
 	});
 	app.use("/api/openclaw/inbound", createOpenClawInboundRouter({ wizard: openclawWizard }));

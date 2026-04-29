@@ -252,6 +252,70 @@ describe('routes/ai-terminal', () => {
     db.close()
   })
 
+  it('startup recovery skips claude session whose jsonl is gone from disk', () => {
+    const db = openDb(':memory:')
+    const todo = db.createTodo({
+      title: 'T',
+      quadrant: 1,
+      status: 'ai_running',
+      aiSessions: [{
+        sessionId: 'old-session',
+        tool: 'claude',
+        nativeSessionId: 'abcdef12-3456-7890-abcd-ef1234567890',
+        cwd: '/tmp',
+        status: 'running',
+        startedAt: 1,
+        completedAt: null,
+        prompt: 'old prompt',
+      }],
+    })
+    const pty = new FakePty()
+    pty.findClaudeSession = () => null // 模拟 jsonl 已不在磁盘
+    const logDir = mkdtempSync(join(tmpdir(), 'quadtodo-log-'))
+    const ait = createAiTerminal({ db, pty, logDir })
+    // 文件没了 → 不能 spawn 一个注定失败的 --resume，todo 直接退回 'todo'
+    expect(pty.started).toHaveLength(0)
+    const updated = db.getTodo(todo.id)
+    expect(updated.status).toBe('todo')
+    ait.close()
+    rmSync(logDir, { recursive: true, force: true })
+    db.close()
+  })
+
+  it('startup recovery uses cwd from claude jsonl when DB cwd is stale', () => {
+    const db = openDb(':memory:')
+    const realCwd = mkdtempSync(join(tmpdir(), 'quadtodo-cwd-'))
+    const staleCwd = mkdtempSync(join(tmpdir(), 'quadtodo-stale-'))
+    const todo = db.createTodo({
+      title: 'T',
+      quadrant: 1,
+      status: 'ai_running',
+      aiSessions: [{
+        sessionId: 'old-session',
+        tool: 'claude',
+        nativeSessionId: 'abcdef12-3456-7890-abcd-ef1234567890',
+        cwd: staleCwd, // DB 里漂掉的 cwd
+        status: 'running',
+        startedAt: 1,
+        completedAt: null,
+        prompt: 'old prompt',
+      }],
+    })
+    const pty = new FakePty()
+    pty.findClaudeSession = () => ({ filePath: 'x.jsonl', cwd: realCwd })
+    const logDir = mkdtempSync(join(tmpdir(), 'quadtodo-log-'))
+    const ait = createAiTerminal({ db, pty, logDir })
+    // 用 jsonl 里反查到的 realCwd 起 PTY，而不是 DB 的 staleCwd
+    expect(pty.started).toHaveLength(1)
+    expect(pty.started[0].cwd).toBe(realCwd)
+    expect(pty.started[0].resumeNativeId).toBe('abcdef12-3456-7890-abcd-ef1234567890')
+    ait.close()
+    rmSync(logDir, { recursive: true, force: true })
+    rmSync(realCwd, { recursive: true, force: true })
+    rmSync(staleCwd, { recursive: true, force: true })
+    db.close()
+  })
+
   it('output event is captured in history buffer', async () => {
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
     const { body } = await request(ctx.app).post('/api/ai-terminal/exec')

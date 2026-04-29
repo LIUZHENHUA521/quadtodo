@@ -22,19 +22,71 @@ function shortTodoId(todoId) {
   return cleaned.slice(-3).toLowerCase()
 }
 
+function stripAnsi(s) {
+  return String(s || '')
+    .replace(/\x1b\[[0-9;?]*[A-Za-z~]/g, '')
+    .replace(/\x1b\][^\x07]*\x07/g, '')
+    .replace(/\x1b[()#][A-Za-z0-9]/g, '')
+    .replace(/\x1b[>=<cDEHMNOPZ78]/g, '')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+}
+
+// Unicode box-drawing chars: 把 ╭ ╮ ╰ ╯ ├ ┤ │ ─ 等替成简洁字符
+const BOX_HORIZONTAL = /[─━┄┅┈┉═]/g
+const BOX_VERTICAL = /[│┃┆┇┊┋║]/g
+const BOX_CORNERS = /[┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛┌┐└┘╭╮╯╰╓╒╕╖╙╘╛╜╔╗╚╝]/g
+const BOX_TEES = /[├┝┞┟┠┡┢┣┤┥┦┧┨┩┪┫┬┭┮┯┰┱┲┳┴┵┶┷┸┹┺┻┼┽┾┿╀╁╂╃╄╅╆╇╈╉╊╋╠╣╦╩╬]/g
+
+function cleanBoxDrawing(s) {
+  return String(s || '')
+    .replace(BOX_HORIZONTAL, '-')   // 横线 → -
+    .replace(BOX_VERTICAL, '|')     // 竖线 → |
+    .replace(BOX_CORNERS, '+')      // 角 → +
+    .replace(BOX_TEES, '+')         // 三叉 → +
+}
+
+function compactBlankLines(s) {
+  // 多个空行收成一个
+  return String(s || '').replace(/\n[ \t]*\n+/g, '\n\n')
+}
+
+function trimTrailingSpaces(s) {
+  return String(s || '').split('\n').map((l) => l.replace(/[ \t]+$/, '')).join('\n')
+}
+
+/**
+ * 取 PTY recentOutput 的"有意义"末尾。
+ * 多步清洗：strip ANSI → strip box-drawing → 折叠空行 → 截尾。
+ */
+function extractTailSnippet(recentOutput, maxChars = 800) {
+  let s = stripAnsi(recentOutput || '')
+  s = cleanBoxDrawing(s)
+  s = trimTrailingSpaces(s)
+  s = compactBlankLines(s)
+  s = s.trim()
+  if (!s) return ''
+  if (s.length <= maxChars) return s
+  // 从尾部截，但尽量从最近的换行开始（避免半截行）
+  const cut = s.slice(-maxChars)
+  const nl = cut.indexOf('\n')
+  return '…' + (nl > 0 && nl < 200 ? cut.slice(nl + 1) : cut)
+}
+
 function buildMessage({ event, todoId, todoTitle, snippet }) {
   const code = shortTodoId(todoId)
   const tag = code ? `[#t${code}]` : '[#hook]'
   const title = todoTitle ? `任务「${todoTitle}」` : '当前任务'
+  const cleanSnippet = snippet ? extractTailSnippet(snippet, 800) : ''
+  const snippetBlock = cleanSnippet ? `\n\n${cleanSnippet}\n\n（直接在这里回我，会转给 AI）` : ''
   switch (event) {
     case 'stop':
-      return `🤖 ${tag} ${title} AI 一轮回答结束 — 去 quadtodo Web UI 看看，或回我下一步`
+      return `🤖 ${tag} ${title} AI 一轮结束${snippetBlock || ' — 去 quadtodo Web UI 看，或回我下一步'}`
     case 'notification':
-      return `⚠️ ${tag} ${title} AI 卡住等输入${snippet ? `\n${snippet.slice(0, 240)}` : ''}`
+      return `⚠️ ${tag} ${title} AI 卡住等输入${snippetBlock || ''}`
     case 'session-end':
-      return `✅ ${tag} ${title} AI session 已结束`
+      return `✅ ${tag} ${title} AI session 已结束${snippetBlock || ''}`
     default:
-      return `🦞 ${tag} ${title} hook event: ${event}`
+      return `🦞 ${tag} ${title} hook event: ${event}${snippetBlock || ''}`
   }
 }
 
@@ -48,7 +100,7 @@ function buildMessage({ event, todoId, todoTitle, snippet }) {
  *
  * 并发安全：所有状态都在单实例内部 Map 里；同进程多 hook 调用顺序处理。
  */
-export function createOpenClawHookHandler({ db, openclaw, cooldownMs = DEFAULT_COOLDOWN_MS } = {}) {
+export function createOpenClawHookHandler({ db, openclaw, aiTerminal = null, cooldownMs = DEFAULT_COOLDOWN_MS } = {}) {
   if (!db) throw new Error('db_required')
   if (!openclaw) throw new Error('openclaw_required')
 
@@ -101,8 +153,15 @@ export function createOpenClawHookHandler({ db, openclaw, cooldownMs = DEFAULT_C
 
     // 3) 拼消息文本
     let snippet = null
-    if (hookPayload && typeof hookPayload === 'object') {
-      // hook payload 里可能带 transcript_path / message / 等字段；尽力提取一段摘要
+    // 优先：从 aiTerminal 拿这个 sessionId 的 recentOutput
+    if (sessionId && aiTerminal?.sessions) {
+      const sess = aiTerminal.sessions.get(sessionId)
+      if (sess && (sess.recentOutput || sess.fullLog)) {
+        snippet = sess.recentOutput || (Array.isArray(sess.fullLog) ? sess.fullLog.join('') : sess.fullLog)
+      }
+    }
+    // 兜底：hook payload 里的字段（Claude Code 后续可能会传）
+    if (!snippet && hookPayload && typeof hookPayload === 'object') {
       const hint = hookPayload.message || hookPayload.summary || null
       if (hint && typeof hint === 'string') snippet = hint.trim()
     }
@@ -115,6 +174,10 @@ export function createOpenClawHookHandler({ db, openclaw, cooldownMs = DEFAULT_C
     })
     if (result.ok) {
       recordSent(sessionId, evt)
+      // SessionEnd 表示 PTY 已结束 → 清 last-push 防止下条用户消息误投
+      if (evt === 'session-end' && openclaw.clearLastPushForSession) {
+        openclaw.clearLastPushForSession(sessionId)
+      }
       return { ok: true, action: 'sent', message }
     }
     return { ok: false, action: 'failed', reason: result.reason || 'unknown', detail: result }

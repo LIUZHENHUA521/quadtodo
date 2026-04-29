@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
-import { readdirSync, statSync, existsSync, watch as fsWatch, mkdirSync } from 'node:fs'
+import { readdirSync, statSync, existsSync, watch as fsWatch, mkdirSync, openSync, readSync, closeSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -96,15 +96,74 @@ function defaultPtyFactory() {
   return (bin, args, opts) => pty.spawn(bin, args, opts)
 }
 
+const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude', 'projects')
+
+/**
+ * Claude Code 把每段对话按 cwd 编码存到 ~/.claude/projects/<encoded>/<uuid>.jsonl，
+ * --resume 在当前 cwd 对应的目录里查 uuid，找不到就 "No conversation found"。
+ * 我们 DB 里的 session.cwd 可能跟 claude 当时实际的 cwd 不一致（例如默认 cwd 改过、
+ * 或者起会话时传错了），导致 resume 100% 失败。
+ *
+ * 这里直接按 uuid 在所有 project 目录里搜一遍，找到 jsonl 后从前面几条记录里读出
+ * claude 自己写下的 cwd 字段；那才是 resume 应该用的 cwd。
+ *
+ * 返回 { filePath, cwd } | null。读不到 cwd 字段时 cwd=null（仍返回 filePath，调用方
+ * 可以决定是否兜底）。
+ */
+function defaultClaudeSessionLocator(nativeSessionId) {
+  if (!nativeSessionId || typeof nativeSessionId !== 'string') return null
+  if (!existsSync(CLAUDE_PROJECTS_DIR)) return null
+  let entries
+  try { entries = readdirSync(CLAUDE_PROJECTS_DIR, { withFileTypes: true }) } catch { return null }
+  for (const dirent of entries) {
+    if (!dirent.isDirectory()) continue
+    const filePath = join(CLAUDE_PROJECTS_DIR, dirent.name, `${nativeSessionId}.jsonl`)
+    if (!existsSync(filePath)) continue
+    let cwd = null
+    try {
+      // jsonl 可能很大，只读前 64KB；cwd 字段一般在最早几条 message 里就出现
+      const fd = openSync(filePath, 'r')
+      try {
+        const buf = Buffer.alloc(65536)
+        const n = readSync(fd, buf, 0, buf.length, 0)
+        const chunk = buf.slice(0, n).toString('utf8')
+        const lines = chunk.split('\n')
+        // 最后一行可能被截断，跳过
+        for (let i = 0; i < lines.length - 1; i++) {
+          const line = lines[i].trim()
+          if (!line) continue
+          try {
+            const obj = JSON.parse(line)
+            if (typeof obj.cwd === 'string' && obj.cwd) { cwd = obj.cwd; break }
+          } catch { /* 不是 JSON 或解析失败，跳过 */ }
+        }
+      } finally { closeSync(fd) }
+    } catch { /* 读文件失败，cwd 留 null */ }
+    return { filePath, cwd }
+  }
+  return null
+}
+
 export class PtyManager extends EventEmitter {
-  constructor({ tools, ptyFactory, promptDelayMs = 2000, codexWatcherFactory } = {}) {
+  constructor({ tools, ptyFactory, promptDelayMs = 2000, codexWatcherFactory, claudeSessionLocator } = {}) {
     super()
     if (!tools) throw new Error('PtyManager: tools required')
     this.tools = tools
     this.ptyFactory = ptyFactory || defaultPtyFactory()
     this.codexWatcherFactory = codexWatcherFactory || defaultCodexWatcherFactory
+    this.claudeSessionLocator = claudeSessionLocator || defaultClaudeSessionLocator
     this.promptDelayMs = promptDelayMs
     this.sessions = new Map()
+  }
+
+  /**
+   * 公开的 claude resume 文件定位接口。返回 { filePath, cwd } | null。
+   * 上层（ai-terminal 启动恢复）用它来：
+   *   - 判断 nativeSessionId 是否还在硬盘上（不在就别 spawn 一个注定失败的 --resume）
+   *   - 拿到真实 cwd 修正 DB 里漂移的记录
+   */
+  findClaudeSession(nativeSessionId) {
+    try { return this.claudeSessionLocator(nativeSessionId) } catch { return null }
   }
 
   // 任何一条探测路径命中 id，统一走这里：去重 + 清理其余两路 + emit。
@@ -154,7 +213,24 @@ export class PtyManager extends EventEmitter {
       : useCliPrompt
         ? [...baseArgs, ...permissionArgs, ...claudeSessionArgs, prompt]
         : [...baseArgs, ...permissionArgs, ...claudeSessionArgs]
-    const effectiveCwd = cwd || process.env.HOME || process.cwd()
+    let effectiveCwd = cwd || process.env.HOME || process.cwd()
+
+    // claude --resume 的 cwd 必须跟原会话的 cwd 一致，否则 claude 在错误的 projects/<encoded>
+    // 目录里找不到 jsonl 就抛 "No conversation found"。这里按 uuid 反查文件位置 + 内嵌 cwd
+    // 字段做一次纠正；找不到文件就只 warn，让 claude 自己抛原始错误。
+    if (resumeNativeId && tool === 'claude') {
+      try {
+        const located = this.claudeSessionLocator(resumeNativeId)
+        if (located?.cwd && located.cwd !== effectiveCwd && existsSync(located.cwd)) {
+          console.log(`[pty] claude --resume ${resumeNativeId.slice(0, 8)}: cwd corrected ${effectiveCwd} → ${located.cwd}`)
+          effectiveCwd = located.cwd
+        } else if (!located) {
+          console.warn(`[pty] claude --resume ${resumeNativeId.slice(0, 8)}: no jsonl in ~/.claude/projects/*/ — resume will likely fail`)
+        }
+      } catch (e) {
+        console.warn(`[pty] claudeSessionLocator failed: ${e.message}`)
+      }
+    }
 
     console.log(`[pty] starting ${tool} bin=${toolCfg.bin} cwd=${effectiveCwd} args=${JSON.stringify(args)}`)
 

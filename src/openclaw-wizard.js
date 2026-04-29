@@ -151,7 +151,7 @@ function buildTemplateMessage(templates) {
  *   - pending: submitReply(text), listPending() （不直接被调用，但提供给路由层判断）
  *   - getConfig: () => 配置快照（拿 defaultCwd / port / defaultTool）
  */
-export function createOpenClawWizard({ db, aiTerminal, openclaw, pending, getConfig, logger = console } = {}) {
+export function createOpenClawWizard({ db, aiTerminal, openclaw, pending, pty = null, getConfig, logger = console } = {}) {
   if (!db) throw new Error('db_required')
 
   // peerUserId → wizard state object
@@ -445,9 +445,58 @@ export function createOpenClawWizard({ db, aiTerminal, openclaw, pending, getCon
       // no_pending / empty → fallthrough
     }
 
-    // 5. fallback
+    // 5. PTY stdin proxy：3 级路由策略
+    //   a) peer 最近收过推送 → 直接写到那个 session（最常见）
+    //   b) 系统里只有 1 个活跃 PTY session → 写它（单用户 + 单任务场景）
+    //   c) 多个活跃 → 列出来让用户选
+    if (pty?.write) {
+      const targetSid = (() => {
+        const recent = openclaw?.getLastPushedSession?.(peer)
+        if (recent && pty.has?.(recent)) return recent
+        // fallback：系统里的活跃 session
+        if (!aiTerminal?.sessions) return null
+        const activeIds = []
+        for (const [sid, sess] of aiTerminal.sessions) {
+          if (sess.status === 'running' || sess.status === 'pending_confirm') {
+            activeIds.push({ sid, lastOutputAt: sess.lastOutputAt || sess.startedAt || 0 })
+          }
+        }
+        if (activeIds.length === 1) return activeIds[0].sid
+        if (activeIds.length > 1) {
+          // 暧昧：返回 null 让上面的友好提示出来
+          return { ambiguous: true, candidates: activeIds }
+        }
+        return null
+      })()
+
+      if (targetSid && typeof targetSid === 'string') {
+        try {
+          pty.write(targetSid, trimmed + '\r')
+          return {
+            reply: `↪ 已转给 AI (PTY ${targetSid.slice(-8)})`,
+            action: 'stdin_proxy',
+            sessionId: targetSid,
+          }
+        } catch (e) {
+          logger.warn?.(`[wizard] stdin proxy failed: ${e.message}`)
+        }
+      }
+      if (targetSid && typeof targetSid === 'object' && targetSid.ambiguous) {
+        const list = targetSid.candidates
+          .sort((a, b) => b.lastOutputAt - a.lastOutputAt)
+          .slice(0, 5)
+          .map((c, i) => `${i + 1}. ${c.sid.slice(-8)} (${Math.floor((Date.now() - c.lastOutputAt) / 1000)}s 前)`)
+          .join('\n')
+        return {
+          reply: `🔀 你有多个活跃 AI session，回的内容不知道发给谁：\n${list}\n\n请回 "#${targetSid.candidates[0].sid.slice(-3)} <你的内容>" 指定。`,
+          action: 'stdin_proxy_ambiguous',
+        }
+      }
+    }
+
+    // 6. fallback
     return {
-      reply: '🤔 我没看懂这条消息。\n\n要新建任务，发：\n  • 新建任务: 修复 X\n  • 帮我做 X\n要回答 AI 的问题，发：\n  • 数字 1/2/3\n  • #xxx 1（指定 ticket）',
+      reply: '🤔 我没看懂这条消息。\n\n要新建任务，发：\n  • 新建任务: 修复 X\n  • 帮我做 X\n要回答 AI 的问题，发：\n  • 数字 1/2/3\n  • #xxx 1（指定 ticket）\n要直接给 AI 发指令，先等它推送一条给你，回复就会转过去。',
       action: 'fallback',
     }
   }

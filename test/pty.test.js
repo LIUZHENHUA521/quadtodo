@@ -271,4 +271,88 @@ describe('PtyManager', () => {
       pm.start({ sessionId: 's1', tool: 'claude', prompt: null, cwd: '/tmp' }),
     ).toThrow(/PTY spawn failed for claude \(bin=claude, cwd=\/tmp/)
   })
+
+  it('claude --resume corrects cwd when locator returns a real cwd different from caller', () => {
+    const factory = makeFakePty()
+    // 模拟 ~/.claude/projects/ 里实际写文件的目录是 /tmp，调用方却传 /var
+    const claudeSessionLocator = vi.fn(() => ({ filePath: '/dev/null', cwd: '/tmp' }))
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory, claudeSessionLocator })
+    pm.start({
+      sessionId: 's1',
+      tool: 'claude',
+      prompt: null,
+      cwd: '/var',
+      resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+    })
+    expect(claudeSessionLocator).toHaveBeenCalledWith('abcdef12-3456-7890-abcd-ef1234567890')
+    // /var 改写成 /tmp（locator 报告的真实 cwd）
+    expect(factory.created[0]._opts.cwd).toBe('/tmp')
+  })
+
+  it('claude --resume keeps caller cwd when locator returns null (file missing)', () => {
+    const factory = makeFakePty()
+    const claudeSessionLocator = vi.fn(() => null)
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory, claudeSessionLocator })
+    pm.start({
+      sessionId: 's1',
+      tool: 'claude',
+      prompt: null,
+      cwd: '/tmp',
+      resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+    })
+    // 找不到文件就 warn，但 cwd 不动；让 claude 自己抛 No conversation found
+    expect(factory.created[0]._opts.cwd).toBe('/tmp')
+  })
+
+  it('claude --resume keeps caller cwd when locator returns same cwd', () => {
+    const factory = makeFakePty()
+    const claudeSessionLocator = vi.fn(() => ({ filePath: '/x', cwd: '/tmp' }))
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory, claudeSessionLocator })
+    pm.start({
+      sessionId: 's1',
+      tool: 'claude',
+      prompt: null,
+      cwd: '/tmp',
+      resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+    })
+    expect(factory.created[0]._opts.cwd).toBe('/tmp')
+  })
+
+  it('claude new session (no resume) does not invoke session locator', () => {
+    const factory = makeFakePty()
+    const claudeSessionLocator = vi.fn(() => null)
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory, claudeSessionLocator })
+    pm.start({ sessionId: 's1', tool: 'claude', prompt: null, cwd: '/tmp' })
+    expect(claudeSessionLocator).not.toHaveBeenCalled()
+  })
+
+  it('codex --resume does not invoke claude session locator', () => {
+    const factory = makeFakePty()
+    const claudeSessionLocator = vi.fn(() => null)
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory, claudeSessionLocator })
+    pm.start({
+      sessionId: 's1',
+      tool: 'codex',
+      prompt: null,
+      cwd: '/tmp',
+      resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+    })
+    expect(claudeSessionLocator).not.toHaveBeenCalled()
+  })
+
+  it('findClaudeSession exposes the locator and swallows errors', () => {
+    const pm1 = new PtyManager({
+      tools: tools(),
+      ptyFactory: makeFakePty(),
+      claudeSessionLocator: () => ({ filePath: '/x', cwd: '/tmp' }),
+    })
+    expect(pm1.findClaudeSession('uuid')).toEqual({ filePath: '/x', cwd: '/tmp' })
+
+    const pm2 = new PtyManager({
+      tools: tools(),
+      ptyFactory: makeFakePty(),
+      claudeSessionLocator: () => { throw new Error('boom') },
+    })
+    expect(pm2.findClaudeSession('uuid')).toBeNull()
+  })
 })

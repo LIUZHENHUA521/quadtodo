@@ -229,7 +229,17 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     }
 
     const sessionId = externalSessionId || `ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-    const sessionCwd = resolveSessionCwd(cwd)
+    let sessionCwd = resolveSessionCwd(cwd)
+    // 跟 recoverPendingTodosOnStartup 同样的 claude resume cwd 漂移修正：
+    // 前端把 session.cwd 原样回传，但那个 cwd 跟实际 jsonl 落盘的目录可能不一致；
+    // 在记到 DB 之前先用文件位置反查真实 cwd，下次再 resume 就不用再纠正了。
+    if (resumeNativeId && tool === 'claude' && pty.findClaudeSession) {
+      const located = pty.findClaudeSession(resumeNativeId)
+      if (located?.cwd && existsSync(located.cwd) && located.cwd !== sessionCwd) {
+        console.log(`[ai-terminal] resume cwd corrected for ${resumeNativeId.slice(0, 8)}: ${sessionCwd} → ${located.cwd}`)
+        sessionCwd = located.cwd
+      }
+    }
     const session = {
       sessionId,
       todoId,
@@ -569,13 +579,28 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     const todos = db.listTodos()
       .filter(todo => ['ai_running', 'ai_pending'].includes(todo.status))
     for (const todo of todos) {
-      const recoverable = (todo.aiSessions || []).find(item => item?.nativeSessionId && (item.status === 'running' || item.status === 'pending_confirm'))
+      let recoverable = (todo.aiSessions || []).find(item => item?.nativeSessionId && (item.status === 'running' || item.status === 'pending_confirm'))
         || (todo.aiSessions || []).find(item => item?.nativeSessionId)
       if (!recoverable) {
         db.updateTodo(todo.id, { status: 'todo' })
         continue
       }
       if (nativeSessionMap.has(`${recoverable.tool}:${recoverable.nativeSessionId}`)) continue
+      // claude --resume 在错误的 cwd 下会立刻 "No conversation found" 退出。启动恢复前
+      // 按 uuid 在 ~/.claude/projects/*/ 实际定位 jsonl：文件没了就放弃恢复（避免起一个
+      // 注定失败的 PTY），文件还在就用 jsonl 内嵌的 cwd 字段修正可能漂移的 recoverable.cwd。
+      if (recoverable.tool === 'claude' && pty.findClaudeSession) {
+        const located = pty.findClaudeSession(recoverable.nativeSessionId)
+        if (!located) {
+          console.warn(`[ai-terminal] recovery skip: claude session ${recoverable.nativeSessionId.slice(0, 8)} no longer on disk`)
+          db.updateTodo(todo.id, { status: 'todo' })
+          continue
+        }
+        if (located.cwd && existsSync(located.cwd) && located.cwd !== recoverable.cwd) {
+          console.log(`[ai-terminal] recovery cwd corrected for ${recoverable.nativeSessionId.slice(0, 8)}: ${recoverable.cwd} → ${located.cwd}`)
+          recoverable = { ...recoverable, cwd: located.cwd }
+        }
+      }
       const sessionId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
       const cwd = resolveSessionCwd(recoverable.cwd || todo.workDir)
       const session = {
@@ -613,12 +638,21 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
         }),
       })
       try {
+        // 复活 session 也注入 hook env：即使没 routeUserId，hook script 看到
+        // QUADTODO_SESSION_ID 就会 POST 到 quadtodo，端服务自己 fallback 到
+        // config.openclaw.targetUserId（兜底推送通道）
         pty.start({
           sessionId,
           tool: recoverable.tool,
           prompt: null,
           cwd,
           resumeNativeId: recoverable.nativeSessionId,
+          extraEnv: {
+            QUADTODO_SESSION_ID: sessionId,
+            QUADTODO_TODO_ID: String(todo.id),
+            QUADTODO_TODO_TITLE: String(todo.title || ''),
+            QUADTODO_URL: 'http://127.0.0.1:5677',
+          },
         })
       } catch (e) {
         console.warn('[ai-terminal] auto-recover failed:', e.message)

@@ -169,4 +169,100 @@ describe('openclaw-wizard state machine', () => {
     // u2 has no wizard, no pending → fallback
     expect(r.action).toBe('fallback')
   })
+
+  it('PTY stdin proxy: when peer has recent push and reply matches no other handler', async () => {
+    const writes = []
+    const fakePty = {
+      has: (sid) => sid === 'sess-x',
+      write: (sid, data) => writes.push({ sid, data }),
+    }
+    const fakeBridge = {
+      ...bridge,
+      getLastPushedSession: (peer) => peer === 'u1' ? 'sess-x' : null,
+    }
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: ai, openclaw: fakeBridge, pending,
+      pty: fakePty,
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+    })
+    const r = await w2.handleInbound({ peer: 'u1', text: 'c 用户登录失败提示账号不存在' })
+    expect(r.action).toBe('stdin_proxy')
+    expect(r.sessionId).toBe('sess-x')
+    expect(writes).toHaveLength(1)
+    expect(writes[0].sid).toBe('sess-x')
+    expect(writes[0].data).toBe('c 用户登录失败提示账号不存在\r')
+  })
+
+  it('PTY stdin proxy: fallback to single active session when no recent push', async () => {
+    const writes = []
+    // fake aiTerminal with one running session
+    const ai2 = {
+      sessions: new Map([
+        ['only-sess', { status: 'running', startedAt: Date.now(), lastOutputAt: Date.now() }],
+      ]),
+      spawnSession: ai.spawnSession,
+    }
+    const fakePty = { has: () => true, write: (sid, data) => writes.push({ sid, data }) }
+    const fakeBridge = { ...bridge, getLastPushedSession: () => null }
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: ai2, openclaw: fakeBridge, pending,
+      pty: fakePty,
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+    })
+    const r = await w2.handleInbound({ peer: 'u1', text: 'c' })
+    expect(r.action).toBe('stdin_proxy')
+    expect(r.sessionId).toBe('only-sess')
+    expect(writes[0].data).toBe('c\r')
+  })
+
+  it('PTY stdin proxy: ambiguous when 2+ active sessions and no recent push', async () => {
+    const writes = []
+    const ai2 = {
+      sessions: new Map([
+        ['sess-a', { status: 'running', startedAt: Date.now() - 10000, lastOutputAt: Date.now() - 5000 }],
+        ['sess-b', { status: 'pending_confirm', startedAt: Date.now() - 5000, lastOutputAt: Date.now() - 1000 }],
+      ]),
+    }
+    const fakePty = { has: () => true, write: (sid, data) => writes.push({ sid, data }) }
+    const fakeBridge = { ...bridge, getLastPushedSession: () => null }
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: ai2, openclaw: fakeBridge, pending,
+      pty: fakePty,
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+    })
+    const r = await w2.handleInbound({ peer: 'u1', text: 'c' })
+    expect(r.action).toBe('stdin_proxy_ambiguous')
+    expect(r.reply).toContain('多个活跃')
+    expect(writes).toHaveLength(0)
+  })
+
+  it('PTY stdin proxy: pure fallback when no recent push and no active sessions', async () => {
+    const writes = []
+    const ai2 = { sessions: new Map() }
+    const fakePty = { has: () => true, write: (sid, data) => writes.push({ sid, data }) }
+    const fakeBridge = { ...bridge, getLastPushedSession: () => null }
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: ai2, openclaw: fakeBridge, pending,
+      pty: fakePty,
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+    })
+    const r = await w2.handleInbound({ peer: 'u1', text: 'arbitrary' })
+    expect(r.action).toBe('fallback')
+    expect(writes).toHaveLength(0)
+  })
+
+  it('PTY stdin proxy yields to wizard / ask_user / new-task triggers', async () => {
+    const writes = []
+    const fakePty = { has: () => true, write: (sid, data) => writes.push({ sid, data }) }
+    const fakeBridge = { ...bridge, getLastPushedSession: () => 'sess-x' }
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: ai, openclaw: fakeBridge, pending,
+      pty: fakePty,
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+    })
+    // 即便有 last push，"帮我做 X" 还是走 wizard 启动
+    const r = await w2.handleInbound({ peer: 'u1', text: '帮我做 X' })
+    expect(r.action).toBe('wizard_started')
+    expect(writes).toHaveLength(0)
+  })
 })

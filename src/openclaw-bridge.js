@@ -41,6 +41,9 @@ export function createOpenClawBridge({ getConfig, cliBin = DEFAULT_CLI_BIN, spaw
   const sendTimestamps = []
   // sessionId → { targetUserId, account, channel }
   const sessionRoutes = new Map()
+  // peerUserId → { sessionId, sentAt } — 最近一次推到该 peer 的 session
+  // 用于 PTY stdin proxy：用户在微信回话时知道往哪个 PTY 写
+  const lastPushByPeer = new Map()
 
   function getOpenClawConfig() {
     const cfg = getConfig() || {}
@@ -162,9 +165,53 @@ export function createOpenClawBridge({ getConfig, cliBin = DEFAULT_CLI_BIN, spaw
         }
         let payload = null
         try { payload = JSON.parse(stdout) } catch {}
+        // 记 last-push：peer → sessionId（用于 stdin proxy）
+        if (sessionId && rawTarget) {
+          lastPushByPeer.set(rawTarget, { sessionId, sentAt: Date.now() })
+        }
         finish({ ok: true, payload })
       })
     })
+  }
+
+  /**
+   * 拿这个 peer 最近一次被推过的 sessionId（PTY stdin proxy 用）。
+   * 超过 maxAgeMs（默认 6 小时）就视为过期 —— 用户体验考虑：只要那个
+   * session 还活着，就允许直接回复给它。
+   */
+  function getLastPushedSession(peer, maxAgeMs = 6 * 60 * 60 * 1000) {
+    if (!peer) return null
+    const entry = lastPushByPeer.get(peer)
+    if (!entry) return null
+    if (Date.now() - entry.sentAt > maxAgeMs) {
+      lastPushByPeer.delete(peer)
+      return null
+    }
+    return entry.sessionId
+  }
+
+  /** session 结束时清掉它的 last-push 记录，避免下条用户消息误投到死 session */
+  function clearLastPushForSession(sessionId) {
+    if (!sessionId) return
+    for (const [peer, entry] of lastPushByPeer) {
+      if (entry.sessionId === sessionId) lastPushByPeer.delete(peer)
+    }
+  }
+
+  /**
+   * 反查：哪些 sessionId 绑定到这个 peer 上。
+   */
+  function findSessionsByTarget(peer) {
+    if (!peer) return []
+    const out = []
+    for (const [sid, info] of sessionRoutes) {
+      // 同一个 peer 可能有多个 session；route 里 targetUserId 可能带或不带后缀
+      const tgt = info?.targetUserId || ''
+      if (tgt === peer || tgt.startsWith(peer + '@') || peer.startsWith(tgt + '@')) {
+        out.push(sid)
+      }
+    }
+    return out
   }
 
   /**
@@ -217,6 +264,9 @@ export function createOpenClawBridge({ getConfig, cliBin = DEFAULT_CLI_BIN, spaw
     registerSessionRoute,
     clearSessionRoute,
     resolveRoute,
+    getLastPushedSession,
+    clearLastPushForSession,
+    findSessionsByTarget,
     describe,
   }
 }
