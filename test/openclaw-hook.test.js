@@ -25,22 +25,29 @@ describe('openclaw-hook helpers', () => {
     expect(__test__.shortTodoId(null)).toBeNull()
   })
 
-  it('buildMessage uses different prefixes per event', () => {
-    const stop = __test__.buildMessage({ event: 'stop', todoId: 'abc', todoTitle: 'Fix' })
-    expect(stop).toContain('🤖')
-    expect(stop).toContain('[#tabc]')
-    expect(stop).toContain('Fix')
-    const notif = __test__.buildMessage({ event: 'notification', todoId: 'xyz', todoTitle: 'Build', snippet: 'pwd?' })
-    expect(notif).toContain('⚠️')
-    expect(notif).toContain('pwd?')
-    const end = __test__.buildMessage({ event: 'session-end', todoId: 'qq', todoTitle: 'Done' })
-    expect(end).toContain('✅')
+  it('buildMessage: stop with body returns body verbatim (no prefix/footer noise)', () => {
+    const stop = __test__.buildMessage({ event: 'stop', cleanContent: '修复完成，已经 commit。' })
+    expect(stop).toBe('修复完成，已经 commit。')
+    expect(stop).not.toContain('AI 一轮结束')
+    expect(stop).not.toContain('直接在这里回我')
   })
 
-  it('buildMessage falls back when todoId missing', () => {
+  it('buildMessage: notification keeps ⚠️ prefix (status signal)', () => {
+    const notif = __test__.buildMessage({ event: 'notification', snippet: 'pwd?' })
+    expect(notif).toContain('⚠️')
+    expect(notif).toContain('pwd?')
+  })
+
+  it('buildMessage: session-end keeps ✅ prefix', () => {
+    const end = __test__.buildMessage({ event: 'session-end', cleanContent: '收工。' })
+    expect(end).toContain('✅')
+    expect(end).toContain('收工。')
+  })
+
+  it('buildMessage: stop without body falls back to placeholder', () => {
     const m = __test__.buildMessage({ event: 'stop' })
-    expect(m).toContain('[#hook]')
-    expect(m).toContain('当前任务')
+    expect(m).toContain('🤖')
+    expect(m).toContain('无新内容')
   })
 
   it('buildMessage strips box-drawing chars from snippet', () => {
@@ -48,7 +55,6 @@ describe('openclaw-hook helpers', () => {
     const m = __test__.buildMessage({ event: 'stop', todoId: 'x', todoTitle: 'T', snippet: ugly })
     expect(m).not.toMatch(/[╭╮╰╯─│]/)
     expect(m).toContain('请回 a/b/c')
-    expect(m).toContain('（直接在这里回我，会转给 AI）')
   })
 
   it('buildMessage compacts blank lines', () => {
@@ -65,6 +71,92 @@ describe('openclaw-hook helpers', () => {
     const m = __test__.buildMessage({ event: 'stop', todoId: 'x', todoTitle: 'T', snippet: 'something' })
     expect(m).not.toContain('Web UI')
     expect(m).toContain('something')
+  })
+
+  it('extractTailSnippet filters Claude Code spinner / status / border lines', () => {
+    const ugly = `
+请告诉我 bug 现象：
+| a | 登录后白屏 |
+| b | 登录失败 |
+| c | 账号不存在 |
+✶
+✳
+Drizzling…
+✻
+Cooked for 3m 28s
+----------------------------------------
+❯
+⏵⏵ auto mode on (shift+tab to cycle)
+`
+    const m = __test__.buildMessage({ event: 'notification', todoId: 'x', todoTitle: 'T', snippet: ugly })
+    expect(m).toContain('请告诉我 bug 现象')
+    expect(m).toContain('登录后白屏')
+    expect(m).not.toContain('✶')
+    expect(m).not.toContain('Drizzling')
+    expect(m).not.toContain('Cooked for')
+    expect(m).not.toContain('auto mode')
+    expect(m).not.toContain('❯')
+  })
+
+  it('extractTailSnippet falls back to historicalRaw when recentOutput is all spinner', () => {
+    const allSpinner = '✶\n✳\nDrizzling…\nCooked for 5m\n❯\n⏵⏵ auto mode on'
+    const realContent = '请选择 a/b/c：\n| a | 登录白屏 |\n| b | 登录失败 |\n| c | 账号不存在 |'
+    const m = __test__.buildMessage({
+      event: 'notification', todoId: 'x', todoTitle: 'T',
+      snippet: allSpinner,
+      historicalRaw: realContent + '\n' + allSpinner,
+    })
+    expect(m).toContain('请选择 a/b/c')
+    expect(m).toContain('登录白屏')
+  })
+
+  it('extractTailSnippet returns empty when nothing meaningful and no fallback', () => {
+    const m = __test__.buildMessage({
+      event: 'notification', todoId: 'x', todoTitle: 'T',
+      snippet: '✶\n✳\nDrizzling…\nCooked for 3m',
+    })
+    expect(m).toContain('AI 还在思考')
+    expect(m).not.toContain('Drizzling')
+  })
+
+  it('filters unknown spinner verbs via generic ellipsis pattern', () => {
+    // Claude Code 不断加新动词 —— Skedaddling 不在词典里但应被通用规则过滤
+    const ugly = `
+请告诉我答案：
+| a | 选 a |
+| b | 选 b |
+✶Skedaddling…
+✶Schmoozing…
+✻Marinating…
+*Bedazzling…
+✻Cooked for 5m 12s
+`
+    const m = __test__.buildMessage({
+      event: 'stop', todoId: 'x', todoTitle: 'T', snippet: ugly,
+    })
+    expect(m).toContain('请告诉我答案')
+    expect(m).toContain('选 a')
+    expect(m).not.toContain('Skedaddling')
+    expect(m).not.toContain('Schmoozing')
+    expect(m).not.toContain('Marinating')
+    expect(m).not.toContain('Bedazzling')
+    expect(m).not.toContain('Cooked for')
+  })
+
+  it('filters lines that look like generic Verbing/Verbed + ellipsis', () => {
+    expect(__test__.buildMessage({
+      event: 'notification', todoId: 'x', todoTitle: 'T',
+      snippet: 'Whirring…\nGyrating…\nSpinning…',
+    })).toContain('AI 还在思考')   // 全部被滤掉，回退到占位
+  })
+
+  it('keeps lines that look like real content (not status-shaped)', () => {
+    const m = __test__.buildMessage({
+      event: 'stop', todoId: 'x', todoTitle: 'T',
+      snippet: 'I have completed the task.\nThe answer is X.\nNext step: review.',
+    })
+    expect(m).toContain('I have completed the task')
+    expect(m).toContain('Next step: review')
   })
 })
 
@@ -88,7 +180,6 @@ describe('openclaw-hook handler', () => {
     expect(r.action).toBe('sent')
     expect(bridge.sent).toHaveLength(1)
     expect(bridge.sent[0].message).toContain('🤖')
-    expect(bridge.sent[0].message).toContain('Task A')
   })
 
   it('SUPPRESSES Stop when there is a pending ask_user for that session', async () => {
@@ -126,24 +217,52 @@ describe('openclaw-hook handler', () => {
     expect(r.action).toBe('sent')
   })
 
-  it('cooldown suppresses second stop within window', async () => {
+  it('Stop has NO cooldown — multi-turn conversations all push through', async () => {
+    // 多轮 AI 对话，每个 Stop 都该送达；之前的 30s cooldown 已废除
     const r1 = await handler.handle({ event: 'stop', sessionId: 's1', todoId: 't1', todoTitle: 'A' })
     expect(r1.action).toBe('sent')
     const r2 = await handler.handle({ event: 'stop', sessionId: 's1', todoId: 't1', todoTitle: 'A' })
-    expect(r2.action).toBe('skipped')
-    expect(r2.reason).toBe('cooldown')
+    expect(r2.action).toBe('sent')
+    const r3 = await handler.handle({ event: 'stop', sessionId: 's1', todoId: 't1', todoTitle: 'A' })
+    expect(r3.action).toBe('sent')
   })
 
-  it('cooldown is per (sessionId × event) — different events bypass', async () => {
+  it('different events all bypass any cooldown', async () => {
     await handler.handle({ event: 'stop', sessionId: 's1', todoId: 't1' })
     const r = await handler.handle({ event: 'session-end', sessionId: 's1', todoId: 't1' })
     expect(r.action).toBe('sent')
   })
 
-  it('Notification ignores cooldown (high priority)', async () => {
+  it('Notification: with suppressNotificationEvents=false, 2nd within cooldown is skipped', async () => {
+    // 关掉默认 suppress 才能走到 cooldown 路径
+    handler = createOpenClawHookHandler({
+      db, openclaw: bridge,
+      getConfig: () => ({ telegram: { suppressNotificationEvents: false } }),
+    })
+    await handler.handle({ event: 'notification', sessionId: 's1', todoId: 't1' })
+    const r = await handler.handle({ event: 'notification', sessionId: 's1', todoId: 't1' })
+    expect(r.action).toBe('skipped')
+    expect(r.reason).toBe('notification_cooldown')
+  })
+
+  it('Notification: with suppressNotificationEvents=false + cooldownMs=0, every event fires', async () => {
+    handler = createOpenClawHookHandler({
+      db, openclaw: bridge,
+      getConfig: () => ({ telegram: { suppressNotificationEvents: false, notificationCooldownMs: 0 } }),
+    })
     await handler.handle({ event: 'notification', sessionId: 's1', todoId: 't1' })
     const r = await handler.handle({ event: 'notification', sessionId: 's1', todoId: 't1' })
     expect(r.action).toBe('sent')
+  })
+
+  it('Notification: suppressed by default (no config) — 早期短路，不调 bridge', async () => {
+    // 默认无 getConfig → suppressNotificationEvents 视为 true
+    const r = await handler.handle({ event: 'notification', sessionId: 's1', todoId: 't1' })
+    expect(r.ok).toBe(true)
+    expect(r.action).toBe('skipped')
+    expect(r.reason).toBe('notification_suppressed')
+    // 关键：早期短路，没浪费 IO，bridge 完全没被调用
+    expect(bridge.postText).not.toHaveBeenCalled()
   })
 
   it('SessionEnd ignores cooldown (final state)', async () => {
@@ -200,10 +319,10 @@ describe('openclaw-hook router', () => {
     expect(res.body.action).toBe('sent')
   })
 
-  it('200 + skipped on cooldown', async () => {
+  it('200 + sent for repeat stop (cooldown removed for multi-turn)', async () => {
     const supertest = (await import('supertest')).default
     await supertest(app).post('/api/openclaw/hook').send({ event: 'stop', sessionId: 's1' })
     const r = await supertest(app).post('/api/openclaw/hook').send({ event: 'stop', sessionId: 's1' })
-    expect(r.body.action).toBe('skipped')
+    expect(r.body.action).toBe('sent')
   })
 })
