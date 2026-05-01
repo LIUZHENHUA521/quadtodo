@@ -64,6 +64,22 @@ const DEFAULT_OPENCLAW_CONFIG = {
 	},
 };
 
+const DEFAULT_TELEGRAM_CONFIG = {
+	enabled: false,
+	supergroupId: "",
+	longPollTimeoutSec: 30,
+	useTopics: true,
+	createTopicOnTaskStart: true,
+	closeTopicOnSessionEnd: true,
+	topicNameTemplate: "#t{shortCode} {title}",
+	topicNameDoneTemplate: "✅ {originalName}",
+	allowedChatIds: [],     // 空 = 拒所有，强制白名单
+	allowedFromUserIds: [],
+	notificationCooldownMs: 600_000,    // 同 session 内 ⚠️ idle 提醒最小间隔（默认 10 分钟，0 = 关闭去重）
+	suppressNotificationEvents: true,   // 默认丢弃 Claude Code 的 idle Notification（无信息量；设 false 可恢复旧 cooldown 行为）
+	autoCreateTopic: true,              // 非 wizard 起的 PTY session 自动镜像到 Telegram topic
+};
+
 function detectBinary(name) {
 	try {
 		const result = execSync(`command -v ${name}`, {
@@ -263,6 +279,11 @@ function defaultConfig() {
 			...DEFAULT_OPENCLAW_CONFIG,
 			askUser: { ...DEFAULT_OPENCLAW_CONFIG.askUser },
 		},
+		telegram: {
+			...DEFAULT_TELEGRAM_CONFIG,
+			allowedChatIds: [...DEFAULT_TELEGRAM_CONFIG.allowedChatIds],
+			allowedFromUserIds: [...DEFAULT_TELEGRAM_CONFIG.allowedFromUserIds],
+		},
 		// Clone DEFAULT_PRICING so user mutations (e.g. via setConfigValue) don't
 		// leak back into the module-level constant.
 		pricing: cloneDefaultPricing(),
@@ -318,6 +339,16 @@ function normalizeConfig(cfg = {}) {
 				...DEFAULT_OPENCLAW_CONFIG.askUser,
 				...(cfg.openclaw?.askUser || {}),
 			},
+		},
+		telegram: {
+			...DEFAULT_TELEGRAM_CONFIG,
+			...(cfg.telegram || {}),
+			allowedChatIds: Array.isArray(cfg.telegram?.allowedChatIds)
+				? cfg.telegram.allowedChatIds.map((x) => String(x).trim()).filter(Boolean)
+				: [...DEFAULT_TELEGRAM_CONFIG.allowedChatIds],
+			allowedFromUserIds: Array.isArray(cfg.telegram?.allowedFromUserIds)
+				? cfg.telegram.allowedFromUserIds.map((x) => String(x).trim()).filter(Boolean)
+				: [...DEFAULT_TELEGRAM_CONFIG.allowedFromUserIds],
 		},
 		// Note on models merge precedence: user entries with the SAME key as a
 		// default (e.g. 'claude-opus-4-*') override the default. To override
