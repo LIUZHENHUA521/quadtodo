@@ -36,9 +36,10 @@ import { createTelegramSyncRouter } from "./routes/telegram-sync.js";
 import { createOpenClawHookRouter } from "./routes/openclaw-hook.js";
 import { createOpenClawWizard } from "./openclaw-wizard.js";
 import { createOpenClawInboundRouter } from "./routes/openclaw-inbound.js";
-import { createTelegramBot } from "./telegram-bot.js";
+import { createTelegramBot, readBotTokenWithSource } from "./telegram-bot.js";
 import { createLoadingTracker } from "./telegram-loading-status.js";
 import { buildTelegramCommands } from "./telegram-commands.js";
+import { isMaskedToken, maskBotToken } from "./telegram-config-service.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -418,11 +419,18 @@ export function createServer(opts = {}) {
 	app.get("/api/config", (_req, res) => {
 		try {
 			const cfg = loadConfig({ rootDir: configRootDir });
+			const { token, source } = readBotTokenWithSource(() => cfg);
+			const { botToken: _botToken, ...telegramSafe } = cfg.telegram || {};
 			res.json({
 				ok: true,
 				config: {
 					...cfg,
 					tools: resolveToolsConfig(cfg.tools),
+					telegram: {
+						...telegramSafe,
+						botTokenMasked: maskBotToken(token),
+						botTokenSource: source,
+					},
 				},
 				toolDiagnostics: inspectToolsConfig(cfg.tools),
 			});
