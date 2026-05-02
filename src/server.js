@@ -439,14 +439,42 @@ export function createServer(opts = {}) {
 		}
 	});
 
-	app.put("/api/config", (req, res) => {
+	app.put("/api/config", async (req, res) => {
 		try {
 			const current = loadConfig({ rootDir: configRootDir });
 			const nextToolsPatch = req.body?.tools || {};
 			const pricingPatch = req.body?.pricing;
+
+			// Telegram token mask 处理
+			const telegramPatch = { ...(req.body?.telegram || {}) };
+			if ('botToken' in telegramPatch) {
+				const tok = telegramPatch.botToken;
+				if (isMaskedToken(tok)) {
+					// 用户没改 token —— 删除该字段，保留磁盘原值
+					delete telegramPatch.botToken;
+				} else if (tok === '') {
+					// 显式清空
+					telegramPatch.botToken = null;
+				}
+				// 其他字符串：透传作为新值
+			}
+			// botTokenMasked / botTokenSource 是 GET-only，PUT 收到的不能写回
+			delete telegramPatch.botTokenMasked;
+			delete telegramPatch.botTokenSource;
+
+			// 合并 telegram 段
+			const mergedTelegram = { ...current.telegram, ...telegramPatch };
+
+			// 检测 telegram 段是否变化（用于触发热重启）
+			const telegramChanged = JSON.stringify(mergedTelegram) !== JSON.stringify(current.telegram);
+
+			// 不能直接 ...req.body 因为里面可能有原始 telegramPatch（含 mask）—— 排除掉再 spread
+			const { telegram: _t, ...bodyWithoutTelegram } = req.body || {};
+
 			const next = {
 				...current,
-				...req.body,
+				...bodyWithoutTelegram,
+				telegram: mergedTelegram,
 				tools: {
 					...current.tools,
 					claude: mergeToolConfig(current.tools?.claude, nextToolsPatch.claude),
@@ -470,17 +498,39 @@ export function createServer(opts = {}) {
 			runtimeConfig.webhook = next.webhook || runtimeConfig.webhook;
 			pty.tools = runtimeConfig.tools;
 
+			// 触发 telegram stack 热重启
+			let telegramRestart = { applied: false };
+			if (telegramChanged) {
+				try {
+					await restartTelegramStack();
+					telegramRestart = { applied: true };
+				} catch (e) {
+					telegramRestart = { applied: false, error: e.message };
+				}
+			}
+
+			// 返回时也走 mask 逻辑（避免 token 泄漏）
+			const reloadedCfg = loadConfig({ rootDir: configRootDir });
+			const { token, source } = readBotTokenWithSource(() => reloadedCfg);
+			const { botToken: _drop, ...telegramSafe } = reloadedCfg.telegram || {};
+
 			res.json({
 				ok: true,
 				config: {
-					...next,
+					...reloadedCfg,
 					tools: runtimeConfig.tools,
+					telegram: {
+						...telegramSafe,
+						botTokenMasked: maskBotToken(token),
+						botTokenSource: source,
+					},
 				},
 				toolDiagnostics: inspectToolsConfig(next.tools),
 				runtimeApplied: {
 					defaultCwd: runtimeConfig.defaultCwd,
 					defaultTool: runtimeConfig.defaultTool,
 				},
+				telegramRestart,
 			});
 		} catch (e) {
 			res.status(500).json({ ok: false, error: e.message });
