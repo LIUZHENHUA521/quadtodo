@@ -78,6 +78,8 @@ const DEFAULT_TELEGRAM_CONFIG = {
 	notificationCooldownMs: 600_000,    // 同 session 内 ⚠️ idle 提醒最小间隔（默认 10 分钟，0 = 关闭去重）
 	suppressNotificationEvents: true,   // 默认丢弃 Claude Code 的 idle Notification（无信息量；设 false 可恢复旧 cooldown 行为）
 	autoCreateTopic: true,              // 非 wizard 起的 PTY session 自动镜像到 Telegram topic
+	pollRetryDelayMs: 5000,
+	minRenameIntervalMs: 30_000,
 };
 
 function detectBinary(name) {

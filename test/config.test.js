@@ -213,3 +213,15 @@ describe('config wiki defaults', () => {
 		expect(cfg.wiki.redact).toBe(true);
 	});
 });
+
+describe('telegram defaults: pollRetryDelayMs / minRenameIntervalMs', () => {
+	it('normalizes legacy config without these fields by injecting defaults', async () => {
+		const { loadConfig } = await import('../src/config.js');
+		const tmp = mkdtempSync(join(tmpdir(), 'qt-cfg-'));
+		writeFileSync(join(tmp, 'config.json'), JSON.stringify({ telegram: { enabled: true } }));
+		const cfg = loadConfig({ rootDir: tmp });
+		expect(cfg.telegram.pollRetryDelayMs).toBe(5000);
+		expect(cfg.telegram.minRenameIntervalMs).toBe(30000);
+		rmSync(tmp, { recursive: true, force: true });
+	});
+});
