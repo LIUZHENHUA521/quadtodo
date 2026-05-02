@@ -1,7 +1,8 @@
-import { Drawer, Descriptions, Alert, Typography, Form, Input, InputNumber, Button, Radio, Space, message, Tag, Switch } from 'antd'
+import { Drawer, Descriptions, Alert, Typography, Form, Input, InputNumber, Button, Radio, Space, message, Tag, Switch, Collapse } from 'antd'
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
-import { getStatus, getConfig, updateConfig, AppConfig, pickDirectory, ToolDiagnostic } from './api'
+import { getStatus, getConfig, updateConfig, AppConfig, pickDirectory, ToolDiagnostic, testTelegram, type ProbeHit } from './api'
+import { TelegramProbeModal } from './TelegramProbeModal'
 
 const { Paragraph, Text } = Typography
 
@@ -73,6 +74,11 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       return v === 'trae' || v === 'cursor' ? v : 'trae-cn'
     } catch { return 'trae-cn' }
   })
+  const [probeOpen, setProbeOpen] = useState(false)
+  const [tokenSource, setTokenSource] = useState<'quadtodo' | 'openclaw' | 'missing'>('missing')
+  const [tokenMasked, setTokenMasked] = useState<string>('')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<string | null>(null)
   const [form] = Form.useForm()
 
   const buildToolPatch = (tool: 'claude' | 'codex', nextCommandValue: string, nextBinValue: string) => {
@@ -123,6 +129,23 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           webhookCooldownMs: result.config.webhook.cooldownMs,
           notifyOnPendingConfirm: result.config.webhook.notifyOnPendingConfirm,
           notifyOnKeywordMatch: result.config.webhook.notifyOnKeywordMatch,
+          telegramEnabled: result.config.telegram?.enabled ?? false,
+          telegramBotToken: result.config.telegram?.botTokenMasked || '',
+          telegramSupergroupId: result.config.telegram?.supergroupId || '',
+          telegramAllowedChatIds: (result.config.telegram?.allowedChatIds || []).join('\n'),
+          telegramAllowedFromUserIds: (result.config.telegram?.allowedFromUserIds || []).join('\n'),
+          telegramUseTopics: result.config.telegram?.useTopics !== false,
+          telegramCreateTopicOnTaskStart: result.config.telegram?.createTopicOnTaskStart !== false,
+          telegramCloseTopicOnSessionEnd: result.config.telegram?.closeTopicOnSessionEnd !== false,
+          telegramTopicNameTemplate: result.config.telegram?.topicNameTemplate || '#t{shortCode} {title}',
+          telegramTopicNameDoneTemplate: result.config.telegram?.topicNameDoneTemplate || '✅ {originalName}',
+          telegramAutoCreateTopic: result.config.telegram?.autoCreateTopic !== false,
+          telegramNotificationCooldownMs:
+            (result.config.telegram?.notificationCooldownMs as number | undefined) ?? 600000,
+          telegramSuppressNotificationEvents: result.config.telegram?.suppressNotificationEvents !== false,
+          telegramLongPollTimeoutSec: result.config.telegram?.longPollTimeoutSec ?? 30,
+          telegramPollRetryDelayMs: result.config.telegram?.pollRetryDelayMs ?? 5000,
+          telegramMinRenameIntervalMs: result.config.telegram?.minRenameIntervalMs ?? 30000,
           pricingCnyRate: result.config.pricing.cnyRate,
           pricingDefault: { ...result.config.pricing.default },
           pricingModels: Object.entries(result.config.pricing.models).map(([pattern, rate]) => ({
@@ -130,6 +153,8 @@ export default function SettingsDrawer({ open, onClose }: Props) {
             ...rate,
           })),
         })
+        setTokenSource((result.config.telegram?.botTokenSource as 'quadtodo' | 'openclaw' | 'missing' | undefined) || 'missing')
+        setTokenMasked(result.config.telegram?.botTokenMasked || '')
         setErr(null)
       })
       .catch((e) => setErr(e.message))
@@ -159,6 +184,24 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           notifyOnPendingConfirm: values.notifyOnPendingConfirm !== false,
           notifyOnKeywordMatch: values.notifyOnKeywordMatch !== false,
         },
+        telegram: {
+          enabled: Boolean(values.telegramEnabled),
+          botToken: values.telegramBotToken || '',     // 后端 isMaskedToken 检测会跳过
+          supergroupId: values.telegramSupergroupId || '',
+          allowedChatIds: String(values.telegramAllowedChatIds || '').split('\n').map((s: string) => s.trim()).filter(Boolean),
+          allowedFromUserIds: String(values.telegramAllowedFromUserIds || '').split('\n').map((s: string) => s.trim()).filter(Boolean),
+          useTopics: values.telegramUseTopics !== false,
+          createTopicOnTaskStart: values.telegramCreateTopicOnTaskStart !== false,
+          closeTopicOnSessionEnd: values.telegramCloseTopicOnSessionEnd !== false,
+          topicNameTemplate: values.telegramTopicNameTemplate || '#t{shortCode} {title}',
+          topicNameDoneTemplate: values.telegramTopicNameDoneTemplate || '✅ {originalName}',
+          autoCreateTopic: values.telegramAutoCreateTopic !== false,
+          notificationCooldownMs: Number(values.telegramNotificationCooldownMs) || 0,
+          suppressNotificationEvents: values.telegramSuppressNotificationEvents !== false,
+          longPollTimeoutSec: Number(values.telegramLongPollTimeoutSec) || 30,
+          pollRetryDelayMs: Number(values.telegramPollRetryDelayMs) || 5000,
+          minRenameIntervalMs: Number(values.telegramMinRenameIntervalMs) || 30000,
+        },
         pricing: {
           cnyRate: Number(values.pricingCnyRate) || 7.2,
           default: {
@@ -182,6 +225,8 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       })
       setConfig(result.config)
       setToolDiagnostics(result.toolDiagnostics)
+      setTokenSource((result.config.telegram?.botTokenSource as 'quadtodo' | 'openclaw' | 'missing' | undefined) || 'missing')
+      setTokenMasked(result.config.telegram?.botTokenMasked || '')
       form.setFieldsValue({
         claudeCommand: joinCommandLine(result.config.tools.claude.command, result.config.tools.claude.args),
         claudeBin: result.config.tools.claude.bin,
@@ -458,6 +503,169 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         >
           <Input type="number" min={1000} step={1000} />
         </Form.Item>
+
+        <Paragraph style={{ marginTop: 24, marginBottom: 12 }}>
+          <Text strong>Telegram</Text>
+          <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+            话题群同步、bot 配置、通知与白名单。改完保存后会自动重启长轮询。
+          </Text>
+        </Paragraph>
+
+        <Collapse
+          defaultActiveKey={['basic', 'topic', 'notify', 'security']}
+          items={[
+            {
+              key: 'basic',
+              label: 'Telegram · 基础',
+              children: (
+                <>
+                  <Form.Item name="telegramEnabled" label="启用 Telegram" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+
+                  <Form.Item label="Bot Token" required>
+                    <Space.Compact style={{ width: '100%' }}>
+                      <Form.Item name="telegramBotToken" noStyle>
+                        <Input.Password placeholder="paste token here，留空 = 用兜底来源" autoComplete="new-password" />
+                      </Form.Item>
+                      <Button
+                        loading={testing}
+                        onClick={async () => {
+                          setTesting(true)
+                          try {
+                            const r = await testTelegram()
+                            if (r.ok) {
+                              setTestResult(`✓ ${r.botUsername ? '@' + r.botUsername : `id=${r.botId}`}（来源：${r.source}）`)
+                              message.success('Telegram 连通')
+                            } else {
+                              setTestResult(`✗ ${r.errorReason || 'unknown'}`)
+                              message.error(r.errorReason || '测试失败')
+                            }
+                          } catch (e: any) {
+                            setTestResult(`✗ ${e.message}`)
+                          } finally {
+                            setTesting(false)
+                          }
+                        }}
+                      >测试</Button>
+                    </Space.Compact>
+                    <div style={{ marginTop: 4, fontSize: 12 }}>
+                      <Tag color={tokenSource === 'quadtodo' ? 'default' : tokenSource === 'openclaw' ? 'orange' : 'error'}>
+                        {tokenSource === 'quadtodo' && '来自 quadtodo 配置'}
+                        {tokenSource === 'openclaw' && '来自 ~/.openclaw/openclaw.json（兜底）'}
+                        {tokenSource === 'missing' && '未配置'}
+                      </Tag>
+                      {testResult && <span style={{ marginLeft: 8 }}>{testResult}</span>}
+                    </div>
+                  </Form.Item>
+
+                  <Form.Item label="Supergroup ID">
+                    <Space.Compact style={{ width: '100%' }}>
+                      <Form.Item name="telegramSupergroupId" noStyle>
+                        <Input placeholder="-1001234567890" />
+                      </Form.Item>
+                      <Button onClick={() => setProbeOpen(true)}>抓 ID</Button>
+                    </Space.Compact>
+                  </Form.Item>
+
+                  <Form.Item
+                    name="telegramAllowedChatIds"
+                    label="白名单 chatIds"
+                    extra="一行一个 chat_id；空 = 拒绝所有（强制白名单）"
+                  >
+                    <Input.TextArea rows={3} placeholder="-1001234567890" />
+                  </Form.Item>
+                </>
+              ),
+            },
+            {
+              key: 'topic',
+              label: 'Telegram · Topic 行为',
+              children: (
+                <>
+                  <Form.Item name="telegramUseTopics" label="启用 Topics" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item name="telegramCreateTopicOnTaskStart" label="任务启动时建 Topic" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item name="telegramCloseTopicOnSessionEnd" label="Session 结束关 Topic" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item name="telegramAutoCreateTopic" label="非 wizard 起的 PTY 自动镜像" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item name="telegramTopicNameTemplate" label="Topic 名模板" extra="占位符：{shortCode} {title}">
+                    <Input />
+                  </Form.Item>
+                  <Form.Item name="telegramTopicNameDoneTemplate" label="完成模板" extra="占位符：{originalName}">
+                    <Input />
+                  </Form.Item>
+                </>
+              ),
+            },
+            {
+              key: 'notify',
+              label: 'Telegram · 通知行为',
+              children: (
+                <>
+                  <Form.Item
+                    name="telegramNotificationCooldownMs"
+                    label="同 session idle 提醒最小间隔 (ms)"
+                    extra="0 = 关闭去重，每次都推。默认 600000（10 分钟）。"
+                  >
+                    <InputNumber min={0} step={60_000} style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item name="telegramSuppressNotificationEvents" label="丢弃 idle Notification 事件" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                </>
+              ),
+            },
+            {
+              key: 'security',
+              label: 'Telegram · 安全',
+              children: (
+                <Form.Item
+                  name="telegramAllowedFromUserIds"
+                  label="白名单 fromUserIds"
+                  extra="一行一个 user_id；空 = 不限"
+                >
+                  <Input.TextArea rows={3} />
+                </Form.Item>
+              ),
+            },
+            {
+              key: 'advanced',
+              label: 'Telegram · 高级（不动也行）',
+              children: (
+                <>
+                  <Form.Item name="telegramLongPollTimeoutSec" label="长轮询超时 (秒)">
+                    <InputNumber min={5} max={120} style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item name="telegramPollRetryDelayMs" label="拉取失败退避起点 (ms)">
+                    <InputNumber min={500} step={500} style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item name="telegramMinRenameIntervalMs" label="Topic 重命名最小间隔 (ms)">
+                    <InputNumber min={1000} step={1000} style={{ width: '100%' }} />
+                  </Form.Item>
+                </>
+              ),
+            },
+          ]}
+        />
+
+        <TelegramProbeModal
+          open={probeOpen}
+          onClose={() => setProbeOpen(false)}
+          onPick={(hit: ProbeHit) => {
+            form.setFieldValue('telegramSupergroupId', hit.chatId)
+            const cur = String(form.getFieldValue('telegramAllowedChatIds') || '')
+            if (!cur.split('\n').includes(hit.chatId)) {
+              form.setFieldValue('telegramAllowedChatIds', hit.chatId + (cur ? '\n' + cur : ''))
+            }
+          }}
+        />
 
         <Paragraph style={{ marginTop: 24, marginBottom: 12 }}>
           <Text strong>估算价目表</Text>
