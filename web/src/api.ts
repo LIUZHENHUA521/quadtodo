@@ -113,6 +113,28 @@ export interface AppConfig {
     notifyOnPendingConfirm: boolean
     notifyOnKeywordMatch: boolean
   }
+  telegram?: {
+    enabled?: boolean
+    supergroupId?: string
+    longPollTimeoutSec?: number
+    useTopics?: boolean
+    createTopicOnTaskStart?: boolean
+    closeTopicOnSessionEnd?: boolean
+    topicNameTemplate?: string
+    topicNameDoneTemplate?: string
+    allowedChatIds?: string[]
+    allowedFromUserIds?: string[]
+    notificationCooldownMs?: number
+    suppressNotificationEvents?: boolean
+    autoCreateTopic?: boolean
+    pollRetryDelayMs?: number
+    minRenameIntervalMs?: number
+    botToken?: string                                          // PUT only; GET 永远不返回明文
+    botTokenMasked?: string | null                              // GET 时返回
+    botTokenSource?: 'quadtodo' | 'openclaw' | 'missing'        // GET 时返回
+    defaultSupergroupId?: string                                // legacy
+    [key: string]: unknown
+  }
   pricing: PricingConfig
 }
 
@@ -389,6 +411,36 @@ export async function sendAiInput(sessionId: string, data: string): Promise<void
 
 export async function getStatus(): Promise<{ version: string; activeSessions: number }> {
   return jsonFetch('/api/status')
+}
+
+export interface TelegramSyncAction {
+  type: 'open_topic' | 'close_topic' | 'clear_route'
+  todoId?: string
+  todoTitle?: string
+  sessionId?: string
+  chatId?: string
+  threadId?: number
+  reason: string
+  result?: { ok: boolean; action?: string; reason?: string; error?: string }
+}
+export interface TelegramSyncResponse {
+  ok: boolean
+  dryRun: boolean
+  summary: {
+    total: number
+    open_topic: number
+    close_topic: number
+    clear_route: number
+    succeeded?: number
+    failed?: number
+  }
+  actions: TelegramSyncAction[]
+}
+export async function telegramSync(dryRun: boolean): Promise<TelegramSyncResponse> {
+  return jsonFetch('/api/telegram-sync', {
+    method: 'POST',
+    body: JSON.stringify({ dryRun }),
+  })
 }
 
 export async function getConfig(): Promise<{ config: AppConfig; toolDiagnostics: Record<AiTool, ToolDiagnostic> }> {
@@ -835,4 +887,82 @@ export async function searchAll(params: {
   if (params.includeArchived) q.set('includeArchived', 'true')
   const body = await jsonFetch<{ ok: true } & SearchResponse>(`/api/search?${q.toString()}`)
   return { total: body.total, results: body.results }
+}
+
+// ─── Telegram config helpers ─────────────────────────────────
+
+export interface TelegramTestResult {
+  ok: boolean
+  botId?: number
+  botUsername?: string | null
+  botFirstName?: string | null
+  source: 'quadtodo' | 'openclaw' | 'missing'
+  errorReason?: string
+}
+
+export async function testTelegram(): Promise<TelegramTestResult> {
+  // 这个端点的 ok=false 是合法业务回包（不是 HTTP 错误），所以绕过 jsonFetch 的 .ok 抛错
+  const r = await fetch(BASE + '/api/config/telegram/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return await r.json() as TelegramTestResult
+}
+
+export interface ProbeStartResult {
+  ok: boolean
+  durationSec?: number
+  expiresAt?: number
+  reason?: string
+}
+
+export async function startProbeChatId(durationSec = 60): Promise<ProbeStartResult> {
+  const r = await fetch(BASE + '/api/config/telegram/probe-chat-id', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ durationSec }),
+  })
+  return await r.json() as ProbeStartResult
+}
+
+export async function stopProbeChatId(): Promise<void> {
+  await fetch(BASE + '/api/config/telegram/probe-chat-id/stop', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+export interface ProbeHit {
+  chatId: string
+  chatTitle?: string | null
+  chatType?: string | null
+  fromUserId?: string | null
+  fromUsername?: string | null
+  textPreview?: string | null
+  at: number
+}
+
+/**
+ * 订阅 probe SSE。返回 close 函数。
+ * onHit 收到每个命中条目；onDone 收到「probe 结束」事件。
+ */
+export function subscribeProbeChatId(callbacks: {
+  onHit: (hit: ProbeHit) => void
+  onDone?: () => void
+  onError?: (err: Event) => void
+}): () => void {
+  const url = BASE + '/api/config/telegram/probe-chat-id/stream'
+  const es = new EventSource(url)
+  es.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data)
+      callbacks.onHit(data)
+    } catch {}
+  }
+  es.addEventListener('done', () => {
+    callbacks.onDone?.()
+    es.close()
+  })
+  es.onerror = (e) => callbacks.onError?.(e)
+  return () => es.close()
 }
