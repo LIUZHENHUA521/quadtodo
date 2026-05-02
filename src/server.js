@@ -32,9 +32,13 @@ import { createMcpRouter } from "./mcp/server.js";
 import { createOpenClawBridge } from "./openclaw-bridge.js";
 import { createPendingQuestionCoordinator } from "./pending-questions.js";
 import { createOpenClawHookHandler } from "./openclaw-hook.js";
+import { createTelegramSyncRouter } from "./routes/telegram-sync.js";
 import { createOpenClawHookRouter } from "./routes/openclaw-hook.js";
 import { createOpenClawWizard } from "./openclaw-wizard.js";
 import { createOpenClawInboundRouter } from "./routes/openclaw-inbound.js";
+import { createTelegramBot } from "./telegram-bot.js";
+import { createLoadingTracker } from "./telegram-loading-status.js";
+import { buildTelegramCommands } from "./telegram-commands.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -385,12 +389,19 @@ export function createServer(opts = {}) {
 	};
 	const pty =
 		injectedPty || new PtyManager({ tools: runtimeConfig.tools || {} });
+	// Telegram 自动 topic 钩子：ait 创建在前，wizard 创建在后；用 lazy ref 桥接
+	const aiSessionHooks = {
+		onSessionSpawned: () => null,
+		onSessionEnded: () => null,
+	};
 	const ait = createAiTerminal({
 		db,
 		pty,
 		logDir,
 		getDefaultCwd: () => runtimeConfig.defaultCwd,
 		getWebhookConfig: () => runtimeConfig.webhook,
+		onSessionSpawned: (info) => aiSessionHooks.onSessionSpawned(info),
+		onSessionEnded: (info) => aiSessionHooks.onSessionEnded(info),
 	});
 
 	const app = express();
@@ -823,24 +834,189 @@ export function createServer(opts = {}) {
 	const pendingCoord = createPendingQuestionCoordinator({ db });
 	pendingCoord.start();
 
-	// Claude Code hook 主动推送处理器
+	// Telegram bot：直连 Telegram getUpdates 长轮询；config.telegram.enabled 时启动
+	// telegramBot 实例先创建（wizard / hook 需要引用）；start 在 wizard 注入完成后
+	let telegramBot = null
+	const telegramConfig = (initialConfig?.telegram) || {}
+	if (telegramConfig.enabled) {
+		telegramBot = createTelegramBot({
+			getConfig: () => loadConfig({ rootDir: configRootDir }),
+			// wizard 在下面才创建 → 用 lazy proxy
+			wizard: {
+				handleInbound: (...args) => openclawWizardLazyRef.handleInbound(...args),
+				handleTopicEvent: (...args) => openclawWizardLazyRef.handleTopicEvent(...args),
+			},
+			logger: { warn: (...a) => console.warn(...a), info: (...a) => console.log(...a) },
+		})
+	}
+
+	// Topic 标题状态：session 起步改 🔄、结束改 ✅/❌/⏹（A 方案；B/D 已删，限速顶不住）
+	let loadingTracker = null
+	if (telegramBot) {
+		loadingTracker = createLoadingTracker({
+			telegramBot,
+			openclaw: openclawBridge,
+			logger: console,
+			getConfig: () => loadConfig({ rootDir: configRootDir }),
+		})
+		pty.on('native-session', ({ sessionId }) => {
+			loadingTracker.start({ sessionId })
+				.catch((e) => console.warn(`[loading-status] start failed: ${e.message}`))
+		})
+		pty.on('done', ({ sessionId, exitCode, stopped }) => {
+			const finalStatus = stopped ? 'stopped' : (exitCode === 0 ? 'done' : 'failed')
+			loadingTracker.stop({ sessionId, finalStatus })
+				.catch((e) => console.warn(`[loading-status] stop failed: ${e.message}`))
+		})
+	}
+
+	// 注意：openclawHookHandler 需要 telegramBot；wizard 也需要 telegramBot；
+	// 但 telegramBot 已经在上面用 lazy ref 处理了 wizard 依赖。
 	const openclawHookHandler = createOpenClawHookHandler({
 		db,
 		openclaw: openclawBridge,
 		aiTerminal: ait,
+		pty,
+		telegramBot,
+		loadingTracker,                  // Stop hook → 标题切 💤
+		getConfig: () => loadConfig({ rootDir: configRootDir }),
 	});
 	app.use("/api/openclaw/hook", createOpenClawHookRouter({ hookHandler: openclawHookHandler }));
 
 	// OpenClaw wizard 状态机：peer 维度的多轮向导，OpenClaw 是消息转发器
+	const openclawWizardLazyRef = {
+		handleInbound: () => Promise.resolve({ reply: 'wizard not ready' }),
+		handleTopicEvent: () => Promise.resolve({ ok: false, reason: 'wizard not ready' }),
+	};
 	const openclawWizard = createOpenClawWizard({
 		db,
 		aiTerminal: ait,
 		openclaw: openclawBridge,
 		pending: pendingCoord,
 		pty,
+		telegramBot,
+		loadingTracker,                  // wizard stdin proxy → 标题切回 🔄
 		getConfig: () => loadConfig({ rootDir: configRootDir }),
 	});
+	openclawWizardLazyRef.handleInbound = (...args) => openclawWizard.handleInbound(...args);
+	openclawWizardLazyRef.handleTopicEvent = (...args) => openclawWizard.handleTopicEvent(...args);
 	app.use("/api/openclaw/inbound", createOpenClawInboundRouter({ wizard: openclawWizard }));
+
+	// 注入 telegramBot 给 openclaw-bridge 用（让 sendDocument 可用）
+	if (telegramBot) {
+		openclawBridge.setTelegramBot(telegramBot);
+	}
+
+	// 懒检测：bridge 推送时 topic 已被删 / thread 失效 → 走关闭流程（mark done + 杀 PTY）
+	openclawBridge.setTopicGoneHandler?.(({ chatId, threadId }) => {
+		openclawWizard.handleTopicEvent({ type: 'closed', chatId, threadId })
+			.catch((e) => console.warn(`[server] topic_gone handler failed: ${e.message}`))
+	})
+
+	// ─── Telegram 自动 topic 镜像（B 方案）─────────────────────────
+	// 默认开；config.telegram.autoCreateTopic = false 可关
+	const autoCreateEnabled = telegramConfig.enabled && telegramConfig.autoCreateTopic !== false
+	aiSessionHooks.onSessionSpawned = ({ sessionId, todoId }) => {
+		if (!autoCreateEnabled) return null
+		return openclawWizard.ensureTopicForSession({ sessionId, todoId })
+			.catch((e) => console.warn(`[server] ensureTopicForSession failed: ${e.message}`))
+	}
+	aiSessionHooks.onSessionEnded = ({ sessionId, exitCode, startedAt, completedAt }) => {
+		// 安全门槛：只对干净退出 (exitCode=0) 且寿命 ≥ 30s 的走自动关 topic。
+		// 早夭 / 非零退出多半是 recovery 抽风、jsonl 失效、网络断 —— 不该改 todo 状态。
+		const lifetimeMs = (completedAt || Date.now()) - (startedAt || 0)
+		const cleanExit = exitCode === 0 && lifetimeMs >= 30_000
+		if (!cleanExit) {
+			console.log(`[server] skip auto-close: sid=${sessionId} exit=${exitCode} lifetime=${lifetimeMs}ms`)
+			return null
+		}
+		const route = openclawBridge.resolveRoute?.(sessionId)
+		if (!route?.threadId) return null
+		return openclawWizard.handleTopicEvent({
+			type: 'closed',
+			chatId: route.targetUserId,
+			threadId: route.threadId,
+		}).catch((e) => console.warn(`[server] auto-close topic failed: ${e.message}`))
+	}
+
+	// 启动期 sweep：恢复后的 running PTY session 若没绑 topic（手动 web/CLI 起的）→ 补建
+	if (autoCreateEnabled) {
+		let swept = 0
+		for (const [sid, sess] of ait.sessions) {
+			if (sess.status !== 'running' && sess.status !== 'pending_confirm') continue
+			const r = openclawBridge.resolveRoute?.(sid)
+			if (r?.threadId) continue   // 已经有
+			openclawWizard.ensureTopicForSession({ sessionId: sid, todoId: sess.todoId })
+				.then((res) => res?.action === 'created' && console.log(`[server] sweep auto-bound ${sid} → thread ${res.threadId}`))
+				.catch((e) => console.warn(`[server] sweep ensureTopic failed for ${sid}: ${e.message}`))
+			swept++
+		}
+		if (swept > 0) console.log(`[server] sweep: queued ${swept} session(s) for auto-bind`)
+	}
+
+	// ─── 重启后路由 rehydration ───────────────────────────────────
+	// 复活的 PTY session 用 NEW sessionId，但 DB 里 aiSessions[i].telegramRoute
+	// 保留了 (chatId, threadId, topicName)。把它们重新注入 openclaw-bridge，让
+	// 重启后旧 topic 的对话能继续路由到正确 PTY。
+	{
+		let rehydrated = 0
+		for (const [sid, sess] of ait.sessions) {
+			try {
+				const todo = db.getTodo(sess.todoId)
+				if (!todo) continue
+				const aiSess = (todo.aiSessions || []).find((s) => s.sessionId === sid)
+				if (aiSess?.telegramRoute) {
+					openclawBridge.registerSessionRoute(sid, aiSess.telegramRoute)
+					rehydrated++
+				}
+			} catch (e) {
+				console.warn(`[server] rehydrate route failed for ${sid}: ${e.message}`)
+			}
+		}
+		if (rehydrated > 0) console.log(`[server] rehydrated ${rehydrated} telegram session route(s)`)
+
+		// rehydration 之后注册 tracker（仅记录 in-memory state，不调 telegram API）：
+		// 这样后续 PTY done 事件能改成终态 ✅/❌/⏹。boot 时不改 🔄（topic 上一轮可能已经是终态）。
+		if (loadingTracker) {
+			let kicked = 0
+			for (const [sid, sess] of ait.sessions) {
+				if (sess.status !== 'running' && sess.status !== 'pending_confirm') continue
+				const r = openclawBridge.resolveRoute?.(sid)
+				if (!r?.threadId) continue
+				if (loadingTracker.has(sid)) continue
+				loadingTracker.start({ sessionId: sid, skipTitleRename: true })
+					.catch((e) => console.warn(`[loading-status] rehydrate-kick failed sid=${sid}: ${e.message}`))
+				kicked++
+			}
+			if (kicked > 0) console.log(`[server] loading-status: registered ${kicked} resumed session(s) (skip-rename)`)
+		}
+	}
+
+	// 同步对账路由
+	app.use("/api/telegram-sync", createTelegramSyncRouter({
+		db, aiTerminal: ait, openclaw: openclawBridge, wizard: openclawWizard,
+	}).router);
+
+	// 启动 telegram bot 长轮询
+	if (telegramBot) {
+		telegramBot.start();
+		console.log(`[telegram] bot started; supergroup=${telegramConfig.supergroupId || '(unset)'} allowedChatIds=${(telegramConfig.allowedChatIds||[]).join(',')||'(empty—reject all)'}`);
+
+		// 注册 Claude Code slash 命令到 supergroup（per-chat scope，不影响 bot 在别处的菜单）
+		// idempotent；失败不阻塞 boot（log warn 后继续）
+		const supergroupId = telegramConfig.defaultSupergroupId
+			|| (Array.isArray(telegramConfig.allowedChatIds) ? telegramConfig.allowedChatIds[0] : null)
+		if (supergroupId) {
+			try {
+				const { commands, skipped } = buildTelegramCommands({ projectRoot: configRootDir, logger: console })
+				telegramBot.setMyCommands({ commands, scope: 'chat', chatId: supergroupId })
+					.then(() => console.log(`[telegram] registered ${commands.length} slash command(s) for supergroup ${supergroupId}${skipped.length ? ` (skipped ${skipped.length})` : ''}`))
+					.catch((e) => console.warn(`[telegram] setMyCommands failed: ${e.message}`))
+			} catch (e) {
+				console.warn(`[telegram] build commands failed: ${e.message}`)
+			}
+		}
+	}
 
 	// MCP Streamable HTTP 端点：把 quadtodo 暴露给 Claude Code 等 MCP 客户端
 	try {
@@ -955,6 +1131,7 @@ export function createServer(opts = {}) {
 	function close() {
 		return new Promise((resolve) => {
 			try { pendingCoord.stop() } catch { /* ignore */ }
+			try { telegramBot?.stop?.() } catch { /* ignore */ }
 			ait.close();
 			wss.close(() => {
 				httpServer.close(() => {
