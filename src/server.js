@@ -36,10 +36,11 @@ import { createTelegramSyncRouter } from "./routes/telegram-sync.js";
 import { createOpenClawHookRouter } from "./routes/openclaw-hook.js";
 import { createOpenClawWizard } from "./openclaw-wizard.js";
 import { createOpenClawInboundRouter } from "./routes/openclaw-inbound.js";
+import { createTelegramConfigRouter } from "./routes/telegram-config.js";
 import { createTelegramBot, readBotTokenWithSource } from "./telegram-bot.js";
 import { createLoadingTracker } from "./telegram-loading-status.js";
 import { buildTelegramCommands } from "./telegram-commands.js";
-import { isMaskedToken, maskBotToken } from "./telegram-config-service.js";
+import { createProbeRegistry, isMaskedToken, maskBotToken } from "./telegram-config-service.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -896,6 +897,7 @@ export function createServer(opts = {}) {
 	// holder 模式：所有依赖方持有 holder.current 而非裸引用，重启时只换 .current
 	const telegramBotHolder = { current: null }
 	const loadingTrackerHolder = { current: null }
+	const probeRegistry = createProbeRegistry()
 
 	// wizard lazy ref 必须先声明，因为 createTelegramBot 需要它
 	const openclawWizardLazyRef = {
@@ -1027,6 +1029,12 @@ export function createServer(opts = {}) {
 	openclawWizardLazyRef.handleInbound = (...args) => openclawWizard.handleInbound(...args);
 	openclawWizardLazyRef.handleTopicEvent = (...args) => openclawWizard.handleTopicEvent(...args);
 	app.use("/api/openclaw/inbound", createOpenClawInboundRouter({ wizard: openclawWizard }));
+
+	app.use("/api/config/telegram", createTelegramConfigRouter({
+		getConfig: () => loadConfig({ rootDir: configRootDir }),
+		getTelegramBot: () => telegramBotHolder.current,
+		probeRegistry,
+	}))
 
 	// 首次启动 telegram stack（按当前 config）
 	startTelegramStack()
