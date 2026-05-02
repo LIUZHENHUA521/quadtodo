@@ -559,3 +559,51 @@ describe('readBotTokenWithSource', () => {
     rmSync(tmp, { recursive: true, force: true })
   })
 })
+
+describe('setProbeListener exposes dispatch hits', () => {
+  let tmp, offsetFile
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'qt-tg-'))
+    offsetFile = join(tmp, 'offset.json')
+  })
+
+  it('listener gets every dispatched message regardless of allowedChatIds', async () => {
+    const seen = []
+    const fetchSeq = makeFetchSeq([
+      { ok: true, body: { ok: true, result: [
+        { update_id: 1, message: { message_id: 10, chat: { id: -100999, title: 'foreign', type: 'supergroup' }, from: { id: 7, username: 'alice' }, text: 'hello' } },
+      ] } },
+    ])
+    const bot = createTelegramBot({
+      getConfig: () => ({ telegram: { botToken: 'TKN', allowedChatIds: [] } }),
+      wizard: makeWizard(async () => ({})),
+      fetchFn: fetchSeq,
+      offsetFile,
+      logger: { warn() {}, info() {} },
+    })
+    bot.setProbeListener((info) => seen.push(info))
+    await bot.pollOnce()
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({ chatId: '-100999', chatTitle: 'foreign', chatType: 'supergroup', fromUserId: '7', textPreview: 'hello' })
+  })
+
+  it('listener does not affect allowedChatIds drop behavior', async () => {
+    const dispatched = []
+    const fetchSeq = makeFetchSeq([
+      { ok: true, body: { ok: true, result: [
+        { update_id: 1, message: { message_id: 10, chat: { id: -100999, type: 'supergroup' }, from: { id: 7 }, text: 'ping' } },
+      ] } },
+    ])
+    const bot = createTelegramBot({
+      getConfig: () => ({ telegram: { botToken: 'TKN', allowedChatIds: [] } }),
+      wizard: makeWizard(async (msg) => { dispatched.push(msg); return {} }),
+      fetchFn: fetchSeq,
+      offsetFile,
+      logger: { warn() {}, info() {} },
+    })
+    bot.setProbeListener(() => {})
+    await bot.pollOnce()
+    expect(dispatched).toHaveLength(0)  // wizard NOT called for unauthorized chat
+  })
+})

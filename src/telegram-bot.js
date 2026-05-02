@@ -301,12 +301,33 @@ export function createTelegramBot({
     return allow.includes(String(chatId))
   }
 
+  let probeListener = null
+  function setProbeListener(fn) {
+    probeListener = (typeof fn === 'function') ? fn : null
+  }
+
   async function dispatch(update) {
     const msg = update.message
     if (!msg) return
     const chatId = String(msg.chat.id)
     const threadId = msg.message_thread_id || null
     lastSeenChatId = chatId
+    // Probe listener：在白名单检查前 fork 一份给订阅者（拿 chatId 用）
+    if (probeListener) {
+      try {
+        probeListener({
+          chatId: String(msg.chat.id),
+          chatTitle: msg.chat.title || msg.chat.username || null,
+          chatType: msg.chat.type || null,
+          fromUserId: msg.from ? String(msg.from.id) : null,
+          fromUsername: msg.from?.username || null,
+          textPreview: typeof msg.text === 'string' ? msg.text.slice(0, 80) : null,
+          at: Date.now(),
+        })
+      } catch (e) {
+        logger.warn?.(`[telegram-bot] probeListener threw: ${e.message}`)
+      }
+    }
     if (!isAuthorizedChat(chatId)) {
       logger.warn?.(`[telegram-bot] dropped message from unauthorized chat=${chatId} (allowedChatIds 未配置或不含此 chat)`)
       return
@@ -440,6 +461,7 @@ export function createTelegramBot({
     getMe,
     pollOnce,           // 测试用：触发一次拉取
     isAuthorizedChat,   // 测试用
+    setProbeListener,
     describe,
     __getPollRetryDelayMs: () => getTgConfig().pollRetryDelayMs || POLL_RETRY_DELAY_MS,
   }
