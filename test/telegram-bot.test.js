@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createTelegramBot } from '../src/telegram-bot.js'
+import { createTelegramBot, readBotTokenWithSource } from '../src/telegram-bot.js'
 
 function makeWizard(handler) {
   return { handleInbound: handler }
@@ -536,5 +536,26 @@ describe('pollRetryDelayMs reads from config', () => {
       logger: { warn() {}, info() {} },
     })
     expect(bot.__getPollRetryDelayMs()).toBe(5000)
+  })
+})
+
+describe('readBotTokenWithSource', () => {
+  it('returns quadtodo source when config has botToken', () => {
+    const r = readBotTokenWithSource(() => ({ telegram: { botToken: 'XXX' } }))
+    expect(r).toEqual({ token: 'XXX', source: 'quadtodo' })
+  })
+
+  it('returns missing when no source available', () => {
+    const r = readBotTokenWithSource(() => ({ telegram: {} }), { fallbackPath: '/nonexistent/openclaw.json' })
+    expect(r).toEqual({ token: null, source: 'missing' })
+  })
+
+  it('returns openclaw source when fallback file has token', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'qt-fb-'))
+    const path = join(tmp, 'openclaw.json')
+    writeFileSync(path, JSON.stringify({ channels: { telegram: { botToken: 'YYY' } } }))
+    const r = readBotTokenWithSource(() => ({ telegram: {} }), { fallbackPath: path })
+    expect(r).toEqual({ token: 'YYY', source: 'openclaw' })
+    rmSync(tmp, { recursive: true, force: true })
   })
 })

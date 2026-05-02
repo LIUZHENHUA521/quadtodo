@@ -446,20 +446,28 @@ export function createTelegramBot({
 }
 
 /**
- * 读 bot token：优先 quadtodo config.telegram.botToken，其次 ~/.openclaw/openclaw.json
- * 让 user 可选择把 token 移到 quadtodo 配置（更显式）；默认走 OpenClaw 配置（已有）。
+ * 读 bot token，并返回来源标记。
+ *  - source: "quadtodo" | "openclaw" | "missing"
+ *  - fallbackPath 测试用：默认 ~/.openclaw/openclaw.json
  */
-export function readBotToken(getConfig) {
+export function readBotTokenWithSource(getConfig, { fallbackPath = join(homedir(), '.openclaw', 'openclaw.json') } = {}) {
   const tg = getConfig?.()?.telegram || {}
-  if (tg.botToken && typeof tg.botToken === 'string') return tg.botToken
-  try {
-    const path = join(homedir(), '.openclaw', 'openclaw.json')
-    if (!existsSync(path)) return null
-    const cfg = JSON.parse(readFileSync(path, 'utf8'))
-    return cfg?.channels?.telegram?.botToken || null
-  } catch {
-    return null
+  if (tg.botToken && typeof tg.botToken === 'string') {
+    return { token: tg.botToken, source: 'quadtodo' }
   }
+  try {
+    if (!existsSync(fallbackPath)) return { token: null, source: 'missing' }
+    const cfg = JSON.parse(readFileSync(fallbackPath, 'utf8'))
+    const tok = cfg?.channels?.telegram?.botToken || null
+    return tok ? { token: tok, source: 'openclaw' } : { token: null, source: 'missing' }
+  } catch {
+    return { token: null, source: 'missing' }
+  }
+}
+
+/** 兼容旧调用方：只返回 token 字符串。新代码请用 readBotTokenWithSource。 */
+export function readBotToken(getConfig) {
+  return readBotTokenWithSource(getConfig).token
 }
 
 export const __test__ = { readJsonFile, writeJsonFile }
