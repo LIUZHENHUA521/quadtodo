@@ -1,17 +1,18 @@
 {
   "port": 5677,
+  "host": "127.0.0.1",
   "defaultTool": "claude",
   "defaultCwd": "/Users/bytedance",
   "tools": {
     "claude": {
       "command": "claude-w",
-      "bin": "/Users/bytedance/.nvm/versions/node/v18.20.3/bin/claude",
-      "args": []
+      "args": [],
+      "bin": "/Users/bytedance/.nvm/versions/node/v18.20.3/bin/claude"
     },
     "codex": {
       "command": "codex-w",
-      "bin": "/Users/bytedance/.nvm/versions/node/v18.20.3/bin/codex",
-      "args": []
+      "args": [],
+      "bin": "/Users/bytedance/.nvm/versions/node/v18.20.3/bin/codex"
     }
   },
   "webhook": {
@@ -23,6 +24,34 @@
     "notifyOnPendingConfirm": true,
     "notifyOnKeywordMatch": true
   },
+  "openclaw": {
+    "enabled": false,
+    "gatewayUrl": "http://127.0.0.1:18789",
+    "channel": "openclaw-weixin",
+    "targetUserId": "",
+    "askUser": {
+      "defaultTimeoutMs": 600000,
+      "maxConcurrent": 8,
+      "rateLimitPerMin": 6
+    }
+  },
+  "telegram": {
+    "enabled": false,
+    "supergroupId": "",
+    "longPollTimeoutSec": 30,
+    "useTopics": true,
+    "createTopicOnTaskStart": true,
+    "closeTopicOnSessionEnd": true,
+    "topicNameTemplate": "#t{shortCode} {title}",
+    "topicNameDoneTemplate": "✅ {originalName}",
+    "allowedChatIds": [],
+    "allowedFromUserIds": [],
+    "notificationCooldownMs": 600000,
+    "suppressNotificationEvents": true,
+    "autoCreateTopic": true,
+    "pollRetryDelayMs": 5000,
+    "minRenameIntervalMs": 30000
+  },
   "pricing": {
     "default": {
       "input": 3,
@@ -31,6 +60,24 @@
       "cacheWrite": 3.75
     },
     "models": {
+      "claude-opus-4*": {
+        "input": 15,
+        "output": 75,
+        "cacheRead": 1.5,
+        "cacheWrite": 18.75
+      },
+      "claude-sonnet-4*": {
+        "input": 3,
+        "output": 15,
+        "cacheRead": 0.3,
+        "cacheWrite": 3.75
+      },
+      "claude-haiku-4*": {
+        "input": 1,
+        "output": 5,
+        "cacheRead": 0.1,
+        "cacheWrite": 1.25
+      },
       "claude-opus-4-*": {
         "input": 15,
         "output": 75,
@@ -54,5 +101,15 @@
   },
   "stats": {
     "idleThresholdMs": 120000
+  },
+  "wiki": {
+    "wikiDir": "/Users/liuzhenhua/.quadtodo/wiki",
+    "maxTailTurns": 20,
+    "tool": "claude",
+    "timeoutMs": 600000,
+    "redact": true
+  },
+  "pipeline": {
+    "maxAgents": 3
   }
 }

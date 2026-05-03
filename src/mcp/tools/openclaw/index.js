@@ -19,6 +19,8 @@ import { z } from 'zod'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
+import { buildAskUserReplyMarkup } from '../../../ask-user-buttons.js'
+import { applySystemRules } from '../../../system-rules.js'
 
 function asText(value) {
   return {
@@ -180,6 +182,10 @@ export function registerOpenClawTools(server, deps) {
         if (!prompt) {
           prompt = `任务: ${todo.title}${todo.description ? `\n\n${todo.description}` : ''}`
         }
+        // 注入"拍板必须用 ask_user MCP"工程纪律 —— 跟 wizard 启动路径行为一致
+        // config.aiSession.enforceAskUserRule = false 可关
+        const cfgEnforce = (getConfig?.()?.aiSession?.enforceAskUserRule !== false)
+        prompt = applySystemRules(prompt, { enforce: cfgEnforce })
 
         const cwd = expandHome(args.cwd) || todo.workDir || (getConfig?.()?.defaultCwd) || homedir()
         if (cwd && !existsSync(cwd)) {
@@ -289,11 +295,22 @@ export function registerOpenClawTools(server, deps) {
         lines.push('')
         args.options.forEach((opt, i) => lines.push(`${i + 1}. ${opt}`))
         lines.push('')
-        lines.push(`回 1/2/3… 或 #${ticket} N`)
+        // 提示同时支持文本回复（老路径）和按钮（新路径），两者完全等价
+        lines.push(`点上面按钮 / 回 1-${args.options.length} / 回 #${ticket} N`)
+
+        // Telegram 路径：附 inline keyboard；其它 channel 自动忽略 replyMarkup
+        // bridge.postText 在 telegram fast-path 才透传，CLI fallback 走纯文本（无按钮）
+        let askUserMarkup = null
+        try {
+          askUserMarkup = buildAskUserReplyMarkup(ticket, args.options)
+        } catch (e) {
+          // 拼按钮失败不阻塞；纯文本兜底（用户照样能数字回复）
+        }
 
         const sendResult = await openclaw.postText({
           sessionId,
           message: lines.join('\n'),
+          replyMarkup: askUserMarkup,
         })
         if (!sendResult.ok) {
           // 不直接 reject 这条 pending；让用户能从 web UI fallback 答复

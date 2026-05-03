@@ -60,6 +60,13 @@ quadtodo mcp status    # 健康检查
 
 完整工具清单 + preview/confirm 安全模型 + ⌘K 面板说明：**[docs/MCP.md](docs/MCP.md)**。
 
+## 通过 Telegram supergroup 使用（每任务一个 Topic）⭐ 推荐
+
+quadtodo 直接跑一个 Telegram bot，每开一个 task 自动建一个 **Forum Topic**，对话物理隔离；
+内容直接从 Claude Code jsonl 日志读（干净，无 spinner / ANSI 噪声）；任务结束 close topic + 改名 ✅。
+
+详见 **[docs/TELEGRAM.md](docs/TELEGRAM.md)**。
+
 ## 通过 OpenClaw 在微信里使用（双向）
 
 把 quadtodo 接到 [OpenClaw](https://openclaw.ai/) 的微信渠道，实现"在微信里跟 AI 助理说一句『帮我做：X』就自动建 todo + 启动 Claude Code，AI 卡到决策点又能在微信里推给你选"的工作流。

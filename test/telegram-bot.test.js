@@ -560,6 +560,105 @@ describe('readBotTokenWithSource', () => {
   })
 })
 
+describe('telegram-bot inbound photo dispatch', () => {
+  let tmp, offsetFile
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'qt-tg-'))
+    offsetFile = join(tmp, 'offset.json')
+  })
+
+  it('photo + caption: downloads photo, passes imagePaths and caption-as-text to wizard', async () => {
+    const dispatched = []
+    let pollDone = false
+    const fakePng = Buffer.from([0x89, 0x50, 0x4E, 0x47])
+    const fetchFn = async (url, opts) => {
+      if (url.includes('/getUpdates')) {
+        if (pollDone) return { ok: true, json: async () => ({ ok: true, result: [] }) }
+        pollDone = true
+        return { ok: true, json: async () => ({ ok: true, result: [{
+          update_id: 1,
+          message: {
+            message_id: 22,
+            chat: { id: -100123, type: 'supergroup' },
+            message_thread_id: 88,
+            from: { id: 7 },
+            photo: [
+              { file_id: 'small', file_size: 1000 },
+              { file_id: 'large', file_size: 99999 },
+            ],
+            caption: '这个图里面有什么',
+          },
+        }] }) }
+      }
+      if (url.includes('/getFile')) {
+        return { ok: true, json: async () => ({ ok: true, result: { file_path: 'photos/x.jpg', file_size: 4 } }) }
+      }
+      // file binary download
+      return { ok: true, arrayBuffer: async () => fakePng.buffer.slice(fakePng.byteOffset, fakePng.byteOffset + fakePng.byteLength) }
+    }
+    const bot = createTelegramBot({
+      getConfig: () => ({ telegram: { botToken: 'TKN', allowedChatIds: ['-100123'] } }),
+      wizard: makeWizard(async (args) => { dispatched.push(args); return { action: 'stdin_proxy', reply: '' } }),
+      fetchFn, offsetFile,
+      logger: { warn() {}, info() {} },
+    })
+    await bot.pollOnce()
+    expect(dispatched).toHaveLength(1)
+    expect(dispatched[0].text).toBe('这个图里面有什么')
+    expect(dispatched[0].imagePaths).toHaveLength(1)
+    expect(dispatched[0].imagePaths[0]).toMatch(/\.jpg$/)
+    expect(dispatched[0].threadId).toBe(88)
+  })
+
+  it('photo + caption + download fails: still dispatches caption-as-text (does not drop the message)', async () => {
+    const dispatched = []
+    const sentReplies = []
+    let pollDone = false
+    const fetchFn = async (url, opts) => {
+      if (url.includes('/getUpdates')) {
+        if (pollDone) return { ok: true, json: async () => ({ ok: true, result: [] }) }
+        pollDone = true
+        return { ok: true, json: async () => ({ ok: true, result: [{
+          update_id: 1,
+          message: {
+            message_id: 22,
+            chat: { id: -100123, type: 'supergroup' },
+            message_thread_id: 88,
+            from: { id: 7 },
+            photo: [{ file_id: 'x', file_size: 100 }],
+            caption: '这个图里面有什么',
+          },
+        }] }) }
+      }
+      if (url.includes('/getFile')) {
+        // 模拟两次重试都失败
+        throw new Error('fetch failed')
+      }
+      if (url.includes('/sendMessage')) {
+        const body = JSON.parse(opts.body)
+        sentReplies.push(body)
+        return { ok: true, json: async () => ({ ok: true, result: { message_id: 999 } }) }
+      }
+      return { ok: true, json: async () => ({ ok: true, result: [] }) }
+    }
+    const bot = createTelegramBot({
+      getConfig: () => ({ telegram: { botToken: 'TKN', allowedChatIds: ['-100123'] } }),
+      wizard: makeWizard(async (args) => { dispatched.push(args); return { action: 'stdin_proxy', reply: '' } }),
+      fetchFn, offsetFile,
+      logger: { warn() {}, info() {} },
+    })
+    await bot.pollOnce()
+    // wizard 仍被调用，imagePaths=null，text=caption
+    expect(dispatched).toHaveLength(1)
+    expect(dispatched[0].text).toBe('这个图里面有什么')
+    expect(dispatched[0].imagePaths).toBeNull()
+    // 用户收到一条提示说图丢了
+    const warnMsg = sentReplies.find((m) => /图片下载失败/.test(m.text))
+    expect(warnMsg).toBeTruthy()
+  }, 10000)
+})
+
 describe('setProbeListener exposes dispatch hits', () => {
   let tmp, offsetFile
 
@@ -605,5 +704,250 @@ describe('setProbeListener exposes dispatch hits', () => {
     bot.setProbeListener(() => {})
     await bot.pollOnce()
     expect(dispatched).toHaveLength(0)  // wizard NOT called for unauthorized chat
+  })
+})
+
+// ─── inline keyboard / callback_query ──────────────────────────────────────
+describe('telegram-bot inline keyboard wrappers', () => {
+  let tmp, offsetFile
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'qt-tg-'))
+    offsetFile = join(tmp, 'offset.json')
+  })
+
+  it('sendMessage forwards reply_markup verbatim', async () => {
+    const calls = []
+    const fetchFn = async (url, opts) => {
+      calls.push({ url, body: JSON.parse(opts.body) })
+      return { ok: true, json: async () => ({ ok: true, result: { message_id: 1 } }) }
+    }
+    const bot = createTelegramBot({
+      getConfig: () => ({ telegram: { botToken: 'X', allowedChatIds: ['-1'] } }),
+      wizard: { handleInbound: async () => ({}) },
+      fetchFn, offsetFile,
+      logger: { warn() {}, info() {} },
+    })
+    const markup = { inline_keyboard: [[{ text: 'A', callback_data: 'qt:q:1' }]] }
+    await bot.sendMessage({ chatId: '-1', text: 'pick', replyMarkup: markup })
+    expect(calls[0].body.reply_markup).toEqual(markup)
+  })
+
+  it('editMessageReplyMarkup posts reply_markup; treats not-modified as success', async () => {
+    let count = 0
+    const calls = []
+    const fetchFn = async (url, opts) => {
+      count++
+      calls.push({ url, body: JSON.parse(opts.body) })
+      if (count === 1) {
+        return { ok: true, json: async () => ({ ok: true, result: true }) }
+      }
+      return { ok: false, status: 400, json: async () => ({ ok: false, description: 'Bad Request: message is not modified' }) }
+    }
+    const bot = createTelegramBot({
+      getConfig: () => ({ telegram: { botToken: 'X' } }),
+      wizard: { handleInbound: async () => ({}) },
+      fetchFn, offsetFile,
+      logger: { warn() {}, info() {} },
+    })
+    const r1 = await bot.editMessageReplyMarkup({ chatId: '-1', messageId: 7 })
+    expect(r1).toBe(true)
+    expect(calls[0].url).toContain('/editMessageReplyMarkup')
+    expect(calls[0].body.reply_markup).toEqual({ inline_keyboard: [] })
+
+    const r2 = await bot.editMessageReplyMarkup({ chatId: '-1', messageId: 7 })
+    expect(r2).toEqual({ ok: true, unchanged: true })
+  })
+
+  it('answerCallbackQuery posts callback_query_id + optional text', async () => {
+    const calls = []
+    const fetchFn = async (url, opts) => {
+      calls.push({ url, body: JSON.parse(opts.body) })
+      return { ok: true, json: async () => ({ ok: true, result: true }) }
+    }
+    const bot = createTelegramBot({
+      getConfig: () => ({ telegram: { botToken: 'X' } }),
+      wizard: { handleInbound: async () => ({}) },
+      fetchFn, offsetFile,
+      logger: { warn() {}, info() {} },
+    })
+    await bot.answerCallbackQuery({ callbackQueryId: 'cbq1', text: 'done', showAlert: true })
+    expect(calls[0].url).toContain('/answerCallbackQuery')
+    expect(calls[0].body.callback_query_id).toBe('cbq1')
+    expect(calls[0].body.text).toBe('done')
+    expect(calls[0].body.show_alert).toBe(true)
+  })
+})
+
+describe('telegram-bot callback_query dispatch', () => {
+  let tmp, offsetFile
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'qt-tg-'))
+    offsetFile = join(tmp, 'offset.json')
+  })
+
+  function setupCallbackPoll({ wizard, callbackQuery, allowed = ['-100123'] }) {
+    let pollDone = false
+    const calls = []
+    const fetchFn = async (url, opts) => {
+      const body = opts?.body ? JSON.parse(opts.body) : null
+      if (url.includes('/getUpdates')) {
+        if (pollDone) return { ok: true, json: async () => ({ ok: true, result: [] }) }
+        pollDone = true
+        return { ok: true, json: async () => ({ ok: true, result: [
+          { update_id: 1, callback_query: callbackQuery },
+        ] }) }
+      }
+      calls.push({ url, body })
+      // 通用成功响应
+      if (url.includes('/sendMessage')) {
+        return { ok: true, json: async () => ({ ok: true, result: { message_id: 999 } }) }
+      }
+      return { ok: true, json: async () => ({ ok: true, result: true }) }
+    }
+    const bot = createTelegramBot({
+      getConfig: () => ({ telegram: { botToken: 'X', allowedChatIds: allowed } }),
+      wizard,
+      fetchFn, offsetFile,
+      logger: { warn() {}, info() {} },
+    })
+    return { bot, calls }
+  }
+
+  it('routes callback_query to wizard.handleCallback with chatId/threadId/data', async () => {
+    const seen = []
+    const wizard = {
+      handleInbound: async () => ({}),
+      handleCallback: async (args) => { seen.push(args); return {} },
+    }
+    const { bot } = setupCallbackPoll({
+      wizard,
+      callbackQuery: {
+        id: 'cbq1',
+        from: { id: 7 },
+        message: { message_id: 22, chat: { id: -100123 }, message_thread_id: 88, text: 'pick' },
+        data: 'qt:q:2',
+      },
+    })
+    await bot.pollOnce()
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({
+      chatId: '-100123',
+      threadId: 88,
+      callbackData: 'qt:q:2',
+      callbackMessageId: 22,
+      fromUserId: '7',
+    })
+  })
+
+  it('drops callback from unauthorized chat but still calls answerCallbackQuery (no spinner)', async () => {
+    const seen = []
+    const wizard = {
+      handleInbound: async () => ({}),
+      handleCallback: async (args) => { seen.push(args); return {} },
+    }
+    const { bot, calls } = setupCallbackPoll({
+      allowed: ['-100AUTHORIZED'],
+      wizard,
+      callbackQuery: {
+        id: 'cbq2',
+        from: { id: 7 },
+        message: { message_id: 22, chat: { id: -100999 }, text: 'pick' },
+        data: 'qt:q:1',
+      },
+    })
+    await bot.pollOnce()
+    expect(seen).toHaveLength(0)
+    // 仍然 answerCallbackQuery，避免客户端 loading 转圈
+    expect(calls.some((c) => c.url.includes('/answerCallbackQuery'))).toBe(true)
+  })
+
+  it('after wizard returns chosenLabel + reply: edits original (✓ 已选) + sends next prompt with markup', async () => {
+    const wizard = {
+      handleInbound: async () => ({}),
+      handleCallback: async () => ({
+        chosenLabel: '/tmp/foo',
+        reply: '🎯 选象限：',
+        replyMarkup: { inline_keyboard: [[{ text: 'Q1', callback_data: 'qt:q:1' }]] },
+      }),
+    }
+    const { bot, calls } = setupCallbackPoll({
+      wizard,
+      callbackQuery: {
+        id: 'cbq3',
+        from: { id: 7 },
+        message: { message_id: 22, chat: { id: -100123 }, text: '📁 选个工作目录：' },
+        data: 'qt:wd:0',
+      },
+    })
+    await bot.pollOnce()
+
+    const answer = calls.find((c) => c.url.includes('/answerCallbackQuery'))
+    expect(answer).toBeTruthy()
+
+    const edit = calls.find((c) => c.url.includes('/editMessageText'))
+    expect(edit).toBeTruthy()
+    expect(edit.body.text).toContain('已选')   // V2 转义后可能是 '✓ 已选: /tmp/foo'
+
+    const send = calls.find((c) => c.url.includes('/sendMessage'))
+    expect(send).toBeTruthy()
+    expect(send.body.reply_markup).toEqual({ inline_keyboard: [[{ text: 'Q1', callback_data: 'qt:q:1' }]] })
+  })
+
+  it('wizard returns toast only: just answerCallbackQuery, no editMessage / no sendMessage', async () => {
+    const wizard = {
+      handleInbound: async () => ({}),
+      handleCallback: async () => ({ toast: '选项无效', editOriginal: false, action: 'invalid' }),
+    }
+    const { bot, calls } = setupCallbackPoll({
+      wizard,
+      callbackQuery: {
+        id: 'cbq4',
+        from: { id: 7 },
+        message: { message_id: 22, chat: { id: -100123 }, text: 'pick' },
+        data: 'qt:q:99',
+      },
+    })
+    await bot.pollOnce()
+    const answer = calls.find((c) => c.url.includes('/answerCallbackQuery'))
+    expect(answer.body.text).toBe('选项无效')
+    expect(calls.find((c) => c.url.includes('/editMessageText'))).toBeUndefined()
+    expect(calls.find((c) => c.url.includes('/editMessageReplyMarkup'))).toBeUndefined()
+    expect(calls.find((c) => c.url.includes('/sendMessage'))).toBeUndefined()
+  })
+
+  it('wizard without handleCallback: answers with toast, never throws', async () => {
+    const wizard = { handleInbound: async () => ({}) }   // 故意不实现 handleCallback
+    const { bot, calls } = setupCallbackPoll({
+      wizard,
+      callbackQuery: {
+        id: 'cbq5',
+        from: { id: 7 },
+        message: { message_id: 22, chat: { id: -100123 }, text: 'pick' },
+        data: 'qt:q:1',
+      },
+    })
+    await bot.pollOnce()
+    expect(calls.find((c) => c.url.includes('/answerCallbackQuery'))).toBeTruthy()
+  })
+
+  it('handleCallback throws → still answers (with 处理失败), never crashes loop', async () => {
+    const wizard = {
+      handleInbound: async () => ({}),
+      handleCallback: async () => { throw new Error('boom') },
+    }
+    const { bot, calls } = setupCallbackPoll({
+      wizard,
+      callbackQuery: {
+        id: 'cbq6',
+        from: { id: 7 },
+        message: { message_id: 22, chat: { id: -100123 }, text: 'pick' },
+        data: 'qt:q:1',
+      },
+    })
+    await bot.pollOnce()
+    const answer = calls.find((c) => c.url.includes('/answerCallbackQuery'))
+    expect(answer.body.text).toBe('处理失败')
   })
 })

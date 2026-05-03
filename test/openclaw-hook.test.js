@@ -1,5 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import express from 'express'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { openDb } from '../src/db.js'
 import { createOpenClawHookHandler, __test__ } from '../src/openclaw-hook.js'
 import { createOpenClawHookRouter } from '../src/routes/openclaw-hook.js'
@@ -9,8 +12,8 @@ function makeFakeBridge({ sendOk = true, sendReason = null } = {}) {
   return {
     sent,
     isEnabled: () => true,
-    postText: vi.fn(async ({ sessionId, message }) => {
-      sent.push({ sessionId, message })
+    postText: vi.fn(async ({ sessionId, message, replyMarkup }) => {
+      sent.push({ sessionId, message, replyMarkup })
       if (sendOk) return { ok: true }
       return { ok: false, reason: sendReason || 'cli_failed' }
     }),
@@ -265,6 +268,51 @@ describe('openclaw-hook handler', () => {
     expect(bridge.postText).not.toHaveBeenCalled()
   })
 
+  it('Notification: native Claude TUI select is not suppressed and includes control buttons', async () => {
+    const nativeSelectOutput = [
+      '强制登录的入口形式选哪种？',
+      '',
+      '❯ 1. 全局守卫 + 不可关闭弹窗',
+      '  2. 独立 /login 路由',
+      '  3. 全屏覆盖层（不改路由）',
+      '  4. Type something.',
+      '',
+      'Enter\x1b[1Cto\x1b[1Cselect\x1b[1C·\x1b[1CTab/Arrow\x1b[1Ckeys\x1b[1Cto\x1b[1Cnavigate\x1b[1C·\x1b[1CEsc\x1b[1Cto\x1b[1Ccancel',
+    ].join('\n')
+    handler = createOpenClawHookHandler({
+      db, openclaw: bridge, cooldownMs: 30000,
+      aiTerminal: {
+        sessions: new Map([['ai-1777799249191-fwu8', {
+          nativeSessionId: null,
+          recentOutput: nativeSelectOutput,
+          outputHistory: [nativeSelectOutput],
+        }]]),
+      },
+    })
+
+    const r = await handler.handle({
+      event: 'notification',
+      sessionId: 'ai-1777799249191-fwu8',
+      todoId: 't1',
+      todoTitle: '强制登录',
+    })
+
+    expect(r.action).toBe('sent')
+    expect(bridge.sent).toHaveLength(1)
+    expect(bridge.sent[0].message).toContain('强制登录的入口形式选哪种')
+    expect(bridge.sent[0].message).toContain('Enter to select')
+    expect(bridge.sent[0].replyMarkup?.inline_keyboard).toEqual([
+      [
+        { text: '↵ 选当前', callback_data: 'qt:key:fwu8:enter' },
+        { text: '⬆️ 上', callback_data: 'qt:key:fwu8:up' },
+        { text: '⬇️ 下', callback_data: 'qt:key:fwu8:down' },
+      ],
+      [
+        { text: 'Esc 取消', callback_data: 'qt:key:fwu8:esc' },
+      ],
+    ])
+  })
+
   it('SessionEnd ignores cooldown (final state)', async () => {
     await handler.handle({ event: 'session-end', sessionId: 's1', todoId: 't1' })
     const r = await handler.handle({ event: 'session-end', sessionId: 's1', todoId: 't1' })
@@ -324,5 +372,153 @@ describe('openclaw-hook router', () => {
     await supertest(app).post('/api/openclaw/hook').send({ event: 'stop', sessionId: 's1' })
     const r = await supertest(app).post('/api/openclaw/hook').send({ event: 'stop', sessionId: 's1' })
     expect(r.body.action).toBe('sent')
+  })
+})
+
+// ─── token usage footer 集成 ──────────────────────────────────────────────
+//
+// 这一组测试串通：jsonl 文件 → claude-transcript → usage-footer → openclaw-hook，
+// 验证 footer 在 stop / session-end 时被附加到推送 message 末尾，并尊重 config 开关。
+describe('openclaw-hook usage footer integration', () => {
+  let tmp, jsonlPath, db, bridge
+
+  function mkJsonl({ withAssistant = true, multipleAssistants = false, model = 'claude-sonnet-4-20260101' } = {}) {
+    const lines = []
+    // user 消息（assistant ts 必须在它之后才会被 readLatestAssistantTurnFresh 当 fresh）
+    lines.push(JSON.stringify({
+      type: 'user',
+      timestamp: '2026-05-01T10:00:00.000Z',
+      message: { role: 'user', content: '帮我加注释' },
+    }))
+    if (withAssistant) {
+      // 第一条 assistant（如果 multipleAssistants，下面还会再加一条更新的）
+      lines.push(JSON.stringify({
+        type: 'assistant',
+        timestamp: '2026-05-01T10:00:30.000Z',
+        message: {
+          role: 'assistant',
+          model,
+          content: [{ type: 'text', text: '已加上注释' }],
+          usage: { input_tokens: 1234, output_tokens: 350, cache_read_input_tokens: 800, cache_creation_input_tokens: 200 },
+        },
+      }))
+    }
+    if (multipleAssistants) {
+      lines.push(JSON.stringify({
+        type: 'assistant',
+        timestamp: '2026-05-01T10:01:00.000Z',
+        message: {
+          role: 'assistant',
+          model,
+          content: [{ type: 'text', text: '又改了一行' }],
+          usage: { input_tokens: 500, output_tokens: 200, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+        },
+      }))
+    }
+    writeFileSync(jsonlPath, lines.join('\n') + '\n', 'utf8')
+  }
+
+  function mkHandler(configOverrides = {}) {
+    return createOpenClawHookHandler({
+      db, openclaw: bridge,
+      cooldownMs: 0,
+      // aiTerminal.sessions 提供 sessionId → nativeSessionId 映射
+      aiTerminal: {
+        sessions: new Map([['s1', { nativeSessionId: 'native-uuid-1', recentOutput: '', outputHistory: [] }]]),
+      },
+      // pty.findClaudeSession 把 nativeId 翻译成 jsonl 路径
+      pty: { findClaudeSession: (nativeId) => nativeId === 'native-uuid-1' ? { filePath: jsonlPath } : null },
+      getConfig: () => ({ telegram: { ...configOverrides } }),
+      logger: { warn() {}, info() {} },
+    })
+  }
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'qt-hook-usage-'))
+    jsonlPath = join(tmp, 'native-uuid-1.jsonl')
+    db = openDb(':memory:')
+    bridge = makeFakeBridge()
+  })
+
+  afterEach(() => {
+    try { rmSync(tmp, { recursive: true, force: true }) } catch {}
+  })
+
+  it('stop event: appends footer with both turn + session lines (default config)', async () => {
+    mkJsonl({ multipleAssistants: true })   // 2 assistant turns
+    const handler = mkHandler()             // showUsage / showUsageCny default true
+    const r = await handler.handle({ event: 'stop', sessionId: 's1', todoId: 't1', todoTitle: 'A' })
+    expect(r.action).toBe('sent')
+    const msg = bridge.sent[0].message
+    expect(msg).toContain('又改了一行')      // 最新 assistant 内容
+    expect(msg).toContain('💸')              // footer divider
+    expect(msg).toContain('turn:')
+    expect(msg).toContain('session:')
+    expect(msg).toContain('2 turns')         // 累计 2 个 assistant turn
+    expect(msg).toContain('$')               // USD
+    expect(msg).toContain('¥')               // CNY 默认开
+  })
+
+  it('showUsage=false → no footer at all', async () => {
+    mkJsonl()
+    const handler = mkHandler({ showUsage: false })
+    const r = await handler.handle({ event: 'stop', sessionId: 's1', todoId: 't1', todoTitle: 'A' })
+    expect(r.action).toBe('sent')
+    const msg = bridge.sent[0].message
+    expect(msg).toContain('已加上注释')
+    expect(msg).not.toContain('💸')
+    expect(msg).not.toContain('turn:')
+  })
+
+  it('showUsageCny=false → footer present but no ¥', async () => {
+    mkJsonl()
+    const handler = mkHandler({ showUsageCny: false })
+    const r = await handler.handle({ event: 'stop', sessionId: 's1', todoId: 't1', todoTitle: 'A' })
+    expect(r.action).toBe('sent')
+    const msg = bridge.sent[0].message
+    expect(msg).toContain('💸')
+    expect(msg).toContain('$')
+    expect(msg).not.toContain('¥')
+  })
+
+  it('session-end: also appends footer', async () => {
+    mkJsonl({ multipleAssistants: true })
+    const handler = mkHandler()
+    const r = await handler.handle({ event: 'session-end', sessionId: 's1', todoId: 't1', todoTitle: 'A' })
+    expect(r.action).toBe('sent')
+    const msg = bridge.sent[0].message
+    expect(msg).toContain('💸')
+    expect(msg).toContain('session:')
+  })
+
+  it('notification: NO footer (it is an idle heartbeat, not a turn)', async () => {
+    mkJsonl()
+    const handler = mkHandler({ suppressNotificationEvents: false, notificationCooldownMs: 0 })
+    const r = await handler.handle({ event: 'notification', sessionId: 's1', todoId: 't1', todoTitle: 'A', hookPayload: { message: 'idle' } })
+    expect(r.action).toBe('sent')
+    const msg = bridge.sent[0].message
+    expect(msg).not.toContain('💸')
+    expect(msg).not.toContain('turn:')
+  })
+
+  it('jsonl missing: silently skips footer, message still sent', async () => {
+    // 不调 mkJsonl → jsonlPath 文件不存在
+    const handler = mkHandler()
+    const r = await handler.handle({ event: 'stop', sessionId: 's1', todoId: 't1', todoTitle: 'A' })
+    expect(r.action).toBe('sent')
+    const msg = bridge.sent[0].message
+    // PTY snippet 也空 → message 走 fallback；关键是不抛异常
+    expect(msg).not.toContain('💸')
+  })
+
+  it('opus model uses correct pricing (5x sonnet on input)', async () => {
+    mkJsonl({ model: 'claude-opus-4-20260101' })
+    const handler = mkHandler({ showUsageCny: false })
+    const r = await handler.handle({ event: 'stop', sessionId: 's1', todoId: 't1', todoTitle: 'A' })
+    expect(r.action).toBe('sent')
+    const msg = bridge.sent[0].message
+    expect(msg).toContain('💸')
+    // opus input $15/M：单 turn input=1234 → cost > sonnet 5x，但具体值不强测，只要 footer 出现
+    expect(msg).toMatch(/turn:\s+in 1\.2k/)
   })
 })

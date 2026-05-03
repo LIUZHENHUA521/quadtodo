@@ -8,7 +8,7 @@ import { createNotifier } from '../notifier.js'
 const MAX_OUTPUT_BUFFER = 512 * 1024
 const CLEANUP_MS = 30 * 60_000
 
-export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, getWebhookConfig, notifier: injectedNotifier }) {
+export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, getWebhookConfig, notifier: injectedNotifier, onSessionSpawned = null, onSessionEnded = null }) {
   /** @type {Map<string, any>} */
   const sessions = new Map()
   /** @type {Map<string, string>} */
@@ -181,10 +181,13 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
         completedAt: session.completedAt,
         prompt: session.prompt,
       }
-      db.updateTodo(session.todoId, {
-        status: todoStatus,
-        aiSessions: mergeTodoAiSessions(todo, newAi),
-      })
+      // 用户主动通过删/关 topic 触发的 stop：handleTopicEvent 已把 todo 标 done，
+      // 这里别用 stopped→'todo' 的默认逻辑覆写它。只更 aiSessions（记录会话退出状态）。
+      const updates = { aiSessions: mergeTodoAiSessions(todo, newAi) }
+      if (session.userClosedReason !== 'topic_closed') {
+        updates.status = todoStatus
+      }
+      db.updateTodo(session.todoId, updates)
     }
 
     writeFullLog(sessionId, fullLog)
@@ -206,10 +209,25 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     } catch (e) {
       console.warn('[ai-terminal] insertSessionLog failed:', e.message)
     }
+
+    // Telegram 自动关 topic 钩子：PTY 自然退出 / crash / exit 命令都走这里
+    if (typeof onSessionEnded === 'function') {
+      try {
+        const r = onSessionEnded({
+          sessionId,
+          todoId: session.todoId,
+          exitCode,
+          status: aiStatus,
+          startedAt: session.startedAt,
+          completedAt: session.completedAt,
+        })
+        if (r && typeof r.catch === 'function') r.catch((e) => console.warn(`[ai-terminal] onSessionEnded failed: ${e.message}`))
+      } catch (e) { console.warn(`[ai-terminal] onSessionEnded threw: ${e.message}`) }
+    }
   })
 
   // ─── 程序化 session 启动入口（供 orchestrator 等模块直接调用，跳过 HTTP） ───
-  function spawnSession({ todoId, prompt, tool, cwd, resumeNativeId, permissionMode, label, extraEnv, sessionId: externalSessionId }) {
+  function spawnSession({ todoId, prompt, tool, cwd, resumeNativeId, permissionMode, label, extraEnv, sessionId: externalSessionId, skipTelegram = false }) {
     if (!todoId || typeof prompt !== 'string' || !tool) {
       const err = new Error('missing todoId, prompt, or tool'); err.code = 'bad_request'
       throw err
@@ -279,6 +297,16 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     })
 
     try {
+      // 自动注入 QUADTODO_* env，让 ~/.quadtodo/claude-hooks/notify.js 能识别这是
+      // quadtodo 启的 Claude Code → Stop / SessionEnd 事件回推到 quadtodo /api/openclaw/hook。
+      // 之前只有 wizard.finalize 会显式传 extraEnv，web/CLI 直接 spawn 的 session 由于缺这些
+      // env，hook 脚本 exit 0 → 完成时不推 telegram。caller-supplied 排前面，自动 env 后置覆盖
+      // 防止 caller 传错的 sessionId。
+      const autoEnv = {
+        QUADTODO_SESSION_ID: sessionId,
+        QUADTODO_TODO_ID: String(todoId),
+        QUADTODO_TODO_TITLE: String(todo.title || ''),
+      }
       pty.start({
         sessionId,
         tool,
@@ -286,7 +314,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
         cwd: sessionCwd,
         resumeNativeId: resumeNativeId || undefined,
         permissionMode: permissionMode || null,
-        extraEnv: extraEnv || undefined,
+        extraEnv: { ...(extraEnv || {}), ...autoEnv },
       })
     } catch (error) {
       sessions.delete(sessionId)
@@ -294,6 +322,15 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
       if (resumeNativeId) nativeSessionMap.delete(`${tool}:${resumeNativeId}`)
       throw error
     }
+
+    // Telegram 自动建 topic 钩子（B 方案：默认开，wizard 等已自管 topic 的传 skipTelegram=true）
+    if (!skipTelegram && typeof onSessionSpawned === 'function') {
+      try {
+        const r = onSessionSpawned({ sessionId, todoId, tool })
+        if (r && typeof r.catch === 'function') r.catch((e) => console.warn(`[ai-terminal] onSessionSpawned failed: ${e.message}`))
+      } catch (e) { console.warn(`[ai-terminal] onSessionSpawned threw: ${e.message}`) }
+    }
+
     return { sessionId, reused: false }
   }
 

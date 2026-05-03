@@ -24,7 +24,9 @@
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
-import { readLatestAssistantTurn, readLatestAssistantTurnFresh, buildFullTranscript } from './claude-transcript.js'
+import { readLatestAssistantTurn, readLatestAssistantTurnFresh, buildFullTranscript, readJsonlLines } from './claude-transcript.js'
+import { extractTurnUsage, extractSessionUsageFromLines, formatUsageFooter } from './usage-footer.js'
+import { DEFAULT_PRICING } from './pricing.js'
 
 const DEFAULT_COOLDOWN_MS = 30_000
 const TRANSCRIPT_TMP_DIR = join(homedir(), '.quadtodo', 'tmp')
@@ -57,11 +59,52 @@ function shortTodoId(todoId) {
 
 function stripAnsi(s) {
   return String(s || '')
+    // Claude Code TUI 常用 CSI Cursor Forward (`\x1b[1C`) 代替真实空格做排版。
+    // 如果直接删掉，"Enter to select" 会变成 "Entertoselect"，导致原生 select 检测失效。
+    .replace(/\x1b\[([0-9]{1,2})C/g, (_m, n) => ' '.repeat(Math.min(Number(n) || 1, 20)))
     .replace(/\x1b\[[0-9;?]*[A-Za-z~]/g, '')
     .replace(/\x1b\][^\x07]*\x07/g, '')
     .replace(/\x1b[()#][A-Za-z0-9]/g, '')
     .replace(/\x1b[>=<cDEHMNOPZ78]/g, '')
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+}
+
+function getLiveSessionOutput(sess) {
+  if (!sess) return ''
+  const history = Array.isArray(sess.outputHistory)
+    ? sess.outputHistory.slice(-8).join('')
+    : ''
+  return `${history}\n${sess.recentOutput || ''}`
+}
+
+function extractNativeTuiPrompt(raw, maxChars = 1400) {
+  const s = compactBlankLines(trimTrailingSpaces(cleanBoxDrawing(stripAnsi(raw || '')))).trim()
+  if (!s) return ''
+  const looksLikeNativeSelect =
+    /Enter to select/i.test(s)
+    && /(Tab\/Arrow keys to navigate|Arrow keys to navigate|Esc to cancel)/i.test(s)
+  if (!looksLikeNativeSelect) return ''
+  if (s.length <= maxChars) return s
+  const tail = s.slice(-maxChars)
+  const nl = tail.indexOf('\n')
+  return '…' + (nl > 0 && nl < 200 ? tail.slice(nl + 1) : tail)
+}
+
+function buildNativeTuiReplyMarkup(sessionId) {
+  if (!sessionId) return null
+  const short = String(sessionId).slice(-4)
+  return {
+    inline_keyboard: [
+      [
+        { text: '↵ 选当前', callback_data: `qt:key:${short}:enter` },
+        { text: '⬆️ 上', callback_data: `qt:key:${short}:up` },
+        { text: '⬇️ 下', callback_data: `qt:key:${short}:down` },
+      ],
+      [
+        { text: 'Esc 取消', callback_data: `qt:key:${short}:esc` },
+      ],
+    ],
+  }
 }
 
 // Unicode box-drawing chars: 把 ╭ ╮ ╰ ╯ ├ ┤ │ ─ 等替成简洁字符
@@ -214,7 +257,7 @@ function buildMessage({ event, todoId, todoTitle, cleanContent, snippet, histori
  */
 export function createOpenClawHookHandler({
   db, openclaw, aiTerminal = null,
-  pty = null, telegramBot = null,
+  pty = null, telegramBot = null, loadingTracker = null,
   cooldownMs = DEFAULT_COOLDOWN_MS,
   getConfig = null,                  // () => app config（用于读 telegram.notificationCooldownMs）
   logger = console,
@@ -258,6 +301,31 @@ export function createOpenClawHookHandler({
     } catch { return true }
   }
 
+  // ── token usage footer 配置 ──
+  // showUsage    : 是否在每条推送末尾追加 token / 费用 footer（默认 true）
+  // showUsageCny : footer 里是否同时显示人民币（默认 true）
+  // pricing      : 单价表，缺省走 pricing.js 的 DEFAULT_PRICING（含 cnyRate=7.2）
+  //                若 config.pricing 存在，原样透传给 estimateCost
+  function shouldShowUsage() {
+    try {
+      const v = getConfig?.()?.telegram?.showUsage
+      return v !== false   // undefined / true → on
+    } catch { return true }
+  }
+  function shouldShowUsageCny() {
+    try {
+      const v = getConfig?.()?.telegram?.showUsageCny
+      return v !== false   // undefined / true → on
+    } catch { return true }
+  }
+  function getPricingConfig() {
+    try {
+      const cfg = getConfig?.() || {}
+      // 用户可整块覆盖；不覆盖时用 DEFAULT_PRICING
+      return cfg.pricing || DEFAULT_PRICING
+    } catch { return DEFAULT_PRICING }
+  }
+
   function recordSent(sessionId, event) {
     lastSentAt.set(dedupKey(sessionId, event), Date.now())
   }
@@ -280,6 +348,15 @@ export function createOpenClawHookHandler({
   async function handle({ event, sessionId, todoId, todoTitle, hookPayload } = {}) {
     if (!event) return { ok: false, action: 'failed', reason: 'event_required' }
     const evt = String(event).toLowerCase()
+    const liveSession = sessionId && aiTerminal?.sessions
+      ? aiTerminal.sessions.get(sessionId)
+      : null
+    const nativeTuiContent = evt === 'notification'
+      ? extractNativeTuiPrompt(getLiveSessionOutput(liveSession))
+      : ''
+    const nativeTuiReplyMarkup = nativeTuiContent
+      ? buildNativeTuiReplyMarkup(sessionId)
+      : null
 
     // 诊断：sessionId 给了但 bridge 没注册过 route → 99% 会触发 telegram fallback / General 泄漏
     // 用 warn 让 race 复现时直接在日志里抓到（A=spawn 抢跑 / B=clear 后尾巴 / D=close handler race）
@@ -292,9 +369,13 @@ export function createOpenClawHookHandler({
       return { ok: true, action: 'skipped', reason: 'ask_user_pending' }
     }
 
-    // 1b-pre) 默认抑制 idle Notification（noise）—— 早于 cooldown / jsonl / postText
+    // 1b-pre) 默认抑制 idle Notification（noise）—— 早于 cooldown / jsonl / postText。
+    // 例外：Claude Code 原生 TUI select（"Enter to select / Arrow keys / Esc"）是真等待用户，
+    // 不能静默，否则 Telegram 侧完全不知道需要操作。
     if (evt === 'notification' && notificationSuppressed()) {
-      return { ok: true, action: 'skipped', reason: 'notification_suppressed' }
+      if (!nativeTuiContent) {
+        return { ok: true, action: 'skipped', reason: 'notification_suppressed' }
+      }
     }
 
     // 1b) Notification cooldown（idle 提醒太频繁的关键修复）
@@ -327,7 +408,7 @@ export function createOpenClawHookHandler({
     // 3a. 拿 sessionId 的 nativeId（Claude Code session UUID）
     let nativeId = null
     if (sessionId && aiTerminal?.sessions) {
-      const sess = aiTerminal.sessions.get(sessionId)
+      const sess = liveSession || aiTerminal.sessions.get(sessionId)
       nativeId = sess?.nativeSessionId || null
       if (sess) {
         snippet = sess.recentOutput || ''
@@ -337,10 +418,13 @@ export function createOpenClawHookHandler({
 
     // 3b. 从 jsonl 取 latest assistant turn（这是首选源）
     let turnText = null
+    let turnRaw = null            // 给 footer 算本轮 usage 用
+    let jsonlPath = null          // 给 footer 算 session 累计用
     if (nativeId && pty?.findClaudeSession) {
       try {
         const loc = pty.findClaudeSession(nativeId)
         if (loc?.filePath) {
+          jsonlPath = loc.filePath
           // **关键**：用 Fresh 版，等 jsonl 写完最新 turn 再读
           // 避免 Stop hook 触发但 jsonl 还没 flush，导致读到上一轮（"每条回复都是上一次的"）
           const turn = evt === 'session-end'
@@ -348,6 +432,7 @@ export function createOpenClawHookHandler({
             : await readLatestAssistantTurnFresh(loc.filePath)
           if (turn?.text) {
             turnText = turn.text
+            turnRaw = turn.raw
             if (turn.fresh === false) {
               logger.warn?.(`[openclaw-hook] jsonl still stale after retries for ${nativeId} (event=${evt}); using stale content as fallback`)
             }
@@ -373,7 +458,13 @@ export function createOpenClawHookHandler({
     }
 
     // 3c. 决定 cleanContent（jsonl 命中时优先；长内容截短）
-    if (turnText) {
+    if (nativeTuiContent) {
+      // 原生 TUI prompt 不在 Claude jsonl 里，且 latest assistant turn 可能是上一轮正文。
+      // 这里强制使用 PTY 里看到的菜单内容，避免 Telegram 收到 stale turn。
+      cleanContent = nativeTuiContent
+      snippet = null
+      historicalRaw = null
+    } else if (turnText) {
       cleanContent = turnText.length > INLINE_MAX_CHARS
         ? turnText.slice(0, INLINE_MAX_CHARS - 200) + '\n\n…（完整内容见附件）'
         : turnText
@@ -385,18 +476,46 @@ export function createOpenClawHookHandler({
       if (hint && typeof hint === 'string') snippet = hint.trim()
     }
 
-    const message = buildMessage({
+    // 3d. token usage footer ——
+    // 仅 Stop / SessionEnd 推送时附加（notification 是 idle 心跳，没新轮次，无意义）
+    // 配置开关：telegram.showUsage（默认 true）/ telegram.showUsageCny（默认 true）
+    let usageFooter = ''
+    if ((evt === 'stop' || evt === 'session-end') && jsonlPath && shouldShowUsage()) {
+      try {
+        const turnUsage = extractTurnUsage(turnRaw)
+        let sessionUsage = null
+        try {
+          const lines = readJsonlLines(jsonlPath)
+          if (lines.length > 0) sessionUsage = extractSessionUsageFromLines(lines)
+        } catch (e) {
+          logger.warn?.(`[openclaw-hook] read session usage failed: ${e.message}`)
+        }
+        usageFooter = formatUsageFooter({
+          turn: turnUsage,
+          session: sessionUsage,
+          showCny: shouldShowUsageCny(),
+          pricing: getPricingConfig(),
+        })
+      } catch (e) {
+        logger.warn?.(`[openclaw-hook] format usage footer failed: ${e.message}`)
+      }
+    }
+
+    let message = buildMessage({
       event: evt, todoId, todoTitle,
       cleanContent,
       snippet,
       historicalRaw,
     })
+    // footer 永远附在最末尾（即使消息被截短到附件也要保留，让用户能看到费用）
+    if (usageFooter) message = `${message}\n\n${usageFooter}`
 
     // 4) 推送（postText 接受可选 attachment）
     const result = await openclaw.postText({
       sessionId,
       message,
       attachment: attachmentPath,    // bridge 转给 telegramBot.sendDocument
+      replyMarkup: nativeTuiReplyMarkup,
     })
 
     // 5) SessionEnd 后处理：close topic + 改名 ✅ + 清状态
@@ -422,6 +541,11 @@ export function createOpenClawHookHandler({
 
     if (result.ok) {
       recordSent(sessionId, evt)
+      // Stop 事件 = Claude 完成一轮回复 → 标题切到 💤（在 push 成功后才切，
+      // 避免推送失败时标题先变 💤 但消息没到）
+      if (evt === 'stop' && sessionId && loadingTracker?.markIdle) {
+        loadingTracker.markIdle(sessionId).catch((e) => logger.warn?.(`[openclaw-hook] markIdle failed: ${e.message}`))
+      }
       return { ok: true, action: 'sent', message, attachment: attachmentPath }
     }
     return { ok: false, action: 'failed', reason: result.reason || 'unknown', detail: result }

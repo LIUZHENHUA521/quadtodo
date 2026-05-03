@@ -239,6 +239,42 @@ export async function doctorReport({ rootDir = DEFAULT_ROOT_DIR } = {}) {
     }
   }
 
+  // ─── Telegram 直连（仅当启用时检查）────────────────────────
+  const tg = cfg?.telegram || {}
+  if (tg.enabled) {
+    // 5. supergroupId
+    checks.push({
+      name: 'telegram.supergroupId',
+      ok: Boolean(tg.supergroupId),
+      detail: tg.supergroupId || '未配置：第一次跑 quadtodo 时让 bot 拿 chat.id（log 里），再 `quadtodo config set telegram.supergroupId <id>`',
+    })
+
+    // 6. allowedChatIds（白名单）
+    const allowList = Array.isArray(tg.allowedChatIds) ? tg.allowedChatIds : []
+    checks.push({
+      name: 'telegram.allowedChatIds',
+      ok: allowList.length > 0,
+      detail: allowList.length > 0
+        ? allowList.join(', ')
+        : '空 = 拒所有：跑 `quadtodo config set telegram.allowedChatIds.0 <supergroup-id>`',
+    })
+
+    // 7. token（从 OpenClaw config 读）
+    try {
+      const { readBotToken } = await import('./telegram-bot.js')
+      const tok = readBotToken(() => cfg)
+      checks.push({
+        name: 'telegram bot token',
+        ok: Boolean(tok),
+        detail: tok ? '✓ found in ~/.openclaw/openclaw.json' : '缺失：先在 OpenClaw 注册 bot token（openclaw channels add --channel telegram --token ...）',
+      })
+    } catch (e) {
+      checks.push({ name: 'telegram bot token', ok: false, detail: e.message })
+    }
+
+    // 注：hook check 已经在 openclaw 段做过；不重复
+  }
+
   return { ok: checks.every(c => c.ok), checks }
 }
 
@@ -263,6 +299,41 @@ program.command('start')
     const host = cmdOpts.expose
       ? '0.0.0.0'
       : (cmdOpts.host || cfg.host || '127.0.0.1')
+
+    // ─── stdout/stderr 复制到 ~/.quadtodo/logs/quadtodo.log ───
+    // 保留正常 console 输出 + 同步追加到日志文件，方便诊断
+    try {
+      const logsDir = join(rootDir, 'logs')
+      if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true })
+      const logFile = join(logsDir, 'quadtodo.log')
+      // 启动时如果 log > 5MB 就截断到尾部 1MB
+      try {
+        const { statSync } = await import('node:fs')
+        const st = statSync(logFile)
+        if (st.size > 5 * 1024 * 1024) {
+          const buf = readFileSync(logFile)
+          const tail = buf.subarray(buf.length - 1024 * 1024)
+          writeFileSync(logFile, tail)
+        }
+      } catch { /* file 不存在或读不了，忽略 */ }
+      const { createWriteStream } = await import('node:fs')
+      const logStream = createWriteStream(logFile, { flags: 'a' })
+      logStream.write(`\n=== quadtodo start ${new Date().toISOString()} pid=${process.pid} ===\n`)
+      const wrap = (orig) => (...args) => {
+        try {
+          const line = args.map((a) => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')
+          logStream.write(`${new Date().toISOString()} ${line}\n`)
+        } catch { /* 写 log 失败不阻塞 */ }
+        orig.apply(console, args)
+      }
+      console.log = wrap(console.log)
+      console.info = wrap(console.info)
+      console.warn = wrap(console.warn)
+      console.error = wrap(console.error)
+      console.debug = wrap(console.debug)
+    } catch (e) {
+      console.warn(`[startup] log file setup failed: ${e.message}; continuing without file log`)
+    }
 
     const pf = pidFile(rootDir)
     if (existsSync(pf)) {
@@ -301,6 +372,12 @@ program.command('start')
     writeFileSync(pf, String(process.pid))
     console.log(buildStartupBanner({ port, host }))
     console.log(`AI terminal default cwd: ${defaultCwd}`)
+
+    // listen 完成后异步发"重启完成 + Resume N 个会话"通知到 telegram。
+    // 不 await，发不发都不阻塞 boot；postText 走 telegram HTTPS 直发，不依赖 long-poll
+    if (typeof srv.notifyStartupRecovery === 'function') {
+      Promise.resolve().then(() => srv.notifyStartupRecovery()).catch(() => {})
+    }
 
     if (cmdOpts.open !== false) {
       try {

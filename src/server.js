@@ -902,6 +902,7 @@ export function createServer(opts = {}) {
 	// wizard lazy ref 必须先声明，因为 createTelegramBot 需要它
 	const openclawWizardLazyRef = {
 		handleInbound: () => Promise.resolve({ reply: 'wizard not ready' }),
+		handleCallback: () => Promise.resolve({ toast: 'wizard not ready', action: 'invalid' }),
 		handleTopicEvent: () => Promise.resolve({ ok: false, reason: 'wizard not ready' }),
 	};
 
@@ -916,6 +917,7 @@ export function createServer(opts = {}) {
 			getConfig: () => loadConfig({ rootDir: configRootDir }),
 			wizard: {
 				handleInbound: (...args) => openclawWizardLazyRef.handleInbound(...args),
+				handleCallback: (...args) => openclawWizardLazyRef.handleCallback(...args),
 				handleTopicEvent: (...args) => openclawWizardLazyRef.handleTopicEvent(...args),
 			},
 			logger: { warn: (...a) => console.warn(...a), info: (...a) => console.log(...a) },
@@ -981,9 +983,10 @@ export function createServer(opts = {}) {
 				if (!inst) {
 					// 当 bot 未启动时，常用方法返回安全的 reject，其他属性返回 undefined
 					const asyncMethods = new Set([
-						'sendMessage', 'sendDocument', 'editMessageText', 'createForumTopic',
-						'closeForumTopic', 'reopenForumTopic', 'editForumTopic', 'setMessageReaction',
-						'setMyCommands', 'deleteMyCommands', 'getMe',
+						'sendMessage', 'sendDocument', 'editMessageText', 'editMessageReplyMarkup',
+						'answerCallbackQuery',
+						'createForumTopic', 'closeForumTopic', 'reopenForumTopic', 'editForumTopic',
+						'setMessageReaction', 'setMyCommands', 'deleteMyCommands', 'getMe',
 					])
 					if (asyncMethods.has(prop)) {
 						return async () => { throw new Error(`${kind}_not_running`) }
@@ -1027,6 +1030,7 @@ export function createServer(opts = {}) {
 		getConfig: () => loadConfig({ rootDir: configRootDir }),
 	});
 	openclawWizardLazyRef.handleInbound = (...args) => openclawWizard.handleInbound(...args);
+	openclawWizardLazyRef.handleCallback = (...args) => openclawWizard.handleCallback(...args);
 	openclawWizardLazyRef.handleTopicEvent = (...args) => openclawWizard.handleTopicEvent(...args);
 	app.use("/api/openclaw/inbound", createOpenClawInboundRouter({ wizard: openclawWizard }));
 
@@ -1260,5 +1264,65 @@ export function createServer(opts = {}) {
 		});
 	}
 
-	return { app, httpServer, wss, db, pty, ait, listen, close, openclawBridge, pendingCoord };
+	/**
+	 * 启动后给 telegram 推一条"重启完成 + Resume 了哪些 session"的通知，
+	 * 解决用户痛点：重启后之前的 PTY 全死了换新 sid，但用户不知道，
+	 * 等下次 stdin proxy 走到 ambiguous 提示才发现"咦我之前的会话呢？"。
+	 *
+	 * 触发条件（缺一不可）：
+	 *   - telegram bridge 已启用（token + enabled）
+	 *   - 至少 resume 了 1 个 session（0 个不打扰，避免空通知）
+	 *   - config.telegram.startupNotice !== false（默认开，有需要可关）
+	 *
+	 * 推送目标：postText 缺省 target → openclaw.targetUserId（supergroup 的话即 General）
+	 */
+	async function notifyStartupRecovery() {
+		if (!openclawBridge.isEnabled()) return
+		const cfg = loadConfig({ rootDir: configRootDir })
+		if (cfg?.telegram?.startupNotice === false) return
+
+		const active = []
+		for (const [sid, sess] of ait.sessions) {
+			if (sess?.status === 'running' || sess?.status === 'pending_confirm') {
+				active.push({ sid, lastOutputAt: sess.lastOutputAt || sess.startedAt || 0 })
+			}
+		}
+		if (active.length === 0) return
+
+		// 反查 todo title
+		let todos = []
+		try { todos = db.listTodos({ status: 'todo' }) || [] } catch { todos = [] }
+		const sidToTodo = new Map()
+		for (const t of todos) {
+			const sessions = t.aiSessions || (t.aiSession ? [t.aiSession] : [])
+			for (const s of sessions) {
+				if (s?.sessionId) sidToTodo.set(s.sessionId, t)
+			}
+		}
+
+		active.sort((a, b) => b.lastOutputAt - a.lastOutputAt)
+		const lines = active.slice(0, 10).map((a) => {
+			const t = sidToTodo.get(a.sid)
+			const rawTitle = t?.title || '(未命名)'
+			const title = rawTitle.length > 32 ? rawTitle.slice(0, 32) + '…' : rawTitle
+			return `• #${a.sid.slice(-4)} · ${title}`
+		})
+		const more = active.length > 10 ? `\n…还有 ${active.length - 10} 个` : ''
+		const message = [
+			'🔄 quadtodo 重启完成（之前的 PTY 都被换了新身体）',
+			`Resume 了 ${active.length} 个会话：`,
+			...lines,
+		].join('\n') + more + '\n\n可用 /list 看详情，或直接发消息（多 session 时会让你点按钮选）。'
+
+		try {
+			const r = await openclawBridge.postText({ message })
+			if (!r?.ok) {
+				console.warn(`[server] startup notice not delivered: ${r?.reason || 'unknown'}`)
+			}
+		} catch (e) {
+			console.warn(`[server] startup notice failed: ${e?.message}`)
+		}
+	}
+
+	return { app, httpServer, wss, db, pty, ait, listen, close, openclawBridge, pendingCoord, notifyStartupRecovery };
 }

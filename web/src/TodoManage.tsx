@@ -41,6 +41,7 @@ import { renderAppliedTemplates } from './promptRender'
 import SessionViewer from './SessionViewer'
 import SettingsDrawer from './SettingsDrawer'
 import StatsDrawer from './StatsDrawer'
+import TelegramSyncButton from './TelegramSyncButton'
 import WikiDrawer from './WikiDrawer'
 import ExportDialog from './ExportDialog'
 import TemplateDrawer from './TemplateDrawer'
@@ -1606,6 +1607,7 @@ export default function TodoManage() {
               onClick={() => setDashboardOpen(true)}
               title="AI 工作面板"
             >AI 面板</Button>
+            <TelegramSyncButton />
             <Button
               icon={<SearchOutlined />}
               size="small"

@@ -270,9 +270,13 @@ export class PtyManager extends EventEmitter {
     }
     this.sessions.set(sessionId, session)
 
-    // Claude 预生成 UUID → 立即同步通知，下游（ai-terminal）能在首次 DB 写入窗口内拿到 nativeSessionId
-    if (presetClaudeId) {
-      this.emit('native-session', { sessionId, nativeId: presetClaudeId })
+    // 已知 nativeId 立即同步通知 —— 覆盖三种情况：
+    //   1) Claude 新会话：presetClaudeId（randomUUID）
+    //   2) Claude --resume：resumeNativeId（沿用 native id）
+    //   3) Codex --resume：resumeNativeId
+    // Codex 新会话（无 resume 也无 preset）走下面的 fs.watch / 轮询 / regex 三路探测
+    if (session.nativeId) {
+      this.emit('native-session', { sessionId, nativeId: session.nativeId })
     }
 
     // Codex 新会话：codex CLI 无 --session-id / --rollout-path 预置能力。

@@ -21,6 +21,7 @@ import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { Blob } from 'node:buffer'
 import { toTelegramV2, toPlainText } from './telegram-markdown.js'
+import { downloadTelegramFile, pickLargestPhoto } from './telegram-image.js'
 
 const TELEGRAM_API = 'https://api.telegram.org'
 const DEFAULT_LONG_POLL_TIMEOUT_SEC = 30
@@ -150,13 +151,14 @@ export function createTelegramBot({
 
   // ─── 出站 API ─────────────────────────────────────────
 
-  async function sendMessage({ chatId, threadId, text, parseMode = 'MarkdownV2', disableNotification = false } = {}) {
+  async function sendMessage({ chatId, threadId, text, parseMode = 'MarkdownV2', disableNotification = false, replyMarkup = null } = {}) {
     if (!chatId || !text) throw new Error('chatId_and_text_required')
     // V2 默认对所有 caller 透明：内部跑 telegramify 转换；caller 想发 raw 可显式传 parseMode=null
     const safeText = parseMode === 'MarkdownV2' ? toTelegramV2(text) : text
     const params = { chat_id: chatId, text: safeText, disable_notification: !!disableNotification }
     if (parseMode) params.parse_mode = parseMode
     if (threadId) params.message_thread_id = threadId
+    if (replyMarkup) params.reply_markup = replyMarkup
     try {
       return await callApi('sendMessage', params)
     } catch (e) {
@@ -206,11 +208,12 @@ export function createTelegramBot({
    *   - "message to edit not found" / "MESSAGE_ID_INVALID" → 消息已删 / 太老
    *   - "message is not modified" → 内容相同（safely ignore）
    */
-  async function editMessageText({ chatId, messageId, text, parseMode = 'MarkdownV2', disableNotification = true } = {}) {
+  async function editMessageText({ chatId, messageId, text, parseMode = 'MarkdownV2', disableNotification = true, replyMarkup = null } = {}) {
     if (!chatId || !messageId || !text) throw new Error('chatId_messageId_text_required')
     const safeText = parseMode === 'MarkdownV2' ? toTelegramV2(text) : text
     const params = { chat_id: chatId, message_id: messageId, text: safeText, disable_notification: !!disableNotification }
     if (parseMode) params.parse_mode = parseMode
+    if (replyMarkup) params.reply_markup = replyMarkup
     try {
       return await callApi('editMessageText', params, { timeoutMs: 10000 })
     } catch (e) {
@@ -223,6 +226,41 @@ export function createTelegramBot({
       }
       throw e
     }
+  }
+
+  /**
+   * 移除（或替换）已发出消息上的 inline keyboard。
+   * 用 reply_markup={inline_keyboard: []} 等价于"清空按钮"。
+   * 错误处理跟 editMessageText 一致：not modified → 静默成功；其它错误抛出。
+   */
+  async function editMessageReplyMarkup({ chatId, messageId, replyMarkup = null } = {}) {
+    if (!chatId || !messageId) throw new Error('chatId_and_messageId_required')
+    const params = {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: replyMarkup || { inline_keyboard: [] },
+    }
+    try {
+      return await callApi('editMessageReplyMarkup', params, { timeoutMs: 10000 })
+    } catch (e) {
+      if (/not modified/i.test(e.description || '')) return { ok: true, unchanged: true }
+      throw e
+    }
+  }
+
+  /**
+   * 关闭 callback_query 的 loading 转圈；可选弹 toast / alert。
+   * 必须在 ~3s 内回，否则 Telegram 客户端会一直转圈。
+   */
+  async function answerCallbackQuery({ callbackQueryId, text = '', showAlert = false, cacheTimeSec = 0 } = {}) {
+    if (!callbackQueryId) throw new Error('callbackQueryId_required')
+    const params = {
+      callback_query_id: callbackQueryId,
+      show_alert: !!showAlert,
+    }
+    if (text) params.text = String(text).slice(0, 200)
+    if (cacheTimeSec > 0) params.cache_time = cacheTimeSec
+    return await callApi('answerCallbackQuery', params, { timeoutMs: 5000 })
   }
 
   async function editForumTopic({ chatId, threadId, name, iconCustomEmojiId } = {}) {
@@ -306,7 +344,130 @@ export function createTelegramBot({
     probeListener = (typeof fn === 'function') ? fn : null
   }
 
+  /**
+   * 处理 inline keyboard 按钮点击。
+   *
+   * 流程：
+   *   1. 鉴权（白名单 chatId）
+   *   2. 调 wizard.handleCallback({chatId, threadId, callbackData, callbackMessageId, fromUserId})
+   *      —— 由 wizard 决定怎么处理（推进状态 / 触发 finalize / 等待自定义文本输入）
+   *   3. 不论 wizard 返回什么，先 answerCallbackQuery 关 loading
+   *   4. wizard 返回 editOriginal=true → editMessageReplyMarkup 把按钮去掉 + editMessageText
+   *      在原文末尾追加 "✓ 已选: …"，避免历史滚屏看不出选了什么
+   *   5. wizard 返回 reply 字符串 → sendMessage 发新一步 prompt（带新 reply_markup）
+   *
+   * 安全：wizard 没实现 handleCallback 时也得 answerCallbackQuery，否则用户客户端一直转圈
+   */
+  async function dispatchCallbackQuery(cq) {
+    const callbackQueryId = cq.id
+    const msg = cq.message || {}
+    const chatId = String(msg.chat?.id || '')
+    const threadId = msg.message_thread_id || null
+    const fromUserId = cq.from ? String(cq.from.id) : null
+    const callbackMessageId = msg.message_id || null
+    const data = String(cq.data || '')
+
+    // 鉴权失败 → answer 一下避免转圈，不回任何业务消息
+    if (!isAuthorizedChat(chatId)) {
+      logger.warn?.(`[telegram-bot] dropped callback_query from unauthorized chat=${chatId}`)
+      try { await answerCallbackQuery({ callbackQueryId }) } catch {}
+      return
+    }
+
+    // wizard 没实现 handleCallback → 当作 noop，至少 answer 掉 loading
+    if (typeof wizard.handleCallback !== 'function') {
+      logger.warn?.(`[telegram-bot] callback_query received but wizard has no handleCallback; data=${data}`)
+      try { await answerCallbackQuery({ callbackQueryId, text: '该功能未启用' }) } catch {}
+      return
+    }
+
+    let result
+    try {
+      result = await wizard.handleCallback({
+        chatId,
+        threadId,
+        callbackData: data,
+        callbackMessageId,
+        fromUserId,
+      })
+    } catch (e) {
+      logger.warn?.(`[telegram-bot] wizard.handleCallback threw: ${e.message}`)
+      try { await answerCallbackQuery({ callbackQueryId, text: '处理失败' }) } catch {}
+      return
+    }
+
+    // 1) answer，关 loading（带可选 toast）
+    try {
+      await answerCallbackQuery({
+        callbackQueryId,
+        text: result?.toast || '',
+        showAlert: !!result?.showAlert,
+      })
+    } catch (e) {
+      logger.warn?.(`[telegram-bot] answerCallbackQuery failed: ${e.message}`)
+    }
+
+    // 2) 编辑原消息：去按钮 + 在末尾标记 "✓ 已选: …"
+    //    editOriginal=false 时跳过（譬如 wizard 想保留按钮让用户多选）
+    //    chosenLabel 缺省时只去按钮，不改文本
+    if (result?.editOriginal !== false && callbackMessageId) {
+      const originalText = msg.text || ''
+      try {
+        if (result?.chosenLabel && originalText) {
+          await editMessageText({
+            chatId,
+            messageId: callbackMessageId,
+            text: `${originalText}\n\n✓ 已选: ${result.chosenLabel}`,
+            replyMarkup: { inline_keyboard: [] },
+          })
+        } else {
+          await editMessageReplyMarkup({
+            chatId,
+            messageId: callbackMessageId,
+            replyMarkup: { inline_keyboard: [] },
+          })
+        }
+      } catch (e) {
+        // 消息太老 / 已删 → 不阻塞主流程
+        logger.warn?.(`[telegram-bot] edit original after callback failed: ${e.message}`)
+      }
+    }
+
+    // 3) 发下一步 prompt（可能带新按钮 / force_reply）
+    if (result && typeof result.reply === 'string' && result.reply !== '') {
+      try {
+        const sent = await sendMessage({
+          chatId,
+          threadId,
+          text: result.reply,
+          replyMarkup: result.replyMarkup || null,
+        })
+        // ask_user 的 ✏️ 补充流：把"刚发出的 force_reply 消息 id"回灌到 wizard，
+        // 这样用户回复时 wizard 能用 reply_to_message_id 反查上下文
+        if (result.forceReplyContext && sent?.message_id && typeof wizard.registerForceReplyContext === 'function') {
+          try {
+            wizard.registerForceReplyContext({
+              ...result.forceReplyContext,
+              chatId,
+              messageId: sent.message_id,
+            })
+          } catch (e) {
+            logger.warn?.(`[telegram-bot] registerForceReplyContext failed: ${e.message}`)
+          }
+        }
+      } catch (e) {
+        logger.warn?.(`[telegram-bot] sendMessage after callback failed: ${e.message}`)
+      }
+    }
+  }
+
   async function dispatch(update) {
+    // ─── callback_query：inline keyboard 按钮点击 ────────────────
+    // 单独走，不跟 message 路径混；有自己的鉴权 + 路由 + answerCallbackQuery 兜底
+    if (update.callback_query) {
+      await dispatchCallbackQuery(update.callback_query)
+      return
+    }
     const msg = update.message
     if (!msg) return
     const chatId = String(msg.chat.id)
@@ -351,26 +512,91 @@ export function createTelegramBot({
       return
     }
 
-    if (!msg.text || typeof msg.text !== 'string') {
-      // 其他非文本（图片/sticker/系统消息）暂不处理
+    // ─── 图片处理：下载到本地，把 @path 喂给 PTY 当 attach ────
+    // photo 是 array of PhotoSize，挑最大那张。下载失败 → imagePaths=null + 警告，
+    // 但**不能丢消息**：caption 是用户的文字，也得继续走 wizard。
+    let imagePaths = null
+    let photoDownloadFailed = false
+    const hasPhoto = Array.isArray(msg.photo) && msg.photo.length > 0
+    if (hasPhoto) {
+      const largest = pickLargestPhoto(msg.photo)
+      if (largest?.file_id) {
+        const token = readBotToken(getConfig)
+        if (token) {
+          const fetcher = fetchFn || (await getProxyFetch())
+          // 网络抖动重试 1 次，跟 bridge 的策略一致
+          const tryDownload = () => downloadTelegramFile({
+            token, fetchFn: fetcher,
+            fileId: largest.file_id, fileSize: largest.file_size,
+          })
+          try {
+            let r
+            try { r = await tryDownload() }
+            catch (e1) {
+              if (/fetch failed|fetch_error|aborted|timeout/i.test(e1.message)) {
+                logger.warn?.(`[telegram-bot] photo download transient error (${e1.message}); retrying once in 1s`)
+                await new Promise((res) => setTimeout(res, 1000))
+                r = await tryDownload()
+              } else {
+                throw e1
+              }
+            }
+            imagePaths = [r.localPath]
+            logger.info?.(`[telegram-bot] downloaded photo file_id=${largest.file_id.slice(0, 12)}… → ${r.localPath} (${(r.fileSize / 1024).toFixed(1)}kB)`)
+          } catch (e) {
+            photoDownloadFailed = true
+            logger.warn?.(`[telegram-bot] photo download failed: ${e.message}`)
+          }
+        } else {
+          photoDownloadFailed = true
+          logger.warn?.(`[telegram-bot] photo received but no bot token to download with`)
+        }
+      }
+    }
+
+    // 既无文本（含 caption）也无图片 → drop
+    const hasText = (msg.text && typeof msg.text === 'string') || (msg.caption && typeof msg.caption === 'string')
+    if (!imagePaths && !hasText) {
+      // 其他非文本/非图（sticker/system msg）暂不处理
       return
     }
+
     const fromUserId = msg.from ? String(msg.from.id) : null
+    // text：图片消息时优先用 caption；纯文本消息用 text
+    const rawText = msg.text || msg.caption || ''
     // Group 里点 slash 命令时 Telegram 自动加 @botUsername 做消歧
     // （`/review` → `/review@lzhtestBot`），这里剥掉，让 PTY / wizard 收到干净的 `/review`
     // 只剥**消息开头**首词的 @xxx，正文中的 @ 不动
-    const text = msg.text.replace(/^(\/[A-Za-z0-9_]+)@\w+/, '$1')
+    const text = rawText.replace(/^(\/[A-Za-z0-9_]+)@\w+/, '$1')
 
     let result
     try {
-      result = await wizard.handleInbound({ chatId, threadId, text, fromUserId, messageId: msg.message_id })
+      result = await wizard.handleInbound({
+        chatId, threadId, text, fromUserId,
+        messageId: msg.message_id,
+        // 用户 reply 我们之前发的消息时带这个；wizard 用它匹配 force_reply 上下文
+        replyToMessageId: msg.reply_to_message?.message_id || null,
+        imagePaths,
+      })
     } catch (e) {
       logger.warn?.(`[telegram-bot] wizard.handleInbound threw: ${e.message}`)
       return
     }
+    // 图片下载失败时给用户提个示：我们用 caption 当文本送了，但图丢了
+    if (photoDownloadFailed && result?.action === 'stdin_proxy') {
+      try {
+        await sendMessage({
+          chatId, threadId,
+          text: '⚠️ 图片下载失败（网络问题），仅文本部分已转给 AI。要让 AI 看图请重发一次。',
+        })
+      } catch {}
+    }
     if (result && typeof result.reply === 'string' && result.reply !== '') {
       try {
-        await sendMessage({ chatId, threadId, text: result.reply })
+        await sendMessage({
+          chatId, threadId, text: result.reply,
+          replyMarkup: result.replyMarkup || null,
+        })
       } catch (e) {
         logger.warn?.(`[telegram-bot] sendMessage reply failed: ${e.message}`)
       }
@@ -387,7 +613,7 @@ export function createTelegramBot({
     const updates = await callApi('getUpdates', {
       offset,
       timeout: timeoutSec,
-      allowed_updates: ['message', 'forum_topic_created', 'forum_topic_closed', 'forum_topic_reopened'],
+      allowed_updates: ['message', 'callback_query', 'forum_topic_created', 'forum_topic_closed', 'forum_topic_reopened'],
     })
     if (!Array.isArray(updates) || updates.length === 0) return 0
     for (const u of updates) {
@@ -451,6 +677,8 @@ export function createTelegramBot({
     sendMessage,
     sendDocument,
     editMessageText,
+    editMessageReplyMarkup,
+    answerCallbackQuery,
     setMessageReaction,
     createForumTopic,
     closeForumTopic,
