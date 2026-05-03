@@ -59,52 +59,11 @@ function shortTodoId(todoId) {
 
 function stripAnsi(s) {
   return String(s || '')
-    // Claude Code TUI 常用 CSI Cursor Forward (`\x1b[1C`) 代替真实空格做排版。
-    // 如果直接删掉，"Enter to select" 会变成 "Entertoselect"，导致原生 select 检测失效。
-    .replace(/\x1b\[([0-9]{1,2})C/g, (_m, n) => ' '.repeat(Math.min(Number(n) || 1, 20)))
     .replace(/\x1b\[[0-9;?]*[A-Za-z~]/g, '')
     .replace(/\x1b\][^\x07]*\x07/g, '')
     .replace(/\x1b[()#][A-Za-z0-9]/g, '')
     .replace(/\x1b[>=<cDEHMNOPZ78]/g, '')
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
-}
-
-function getLiveSessionOutput(sess) {
-  if (!sess) return ''
-  const history = Array.isArray(sess.outputHistory)
-    ? sess.outputHistory.slice(-8).join('')
-    : ''
-  return `${history}\n${sess.recentOutput || ''}`
-}
-
-function extractNativeTuiPrompt(raw, maxChars = 1400) {
-  const s = compactBlankLines(trimTrailingSpaces(cleanBoxDrawing(stripAnsi(raw || '')))).trim()
-  if (!s) return ''
-  const looksLikeNativeSelect =
-    /Enter to select/i.test(s)
-    && /(Tab\/Arrow keys to navigate|Arrow keys to navigate|Esc to cancel)/i.test(s)
-  if (!looksLikeNativeSelect) return ''
-  if (s.length <= maxChars) return s
-  const tail = s.slice(-maxChars)
-  const nl = tail.indexOf('\n')
-  return '…' + (nl > 0 && nl < 200 ? tail.slice(nl + 1) : tail)
-}
-
-function buildNativeTuiReplyMarkup(sessionId) {
-  if (!sessionId) return null
-  const short = String(sessionId).slice(-4)
-  return {
-    inline_keyboard: [
-      [
-        { text: '↵ 选当前', callback_data: `qt:key:${short}:enter` },
-        { text: '⬆️ 上', callback_data: `qt:key:${short}:up` },
-        { text: '⬇️ 下', callback_data: `qt:key:${short}:down` },
-      ],
-      [
-        { text: 'Esc 取消', callback_data: `qt:key:${short}:esc` },
-      ],
-    ],
-  }
 }
 
 // Unicode box-drawing chars: 把 ╭ ╮ ╰ ╯ ├ ┤ │ ─ 等替成简洁字符
@@ -348,15 +307,6 @@ export function createOpenClawHookHandler({
   async function handle({ event, sessionId, todoId, todoTitle, hookPayload } = {}) {
     if (!event) return { ok: false, action: 'failed', reason: 'event_required' }
     const evt = String(event).toLowerCase()
-    const liveSession = sessionId && aiTerminal?.sessions
-      ? aiTerminal.sessions.get(sessionId)
-      : null
-    const nativeTuiContent = evt === 'notification'
-      ? extractNativeTuiPrompt(getLiveSessionOutput(liveSession))
-      : ''
-    const nativeTuiReplyMarkup = nativeTuiContent
-      ? buildNativeTuiReplyMarkup(sessionId)
-      : null
 
     // 诊断：sessionId 给了但 bridge 没注册过 route → 99% 会触发 telegram fallback / General 泄漏
     // 用 warn 让 race 复现时直接在日志里抓到（A=spawn 抢跑 / B=clear 后尾巴 / D=close handler race）
@@ -369,13 +319,9 @@ export function createOpenClawHookHandler({
       return { ok: true, action: 'skipped', reason: 'ask_user_pending' }
     }
 
-    // 1b-pre) 默认抑制 idle Notification（noise）—— 早于 cooldown / jsonl / postText。
-    // 例外：Claude Code 原生 TUI select（"Enter to select / Arrow keys / Esc"）是真等待用户，
-    // 不能静默，否则 Telegram 侧完全不知道需要操作。
+    // 1b-pre) 默认抑制 idle Notification（noise）—— 早于 cooldown / jsonl / postText
     if (evt === 'notification' && notificationSuppressed()) {
-      if (!nativeTuiContent) {
-        return { ok: true, action: 'skipped', reason: 'notification_suppressed' }
-      }
+      return { ok: true, action: 'skipped', reason: 'notification_suppressed' }
     }
 
     // 1b) Notification cooldown（idle 提醒太频繁的关键修复）
@@ -408,7 +354,7 @@ export function createOpenClawHookHandler({
     // 3a. 拿 sessionId 的 nativeId（Claude Code session UUID）
     let nativeId = null
     if (sessionId && aiTerminal?.sessions) {
-      const sess = liveSession || aiTerminal.sessions.get(sessionId)
+      const sess = aiTerminal.sessions.get(sessionId)
       nativeId = sess?.nativeSessionId || null
       if (sess) {
         snippet = sess.recentOutput || ''
@@ -458,13 +404,7 @@ export function createOpenClawHookHandler({
     }
 
     // 3c. 决定 cleanContent（jsonl 命中时优先；长内容截短）
-    if (nativeTuiContent) {
-      // 原生 TUI prompt 不在 Claude jsonl 里，且 latest assistant turn 可能是上一轮正文。
-      // 这里强制使用 PTY 里看到的菜单内容，避免 Telegram 收到 stale turn。
-      cleanContent = nativeTuiContent
-      snippet = null
-      historicalRaw = null
-    } else if (turnText) {
+    if (turnText) {
       cleanContent = turnText.length > INLINE_MAX_CHARS
         ? turnText.slice(0, INLINE_MAX_CHARS - 200) + '\n\n…（完整内容见附件）'
         : turnText
@@ -515,7 +455,6 @@ export function createOpenClawHookHandler({
       sessionId,
       message,
       attachment: attachmentPath,    // bridge 转给 telegramBot.sendDocument
-      replyMarkup: nativeTuiReplyMarkup,
     })
 
     // 5) SessionEnd 后处理：close topic + 改名 ✅ + 清状态

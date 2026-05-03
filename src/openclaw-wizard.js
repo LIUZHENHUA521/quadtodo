@@ -348,7 +348,7 @@ export function createOpenClawWizard({
     return out
   }
 
-  function startWizard({ chatId, threadId, text, messageId = null }) {
+  function startWizard({ chatId, threadId, text, messageId = null, imagePaths = [] }) {
     const routeKey = makeRouteKey(chatId, threadId)
     const title = extractTitle(text) || '(未命名任务)'
     const workdirHint = tryExtractWorkdir(text)
@@ -360,6 +360,7 @@ export function createOpenClawWizard({
       chatId,
       threadId,
       triggerMessageId: messageId,   // 用户触发本任务的消息 id（D 方案：tracker 加 reaction）
+      imagePaths: Array.isArray(imagePaths) ? imagePaths.slice() : [],   // 创建时一起发的图片附件
       routeKey,
       title,
       workdirOptions: listWorkdirOptions(),
@@ -560,9 +561,15 @@ export function createOpenClawWizard({
         } else {
           prompt = `任务: ${w.title}`
         }
-        // 强制 prepend "拍板必须用 ask_user MCP" 工程纪律 — 让 telegram 端按钮交互生效
-        // config.aiSession.enforceAskUserRule = false 可关
-        prompt = applySystemRules(prompt, { enforce: cfg.aiSession?.enforceAskUserRule !== false })
+        // 默认不自动 prepend ask_user 规则，避免诱发 Claude Code 交互式 TUI。
+        // 需要强制走 Telegram 按钮时，可显式配置 config.aiSession.enforceAskUserRule = true。
+        prompt = applySystemRules(prompt, { enforce: cfg.aiSession?.enforceAskUserRule === true })
+        // 创建任务时一起带的图 → prepend `@path1 @path2 ` 让 Claude Code 启动就 attach
+        if (Array.isArray(w.imagePaths) && w.imagePaths.length > 0) {
+          const ats = w.imagePaths.map((p) => `@${p}`).join(' ')
+          prompt = `${ats}\n\n${prompt}`
+          logger.info?.(`[wizard] finalize prepended ${w.imagePaths.length} image attachment(s) to prompt`)
+        }
 
         const extraEnv = {
           QUADTODO_SESSION_ID: sessionId,
@@ -1000,10 +1007,14 @@ export function createOpenClawWizard({
     if (active) {
       // 触发完成动作的 message id 总是最新一条 → 滚动更新
       if (messageId) active.triggerMessageId = messageId
+      // wizard 中途用户又发图片 → 累加（同一个任务可以分多条消息上传图）
+      if (imagePaths.length > 0) {
+        active.imagePaths = [...(active.imagePaths || []), ...imagePaths]
+      }
       // 如果用户在 wizard 中又发新任务触发词 → 重启
       if (NEW_TASK_TRIGGERS.some((re) => re.test(trimmed))) {
         wizards.delete(routeKey)
-        const w = startWizard({ chatId, threadId, text: trimmed, messageId })
+        const w = startWizard({ chatId, threadId, text: trimmed, messageId, imagePaths })
         if (w.step === STEP_DONE) return await finalizeWizard(w)
         if (w.step === STEP_QUADRANT) {
           const p = buildQuadrantPrompt()
@@ -1024,7 +1035,7 @@ export function createOpenClawWizard({
 
     // 3. 看起来像新任务 → 启动向导（必须在 ask_user 路由之前，避免被当 free text 吃掉）
     if (NEW_TASK_TRIGGERS.some((re) => re.test(trimmed))) {
-      const w = startWizard({ chatId, threadId, text: trimmed, messageId })
+      const w = startWizard({ chatId, threadId, text: trimmed, messageId, imagePaths })
       if (w.step === STEP_DONE) return await finalizeWizard(w)
       if (w.step === STEP_QUADRANT) {
         const p = buildQuadrantPrompt()
@@ -1283,14 +1294,6 @@ export function createOpenClawWizard({
     const askCb = parseCallbackData(callbackData)
     if (askCb && (askCb.kind === CB_KIND_ANSWER || askCb.kind === CB_KIND_EXTEND)) {
       return handleAskUserCallback(askCb, { chatId, threadId })
-    }
-
-    // ── Claude Code 原生 TUI select 控制按钮（qt:key:<short>:enter|up|down|esc）──
-    // 这是 ask_user MCP 以外的兜底：Claude Code 自己弹出的 select menu 无法结构化成
-    // ask_user ticket，只能把 Telegram 按钮翻译成 PTY key sequence。
-    if (callbackData.startsWith('qt:key:')) {
-      const parts = callbackData.split(':')
-      return handleNativeTuiKeyCallback(parts[2], parts[3], { chatId, threadId })
     }
 
     // ── 多 session ambiguous 按钮路径（qt:rt:<short>）─────────────
@@ -1554,55 +1557,6 @@ export function createOpenClawWizard({
       chosenLabel: `📦 ${truncateTitle(todoTitle, 22)}`,
       reply: `📍 接下来你在这条 chat 发的话，会进 「${todoTitle}」 (#${short})`,
       action: 'route_bound',
-    }
-  }
-
-  async function handleNativeTuiKeyCallback(short, key, { chatId, threadId } = {}) {
-    if (!short || !key || !aiTerminal?.sessions || !pty?.write) {
-      return { toast: '⚠️ 无法控制菜单', action: 'native_tui_key_unavailable' }
-    }
-    let target = null
-    for (const [sid, sess] of aiTerminal.sessions) {
-      if ((sess?.status === 'running' || sess?.status === 'pending_confirm') && sid.endsWith(short)) {
-        target = { sid, sess }
-        break
-      }
-    }
-    if (!target) {
-      return {
-        toast: '🤔 这个 session 已经没了',
-        reply: `🤔 #${short} 已经不在线了，可能刚刚结束。请回 /list 看当前活跃 session。`,
-        action: 'native_tui_key_session_gone',
-        editOriginal: false,
-      }
-    }
-
-    const keySeq = {
-      enter: '\r',
-      up: '\x1b[A',
-      down: '\x1b[B',
-      esc: '\x1b',
-    }[key]
-    if (!keySeq) return { toast: '⚠️ 不支持的按键', action: 'native_tui_key_invalid' }
-
-    try {
-      pty.write(target.sid, keySeq)
-      const peer = chatId
-      openclaw?.setLastPushedSession?.(peer, target.sid)
-      singleSessionRouteAnnounced.add(`${peer}::${target.sid}`)
-      const toast = key === 'enter' ? '↵ 已选当前项'
-        : key === 'up' ? '⬆️ 已上移'
-          : key === 'down' ? '⬇️ 已下移'
-            : 'Esc 已发送'
-      return {
-        toast,
-        action: 'native_tui_key',
-        sessionId: target.sid,
-        editOriginal: false,
-      }
-    } catch (e) {
-      logger.warn?.(`[wizard] native tui key proxy failed: ${e.message}`)
-      return { toast: '⚠️ 发送按键失败', action: 'native_tui_key_failed' }
     }
   }
 

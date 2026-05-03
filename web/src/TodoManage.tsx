@@ -36,6 +36,7 @@ import {
   RecurringFrequency, RecurringRule,
   Todo, Quadrant, AiTool, Comment,
   runWiki, getWikiPending,
+  uploadImage,
 } from './api'
 import { renderAppliedTemplates } from './promptRender'
 import SessionViewer from './SessionViewer'
@@ -744,6 +745,46 @@ export default function TodoManage() {
   const [parentForCreate, setParentForCreate] = useState<Todo | null>(null)
   const [form] = Form.useForm()
   const selectedWorkDir = Form.useWatch('workDir', form)
+
+  // 图片粘贴/拖拽到"详细描述" textarea：上传到本地，把 `@<path>` 插入光标位置。
+  // Claude Code 启动时识别 `@<path>` 自动 attach 图片当 vision input。
+  const descTextAreaRef = React.useRef<any>(null)
+  const handlePasteOrDropImage = useCallback(async (file: File) => {
+    if (!file?.type?.startsWith('image/')) return
+    try {
+      const { path } = await uploadImage(file)
+      const insert = `@${path} `
+      const cur = form.getFieldValue('description') || ''
+      // 尽量在光标处插入；拿不到光标就 append 到末尾
+      const ta: HTMLTextAreaElement | null =
+        descTextAreaRef.current?.resizableTextArea?.textArea ||
+        descTextAreaRef.current?.input ||
+        null
+      let nextValue: string
+      let cursorAfter: number | null = null
+      if (ta && typeof ta.selectionStart === 'number') {
+        const start = ta.selectionStart
+        const end = ta.selectionEnd ?? start
+        nextValue = cur.slice(0, start) + insert + cur.slice(end)
+        cursorAfter = start + insert.length
+      } else {
+        nextValue = (cur ? cur + ' ' : '') + insert
+      }
+      form.setFieldsValue({ description: nextValue })
+      // 恢复光标 / 聚焦
+      if (ta && cursorAfter !== null) {
+        requestAnimationFrame(() => {
+          try {
+            ta.selectionStart = ta.selectionEnd = cursorAfter as number
+            ta.focus()
+          } catch {}
+        })
+      }
+      message.success(`已 attach: ${path.split('/').pop()}`)
+    } catch (err) {
+      message.error(`上传失败: ${(err as Error).message}`)
+    }
+  }, [form])
 
   // 详情
   const [detailTodo, setDetailTodo] = useState<Todo | null>(null)
@@ -1940,8 +1981,26 @@ export default function TodoManage() {
           <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
             <Input placeholder="待办事项标题" />
           </Form.Item>
-          <Form.Item name="description" label="描述">
-            <TextArea rows={3} placeholder="详细描述（可选）" />
+          <Form.Item name="description" label="描述" extra="可粘贴或拖拽图片，自动上传并以 @path 形式 attach 到任务（AI 启动时自动识别）">
+            <TextArea
+              ref={descTextAreaRef}
+              rows={3}
+              placeholder="详细描述（可选） · 粘贴 / 拖拽图片自动 attach"
+              onPaste={(e) => {
+                const items = Array.from(e.clipboardData?.items || [])
+                const imageItem = items.find((it) => it.kind === 'file' && it.type.startsWith('image/'))
+                if (!imageItem) return
+                e.preventDefault()
+                const file = imageItem.getAsFile()
+                if (file) handlePasteOrDropImage(file)
+              }}
+              onDrop={(e) => {
+                const file = Array.from(e.dataTransfer?.files || []).find((f) => f.type.startsWith('image/'))
+                if (!file) return
+                e.preventDefault()
+                handlePasteOrDropImage(file)
+              }}
+            />
           </Form.Item>
           <Form.Item name="useTemplates" label="启用模板" valuePropName="checked" extra="开启后 AI 启动时会在 prompt 前按顺序拼接所选模板">
             <Switch />

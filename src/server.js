@@ -18,6 +18,7 @@ import { createAiTerminal } from "./routes/ai-terminal.js";
 import { createTranscriptsRouter } from "./routes/transcripts.js";
 import { createTranscriptsService } from "./transcripts/index.js";
 import { createTodosRouter } from "./routes/todos.js";
+import { createUploadsRouter } from "./routes/uploads.js";
 import { createTemplatesRouter } from "./routes/templates.js";
 import { createRecurringRulesRouter } from "./routes/recurringRules.js";
 import { createStatsRouter } from "./routes/stats.js";
@@ -828,6 +829,9 @@ export function createServer(opts = {}) {
 			res.status(status).json({ ok: false, error: e.message });
 		}
 	});
+
+	// 图片粘贴/拖拽上传：单独提一个 JSON body limit（30MB）覆盖全局 2MB 限制
+	app.use("/api/uploads", express.json({ limit: "30mb" }), createUploadsRouter({ logger: console }))
 
 	app.use("/api/todos", createTodosRouter({
 		db,

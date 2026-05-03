@@ -5,7 +5,8 @@
  *   - 拍板必走 ask_user MCP 工具（保证 telegram 端是按钮交互）
  *   - 不要在 chat 文本里堆"我有 N 个问题"列表（这种格式在 telegram 没按钮，体验差）
  *
- * 想关掉：config.aiSession.enforceAskUserRule = false
+ * 默认不注入，避免把 Claude Code 推进交互式 TUI。
+ * 想启用：config.aiSession.enforceAskUserRule = true
  */
 
 const ASK_USER_RULE = `# 工程纪律 · 拍板必须用 ask_user MCP 工具
@@ -39,11 +40,11 @@ export function getAskUserSystemRule() {
  *
  * 入参：
  *   - originalPrompt: caller 已经拼好的 prompt（template + 任务描述）
- *   - enforce: 是否启用规则；缺省 true
+ *   - enforce: 是否启用规则；缺省 false
  *
  * 返回：拼装后的 prompt 字符串。enforce=false 时原样返回 originalPrompt。
  */
-export function applySystemRules(originalPrompt, { enforce = true } = {}) {
+export function applySystemRules(originalPrompt, { enforce = false } = {}) {
   const orig = String(originalPrompt || '').trim()
   if (!enforce) return orig
   if (!orig) return ASK_USER_RULE.trim()

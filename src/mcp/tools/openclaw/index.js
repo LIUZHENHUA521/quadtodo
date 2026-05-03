@@ -182,9 +182,9 @@ export function registerOpenClawTools(server, deps) {
         if (!prompt) {
           prompt = `任务: ${todo.title}${todo.description ? `\n\n${todo.description}` : ''}`
         }
-        // 注入"拍板必须用 ask_user MCP"工程纪律 —— 跟 wizard 启动路径行为一致
-        // config.aiSession.enforceAskUserRule = false 可关
-        const cfgEnforce = (getConfig?.()?.aiSession?.enforceAskUserRule !== false)
+        // 默认不自动 prepend ask_user 规则，避免诱发 Claude Code 交互式 TUI。
+        // 需要强制走 Telegram 按钮时，可显式配置 config.aiSession.enforceAskUserRule = true。
+        const cfgEnforce = (getConfig?.()?.aiSession?.enforceAskUserRule === true)
         prompt = applySystemRules(prompt, { enforce: cfgEnforce })
 
         const cwd = expandHome(args.cwd) || todo.workDir || (getConfig?.()?.defaultCwd) || homedir()

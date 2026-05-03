@@ -172,6 +172,33 @@ async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
+/**
+ * 把粘贴/拖拽的 File 上传到后端，返回保存路径。
+ * Claude Code 用 `@<path>` 语法 attach 这个文件。
+ */
+export async function uploadImage(file: File): Promise<{ path: string; fileSize: number }> {
+  const dataBase64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      // 去掉 "data:image/png;base64," 前缀，只留纯 base64
+      const idx = result.indexOf(',')
+      resolve(idx >= 0 ? result.slice(idx + 1) : result)
+    }
+    reader.onerror = () => reject(reader.error || new Error('FileReader failed'))
+    reader.readAsDataURL(file)
+  })
+  const body = await jsonFetch<{ ok: true; path: string; fileSize: number }>('/api/uploads/image', {
+    method: 'POST',
+    body: JSON.stringify({
+      filename: file.name || 'paste.png',
+      mime: file.type || 'application/octet-stream',
+      dataBase64,
+    }),
+  })
+  return { path: body.path, fileSize: body.fileSize }
+}
+
 export interface PromptTemplate {
   id: string
   name: string

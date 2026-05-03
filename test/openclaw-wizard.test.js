@@ -130,6 +130,33 @@ describe('openclaw-wizard state machine', () => {
     expect(attempts).toBe(2)
   }, 5000)
 
+  it('new task with image attachments: prompt prepends @path1 @path2', async () => {
+    const r = await wizard.handleInbound({
+      peer: 'u1',
+      text: '帮我做 看图实现, 目录 /tmp/foo, 象限 1, Bug 修复 模板',
+      imagePaths: ['/tmp/img1.jpg', '/tmp/img2.png'],
+    })
+    expect(r.action).toBe('wizard_done')
+    expect(ai.sessions).toHaveLength(1)
+    const spawned = ai.sessions[0]
+    expect(spawned.prompt).toMatch(/^@\/tmp\/img1\.jpg @\/tmp\/img2\.png/)
+    expect(spawned.prompt).toContain('看图实现')
+  })
+
+  it('image accumulation: 多步 wizard 中陆续发图，finalize 时全部 attach', async () => {
+    let r
+    r = await wizard.handleInbound({ peer: 'u1', text: '帮我做 写个 demo', imagePaths: ['/tmp/a.jpg'] })
+    expect(r.reply).toContain('📁')
+    r = await wizard.handleInbound({ peer: 'u1', text: '1', imagePaths: ['/tmp/b.jpg'] })
+    expect(r.reply).toContain('🎯 选象限')
+    r = await wizard.handleInbound({ peer: 'u1', text: '2', imagePaths: ['/tmp/c.jpg'] })
+    expect(r.reply).toContain('📋 选模板')
+    r = await wizard.handleInbound({ peer: 'u1', text: '6' })
+    expect(r.action).toBe('wizard_done')
+    const spawned = ai.sessions[0]
+    expect(spawned.prompt).toMatch(/^@\/tmp\/a\.jpg @\/tmp\/b\.jpg @\/tmp\/c\.jpg/)
+  })
+
   it('one-shot create skips all wizard steps', async () => {
     const r = await wizard.handleInbound({
       peer: 'u1',
@@ -1701,41 +1728,6 @@ describe('openclaw-wizard multi-session routing (qt:rt:* + first-route hint)', (
     expect(cb.action).toBe('route_session_gone')
     expect(cb.editOriginal).toBe(true)
     expect(setCalls).toHaveLength(0)
-  })
-
-  it('qt:key:<short>:down/enter callbacks write native TUI key sequences to PTY', async () => {
-    const ai2 = {
-      sessions: new Map([
-        ['ai-1700000-aaaa', { status: 'pending_confirm', startedAt: Date.now() }],
-      ]),
-    }
-    const writes = []
-    const fakePty = { write: (sid, data) => writes.push({ sid, data }) }
-    const fakeBridge = {
-      ...makeFakeBridge(),
-      setLastPushedSession: () => true,
-    }
-    const wizard = createOpenClawWizard({
-      db, aiTerminal: ai2, openclaw: fakeBridge, pending,
-      pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
-    })
-
-    const down = await wizard.handleCallback({
-      chatId: '-100', threadId: null,
-      callbackData: 'qt:key:aaaa:down', callbackMessageId: 1,
-    })
-    const enter = await wizard.handleCallback({
-      chatId: '-100', threadId: null,
-      callbackData: 'qt:key:aaaa:enter', callbackMessageId: 1,
-    })
-
-    expect(down.action).toBe('native_tui_key')
-    expect(enter.action).toBe('native_tui_key')
-    expect(writes).toEqual([
-      { sid: 'ai-1700000-aaaa', data: '\x1b[B' },
-      { sid: 'ai-1700000-aaaa', data: '\r' },
-    ])
   })
 
   it('single active session: first stdin proxy reply has 📍 hint, second is silent', async () => {

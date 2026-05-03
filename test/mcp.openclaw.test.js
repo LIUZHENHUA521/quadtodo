@@ -129,12 +129,32 @@ describe('mcp openclaw tools', () => {
     expect(data.ok).toBe(true)
     // sessionId now comes from MCP tool (pre-generated), not from fake aiTerminal counter
     expect(data.sessionId).toMatch(/^ai-\d+-/)
-    // 注：start_ai_session 现在会自动 prepend "拍板必须用 ask_user" 工程纪律
-    // 所以原 prompt 不再 toBe('do the thing') 而是被包在更大的 prompt 里
-    expect(aiTerminal.sessions[0].prompt).toContain('do the thing')
-    expect(aiTerminal.sessions[0].prompt).toContain('ask_user MCP')
+    expect(aiTerminal.sessions[0].prompt).toBe('do the thing')
+    expect(aiTerminal.sessions[0].prompt).not.toContain('ask_user MCP')
     expect(aiTerminal.sessions[0].permissionMode).toBe('bypass') // 默认 bypass
     expect(openclaw.routes.get(data.sessionId)).toEqual({ targetUserId: 'user-x', account: null, channel: null })
+  })
+
+  it('start_ai_session injects ask_user rule only when explicitly enabled', async () => {
+    const todo = db.createTodo({ title: 'Fix login', quadrant: 2, workDir: '/tmp' })
+    const aiTerminal = makeFakeAiTerminal()
+    const openclaw = makeFakeBridge()
+    ctx = await makeMcp({
+      pending, aiTerminal, openclaw,
+      getConfig: () => ({ aiSession: { enforceAskUserRule: true } }),
+    })
+    const res = await ctx.client.callTool({
+      name: 'start_ai_session',
+      arguments: {
+        todoId: todo.id,
+        cwd: '/tmp',
+        prompt: 'do the thing',
+      },
+    })
+    const data = parseText(res)
+    expect(data.ok).toBe(true)
+    expect(aiTerminal.sessions[0].prompt).toContain('ask_user MCP')
+    expect(aiTerminal.sessions[0].prompt).toContain('do the thing')
   })
 
   it('start_ai_session injects QUADTODO_* env vars into PTY', async () => {

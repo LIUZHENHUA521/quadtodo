@@ -2,8 +2,14 @@ import { describe, it, expect } from 'vitest'
 import { applySystemRules, getAskUserSystemRule } from '../src/system-rules.js'
 
 describe('applySystemRules', () => {
-  it('enforce=true (default): rule prepended with separator', () => {
-    const out = applySystemRules('任务: 修一个 bug')
+  it('default: returns original prompt verbatim (trimmed)', () => {
+    const out = applySystemRules('  任务: 修一个 bug  ')
+    expect(out).toBe('任务: 修一个 bug')
+    expect(out).not.toContain('ask_user MCP')
+  })
+
+  it('enforce=true: rule prepended with separator', () => {
+    const out = applySystemRules('任务: 修一个 bug', { enforce: true })
     expect(out).toContain('ask_user MCP')        // rule 内容
     expect(out).toContain('---')                  // 分隔符
     expect(out).toContain('任务: 修一个 bug')      // 原文
@@ -20,6 +26,11 @@ describe('applySystemRules', () => {
     const out = applySystemRules('', { enforce: true })
     expect(out).toContain('ask_user MCP')
     expect(out).not.toContain('---')               // 没有 trailing separator
+  })
+
+  it('empty prompt + default enforce → returns empty string', () => {
+    expect(applySystemRules('')).toBe('')
+    expect(applySystemRules(null)).toBe('')
   })
 
   it('empty prompt + enforce=false → returns empty string', () => {

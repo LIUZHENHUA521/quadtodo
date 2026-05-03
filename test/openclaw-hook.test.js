@@ -268,7 +268,7 @@ describe('openclaw-hook handler', () => {
     expect(bridge.postText).not.toHaveBeenCalled()
   })
 
-  it('Notification: native Claude TUI select is not suppressed and includes control buttons', async () => {
+  it('Notification: native Claude TUI select stays suppressed by default', async () => {
     const nativeSelectOutput = [
       '强制登录的入口形式选哪种？',
       '',
@@ -297,20 +297,10 @@ describe('openclaw-hook handler', () => {
       todoTitle: '强制登录',
     })
 
-    expect(r.action).toBe('sent')
-    expect(bridge.sent).toHaveLength(1)
-    expect(bridge.sent[0].message).toContain('强制登录的入口形式选哪种')
-    expect(bridge.sent[0].message).toContain('Enter to select')
-    expect(bridge.sent[0].replyMarkup?.inline_keyboard).toEqual([
-      [
-        { text: '↵ 选当前', callback_data: 'qt:key:fwu8:enter' },
-        { text: '⬆️ 上', callback_data: 'qt:key:fwu8:up' },
-        { text: '⬇️ 下', callback_data: 'qt:key:fwu8:down' },
-      ],
-      [
-        { text: 'Esc 取消', callback_data: 'qt:key:fwu8:esc' },
-      ],
-    ])
+    expect(r.ok).toBe(true)
+    expect(r.action).toBe('skipped')
+    expect(r.reason).toBe('notification_suppressed')
+    expect(bridge.postText).not.toHaveBeenCalled()
   })
 
   it('SessionEnd ignores cooldown (final state)', async () => {
