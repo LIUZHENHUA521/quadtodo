@@ -979,6 +979,22 @@ export function createServer(opts = {}) {
 			.catch((e) => console.warn(`[loading-status] stop failed: ${e.message}`))
 	})
 
+	// 兜底：禁用参数失效时若仍然出现 AskUserQuestion 这类 TUI，给 Telegram 推一条提示。
+	// pty.js 自带 30s 去抖，这里只负责把事件落地成消息。
+	pty.on('tui-detected', ({ sessionId }) => {
+		if (!openclawBridge.isEnabled()) return
+		if (!openclawBridge.hasExplicitRoute(sessionId)) return
+		const message = [
+			'⚠️ 检测到 Claude Code 内置交互 TUI（AskUserQuestion 类）',
+			'Telegram 没法发 Tab/↑↓/Enter/Esc，无法正常应答。',
+			'',
+			'回 esc / 退出菜单 → 我帮你按 Esc 退出 modal',
+			'回 中断 / ctrl+c → 我帮你打断当前任务',
+		].join('\n')
+		openclawBridge.postText({ sessionId, message })
+			.catch((e) => console.warn(`[tui-detected] postText failed: ${e.message}`))
+	})
+
 	// holder Proxy: 让 hook / wizard 不用改源码，每次读属性都从 holder.current 拿最新实例
 	function unwrapHolder(holder, kind = 'instance') {
 		return new Proxy({}, {

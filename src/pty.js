@@ -38,6 +38,20 @@ function buildPermissionArgs(tool, mode) {
   return []
 }
 
+// Claude Code 的 AskUserQuestion 是 TUI（ANSI 重绘 + Tab/Arrow 导航），在 PTY 里
+// 推到 Telegram 既看不全也没法回复。这里源头禁掉，AI 调用会失败 → 退路到文本或
+// 自家 ask_user MCP（后者在 Telegram 渲染成 inline 按钮）。
+// 仅作用于 quadtodo 启动的 claude，不写到全局 settings.json。
+function buildClaudeDisallowedToolsArgs(tool) {
+  if (tool !== 'claude') return []
+  return ['--disallowedTools', 'AskUserQuestion']
+}
+
+// 检测 Claude Code AskUserQuestion / 类似选择器 TUI 的 footer 特征。
+// 真要兜底：禁用参数是主力，这一道用来万一参数失效（升级/改名）时仍能给 Telegram 一个提示。
+const TUI_FOOTER_RE = /Tab\/Arrow keys to navigate.*Esc to cancel|Enter to select.*Tab\/Arrow/
+const TUI_ALERT_COOLDOWN_MS = 30_000
+
 const CLAUDE_SESSION_RE = /claude\s+--resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
 const CODEX_SESSION_RE = /codex\s+resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
 const CODEX_ROLLOUT_FILE_RE = /^rollout-.*-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/
@@ -255,6 +269,8 @@ export class PtyManager extends EventEmitter {
     // permissionMode → 原生 CLI 标志：把托管模式直接交给 claude/codex 处理，
     // 比在 PTY 输出里做正则匹配 + 自动回车 更可靠。
     const permissionArgs = buildPermissionArgs(tool, permissionMode)
+    // Claude 内置 AskUserQuestion TUI 在 Telegram 不可用，源头禁掉
+    const disallowedToolsArgs = buildClaudeDisallowedToolsArgs(tool)
     // Claude 支持 --session-id <uuid>：新会话时由我们预生成，避免事后靠 FS/输出扫描。
     const presetClaudeId = tool === 'claude' && !resumeNativeId ? randomUUID() : null
     const claudeSessionArgs = presetClaudeId ? ['--session-id', presetClaudeId] : []
@@ -275,15 +291,15 @@ export class PtyManager extends EventEmitter {
     if (resumeNativeId) {
       if (tool === 'codex') args = [...baseArgs, ...permissionArgs, 'resume', resumeNativeId]
       else if (tool === 'cursor') args = [...baseArgs, ...permissionArgs, '--resume', resumeNativeId]
-      else args = [...baseArgs, ...permissionArgs, '--resume', resumeNativeId]
+      else args = [...baseArgs, ...permissionArgs, ...disallowedToolsArgs, '--resume', resumeNativeId]
     } else if (tool === 'cursor' && cursorResumeId) {
       args = useCliPrompt
         ? [...baseArgs, ...permissionArgs, '--resume', cursorResumeId, prompt]
         : [...baseArgs, ...permissionArgs, '--resume', cursorResumeId]
     } else {
       args = useCliPrompt
-        ? [...baseArgs, ...permissionArgs, ...claudeSessionArgs, prompt]
-        : [...baseArgs, ...permissionArgs, ...claudeSessionArgs]
+        ? [...baseArgs, ...permissionArgs, ...disallowedToolsArgs, ...claudeSessionArgs, prompt]
+        : [...baseArgs, ...permissionArgs, ...disallowedToolsArgs, ...claudeSessionArgs]
     }
     let effectiveCwd = cwd || process.env.HOME || process.cwd()
 
@@ -339,6 +355,7 @@ export class PtyManager extends EventEmitter {
       stopped: false,
       detectTimer: null,
       fsWatcher: null,
+      lastTuiAlertAt: 0,
     }
     this.sessions.set(sessionId, session)
 
@@ -398,6 +415,14 @@ export class PtyManager extends EventEmitter {
       const sessionRe = tool === 'codex' ? CODEX_SESSION_RE : CLAUDE_SESSION_RE
       const m = stripped.match(sessionRe)
       if (m) this._setNativeId(session, m[1])
+      // TUI 兜底检测：只在 claude 上看，30s 内同一 session 只推一次
+      if (tool === 'claude' && TUI_FOOTER_RE.test(stripped)) {
+        const now = Date.now()
+        if (now - session.lastTuiAlertAt > TUI_ALERT_COOLDOWN_MS) {
+          session.lastTuiAlertAt = now
+          this.emit('tui-detected', { sessionId, tool })
+        }
+      }
       this.emit('output', { sessionId, data })
     })
 

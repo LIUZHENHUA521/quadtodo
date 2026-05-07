@@ -54,7 +54,10 @@ describe('PtyManager', () => {
       cwd: '/tmp',
       resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
     })
-    expect(factory.created[0]._args).toEqual(['--resume', 'abcdef12-3456-7890-abcd-ef1234567890'])
+    const args = factory.created[0]._args
+    const idx = args.indexOf('--resume')
+    expect(idx).toBeGreaterThanOrEqual(0)
+    expect(args[idx + 1]).toBe('abcdef12-3456-7890-abcd-ef1234567890')
   })
 
   it('codex resume uses resume subcommand', () => {
@@ -354,5 +357,76 @@ describe('PtyManager', () => {
       claudeSessionLocator: () => { throw new Error('boom') },
     })
     expect(pm2.findClaudeSession('uuid')).toBeNull()
+  })
+
+  // —— AskUserQuestion 禁用 + TUI 检测 ——
+
+  it('claude args include --disallowedTools AskUserQuestion (new session)', () => {
+    const factory = makeFakePty()
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    pm.start({ sessionId: 's1', tool: 'claude', prompt: null, cwd: '/tmp' })
+    const args = factory.created[0]._args
+    const idx = args.indexOf('--disallowedTools')
+    expect(idx).toBeGreaterThanOrEqual(0)
+    expect(args[idx + 1]).toBe('AskUserQuestion')
+  })
+
+  it('claude args include --disallowedTools AskUserQuestion when resuming', () => {
+    const factory = makeFakePty()
+    const claudeSessionLocator = vi.fn(() => null)
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory, claudeSessionLocator })
+    pm.start({
+      sessionId: 's1',
+      tool: 'claude',
+      prompt: null,
+      cwd: '/tmp',
+      resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+    })
+    const args = factory.created[0]._args
+    const idx = args.indexOf('--disallowedTools')
+    expect(idx).toBeGreaterThanOrEqual(0)
+    expect(args[idx + 1]).toBe('AskUserQuestion')
+  })
+
+  it('codex args do not include --disallowedTools (claude-only flag)', () => {
+    const factory = makeFakePty()
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    pm.start({ sessionId: 's1', tool: 'codex', prompt: null, cwd: '/tmp' })
+    expect(factory.created[0]._args).not.toContain('--disallowedTools')
+  })
+
+  it('emits tui-detected when AskUserQuestion footer appears in claude output', () => {
+    const factory = makeFakePty()
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    const events = []
+    pm.on('tui-detected', (ev) => events.push(ev))
+    pm.start({ sessionId: 's1', tool: 'claude', prompt: null, cwd: '/tmp' })
+    factory.created[0]._emitData(
+      'some output\nEnter to select · Tab/Arrow keys to navigate · Esc to cancel\n',
+    )
+    expect(events).toEqual([{ sessionId: 's1', tool: 'claude' }])
+  })
+
+  it('debounces tui-detected within 30s for same session', () => {
+    const factory = makeFakePty()
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    const events = []
+    pm.on('tui-detected', (ev) => events.push(ev))
+    pm.start({ sessionId: 's1', tool: 'claude', prompt: null, cwd: '/tmp' })
+    const proc = factory.created[0]
+    proc._emitData('Tab/Arrow keys to navigate · Esc to cancel')
+    proc._emitData('Tab/Arrow keys to navigate · Esc to cancel')
+    proc._emitData('Tab/Arrow keys to navigate · Esc to cancel')
+    expect(events).toHaveLength(1)
+  })
+
+  it('does not emit tui-detected for codex output', () => {
+    const factory = makeFakePty()
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    const events = []
+    pm.on('tui-detected', (ev) => events.push(ev))
+    pm.start({ sessionId: 's1', tool: 'codex', prompt: null, cwd: '/tmp' })
+    factory.created[0]._emitData('Enter to select · Tab/Arrow keys to navigate · Esc to cancel')
+    expect(events).toHaveLength(0)
   })
 })
