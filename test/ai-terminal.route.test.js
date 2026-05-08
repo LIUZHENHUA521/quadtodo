@@ -45,6 +45,7 @@ function makeApp(opts = {}) {
     defaultCwd: opts.defaultCwd,
     getWebhookConfig: opts.getWebhookConfig,
     notifier: opts.notifier,
+    onSessionEnded: opts.onSessionEnded,
   })
   const app = express()
   app.use(express.json())
@@ -87,13 +88,15 @@ describe('routes/ai-terminal', () => {
   })
 
   it('POST /exec falls back to defaultCwd when request cwd is missing', async () => {
-    ctx = makeApp({ defaultCwd: '/Users/liuzhenhua/Desktop/code/crazyCombo' })
+    const defaultCwd = mkdtempSync(join(tmpdir(), 'quadtodo-default-cwd-'))
+    ctx = makeApp({ defaultCwd })
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
     const r = await request(ctx.app)
       .post('/api/ai-terminal/exec')
       .send({ todoId: todo.id, prompt: 'hello', tool: 'claude' })
     expect(r.status).toBe(200)
-    expect(ctx.pty.started[0].cwd).toBe('/Users/liuzhenhua/Desktop/code/crazyCombo')
+    expect(ctx.pty.started[0].cwd).toBe(defaultCwd)
+    rmSync(defaultCwd, { recursive: true, force: true })
   })
 
   it('POST /exec allows a new session on the same todo (concurrent)', async () => {
@@ -190,18 +193,46 @@ describe('routes/ai-terminal', () => {
     expect(ctx.pty.started).toHaveLength(1)
   })
 
+  it('POST /exec ignores internal bypass fields when reusing a native session', async () => {
+    const nativeId = 'abcdef12-3456-7890-abcd-ef1234567890'
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const first = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({
+        todoId: todo.id,
+        prompt: 'first',
+        tool: 'claude',
+        resumeNativeId: nativeId,
+      })
+    const second = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({
+        todoId: todo.id,
+        prompt: 'second',
+        tool: 'claude',
+        resumeNativeId: nativeId,
+        ignoreExistingNativeSessionId: true,
+        label: 'runtime:bypass',
+      })
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+    expect(second.body.reused).toBe(true)
+    expect(second.body.sessionId).toBe(first.body.sessionId)
+    expect(ctx.pty.started).toHaveLength(1)
+  })
+
   it('auto-recovers restartable sessions on startup', () => {
     const db = openDb(':memory:')
+    const workDir = mkdtempSync(join(tmpdir(), 'quadtodo-workdir-'))
+    const sessionCwd = mkdtempSync(join(tmpdir(), 'quadtodo-session-cwd-'))
     const todo = db.createTodo({
       title: 'T',
       quadrant: 1,
       status: 'ai_running',
-      workDir: '/Users/liuzhenhua/Desktop/code',
+      workDir,
       aiSessions: [{
         sessionId: 'old-session',
         tool: 'claude',
         nativeSessionId: 'abcdef12-3456-7890-abcd-ef1234567890',
-        cwd: '/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo',
+        cwd: sessionCwd,
         status: 'running',
         startedAt: 1,
         completedAt: null,
@@ -210,18 +241,20 @@ describe('routes/ai-terminal', () => {
     })
     const pty = new FakePty()
     const logDir = mkdtempSync(join(tmpdir(), 'quadtodo-log-'))
-    const ait = createAiTerminal({ db, pty, logDir, defaultCwd: '/Users/liuzhenhua/Desktop/code/crazyCombo' })
+    const ait = createAiTerminal({ db, pty, logDir, defaultCwd: workDir })
     expect(pty.started).toHaveLength(1)
     expect(pty.started[0].resumeNativeId).toBe('abcdef12-3456-7890-abcd-ef1234567890')
     expect(pty.started[0].prompt).toBeNull()
-    expect(pty.started[0].cwd).toBe('/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo')
+    expect(pty.started[0].cwd).toBe(sessionCwd)
     const updated = db.getTodo(todo.id)
     expect(updated.status).toBe('ai_running')
     expect(updated.aiSession.nativeSessionId).toBe('abcdef12-3456-7890-abcd-ef1234567890')
     expect(updated.aiSession.sessionId).not.toBe('old-session')
-    expect(updated.aiSession.cwd).toBe('/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo')
+    expect(updated.aiSession.cwd).toBe(sessionCwd)
     ait.close()
     rmSync(logDir, { recursive: true, force: true })
+    rmSync(workDir, { recursive: true, force: true })
+    rmSync(sessionCwd, { recursive: true, force: true })
     db.close()
   })
 
@@ -611,6 +644,149 @@ describe('routes/ai-terminal', () => {
     ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 120, rows: 30 }, ws)
 
     expect(ctx.pty.resizes).toEqual([])
+  })
+
+  it('set_auto_mode bypass restarts a running Claude session with resumeNativeId', async () => {
+    const nativeId = 'abcdef12-3456-7890-abcd-ef1234567890'
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude', cwd: '/tmp' })
+    ctx.pty.emit('native-session', {
+      sessionId: body.sessionId,
+      nativeId,
+    })
+
+    const sent = []
+    const ws = { readyState: 1, OPEN: 1, send: (d) => sent.push(JSON.parse(d)) }
+    ctx.ait.addBrowser(body.sessionId, ws)
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'set_auto_mode', autoMode: 'bypass' }, ws)
+
+    expect(ctx.pty.started).toHaveLength(2)
+    expect(ctx.pty.started[1]).toMatchObject({
+      todoId: todo.id,
+      tool: 'claude',
+      prompt: null,
+      cwd: '/tmp',
+      resumeNativeId: nativeId,
+      permissionMode: 'bypass',
+    })
+    expect(ctx.pty.stopped).toEqual([body.sessionId])
+    const updated = ctx.db.getTodo(todo.id)
+    expect(updated.status).toBe('ai_running')
+    expect(updated.aiSession.sessionId).toBe(ctx.pty.started[1].sessionId)
+    expect(updated.aiSession.status).toBe('running')
+    expect(updated.aiSessions[0].sessionId).toBe(ctx.pty.started[1].sessionId)
+    expect(updated.aiSessions.find(s => s.sessionId === body.sessionId)?.status).toBe('stopped')
+    expect(sent).toContainEqual({
+      type: 'session_restarted',
+      oldSessionId: body.sessionId,
+      newSessionId: ctx.pty.started[1].sessionId,
+      autoMode: 'bypass',
+    })
+  })
+
+  it('old session exit during runtime bypass restart does not overwrite replacement state', async () => {
+    const nativeId = 'abcdef12-3456-7890-abcd-ef1234567890'
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude', cwd: '/tmp' })
+    ctx.pty.emit('native-session', { sessionId: body.sessionId, nativeId })
+
+    const originalStart = ctx.pty.start.bind(ctx.pty)
+    ctx.pty.start = (opts) => {
+      if (opts.resumeNativeId) {
+        ctx.pty.emit('done', { sessionId: body.sessionId, exitCode: 0, fullLog: '', nativeId, stopped: true })
+      }
+      originalStart(opts)
+    }
+
+    const sent = []
+    const ws = { readyState: 1, OPEN: 1, send: (d) => sent.push(JSON.parse(d)) }
+    ctx.ait.addBrowser(body.sessionId, ws)
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'set_auto_mode', autoMode: 'bypass' }, ws)
+
+    const updated = ctx.db.getTodo(todo.id)
+    expect(updated.status).toBe('ai_running')
+    expect(updated.aiSession.sessionId).toBe(ctx.pty.started[1].sessionId)
+    expect(updated.aiSessions[0].sessionId).toBe(ctx.pty.started[1].sessionId)
+    expect(updated.aiSessions.find(s => s.sessionId === body.sessionId)?.status).toBe('stopped')
+  })
+
+  it('runtime bypass restart failure restores old session state and warns browser', async () => {
+    const nativeId = 'abcdef12-3456-7890-abcd-ef1234567890'
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude', cwd: '/tmp' })
+    ctx.pty.emit('native-session', { sessionId: body.sessionId, nativeId })
+
+    const originalStart = ctx.pty.start.bind(ctx.pty)
+    ctx.pty.start = (opts) => {
+      if (opts.resumeNativeId) throw new Error('spawn failed')
+      originalStart(opts)
+    }
+
+    const sent = []
+    const ws = { readyState: 1, OPEN: 1, send: (d) => sent.push(JSON.parse(d)) }
+    ctx.ait.addBrowser(body.sessionId, ws)
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'set_auto_mode', autoMode: 'bypass' }, ws)
+
+    expect(ctx.pty.started).toHaveLength(1)
+    expect(ctx.ait.todoSessionMap.get(todo.id)).toBe(body.sessionId)
+    expect(ctx.ait.nativeSessionMap.get(`claude:${nativeId}`)).toBe(body.sessionId)
+    const updated = ctx.db.getTodo(todo.id)
+    expect(updated.status).toBe('ai_running')
+    expect(updated.aiSession.sessionId).toBe(body.sessionId)
+    expect(updated.aiSessions).toHaveLength(1)
+    expect(sent).toContainEqual({
+      type: 'auto_mode_notice',
+      autoMode: 'bypass',
+      immediate: false,
+      reason: 'restart_failed',
+      message: '切换全托管失败：spawn failed',
+    })
+  })
+
+  it('runtime bypass old-session stop does not call session-ended hooks', async () => {
+    const onSessionEnded = vi.fn()
+    ctx = makeApp({ onSessionEnded })
+    const nativeId = 'abcdef12-3456-7890-abcd-ef1234567890'
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude', cwd: '/tmp' })
+    ctx.pty.emit('native-session', { sessionId: body.sessionId, nativeId })
+
+    const sent = []
+    const ws = { readyState: 1, OPEN: 1, send: (d) => sent.push(JSON.parse(d)) }
+    ctx.ait.addBrowser(body.sessionId, ws)
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'set_auto_mode', autoMode: 'bypass' }, ws)
+
+    expect(onSessionEnded).not.toHaveBeenCalled()
+  })
+
+  it('set_auto_mode bypass does not restart Claude when nativeSessionId is missing', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude', cwd: '/tmp' })
+
+    const sent = []
+    const ws = { readyState: 1, OPEN: 1, send: (d) => sent.push(JSON.parse(d)) }
+    ctx.ait.addBrowser(body.sessionId, ws)
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'set_auto_mode', autoMode: 'bypass' }, ws)
+
+    expect(ctx.pty.started).toHaveLength(1)
+    expect(ctx.pty.stopped).toEqual([])
+    expect(sent).toContainEqual({
+      type: 'auto_mode_notice',
+      autoMode: 'bypass',
+      immediate: false,
+      reason: 'native_session_missing',
+      message: '当前 Claude 会话尚未拿到原生 session id，全托管将仅对后续启动/恢复的会话生效。',
+    })
   })
 
   it('outputHistory enforces 512KB ceiling', async () => {

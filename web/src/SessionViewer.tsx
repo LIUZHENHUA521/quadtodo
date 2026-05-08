@@ -11,6 +11,7 @@ interface Props {
   cwd?: string | null
   resumeTarget?: ResumeSessionInput | null
   onSessionRecovered?: (nextSessionId: string) => void
+  onSessionSwitch?: (nextSessionId: string) => void
   onClose: () => void
   onDone?: (result: { status: string; exitCode?: number }) => void
   onFork?: (turnIndex: number, upToTurns: TranscriptTurn[]) => void

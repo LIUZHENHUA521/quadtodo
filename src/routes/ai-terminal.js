@@ -47,6 +47,13 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     return [nextSession, ...filtered]
   }
 
+  function replaceTodoAiSessionInPlace(todo, nextSession) {
+    const history = Array.isArray(todo?.aiSessions) ? todo.aiSessions : (todo?.aiSession ? [todo.aiSession] : [])
+    const index = history.findIndex(item => item?.sessionId === nextSession.sessionId)
+    if (index === -1) return [...history, nextSession]
+    return history.map((item, i) => i === index ? nextSession : item)
+  }
+
   function broadcastToSession(session, msg) {
     const data = JSON.stringify(msg)
     for (const ws of session.browsers) {
@@ -65,6 +72,22 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
       timestamp: payload.timestamp || Date.now(),
     })
     return true
+  }
+
+  function sendToBrowser(ws, msg) {
+    if (!ws || ws.readyState !== ws.OPEN) return
+    ws.send(JSON.stringify(msg))
+  }
+
+  function restoreSessionAsCurrent(session, todoSnapshot) {
+    todoSessionMap.set(session.todoId, session.sessionId)
+    if (session.nativeSessionId) nativeSessionMap.set(`${session.tool}:${session.nativeSessionId}`, session.sessionId)
+    if (todoSnapshot) {
+      db.updateTodo(session.todoId, {
+        status: todoSnapshot.status,
+        aiSessions: todoSnapshot.aiSessions,
+      })
+    }
   }
 
   function appendOutput(session, data) {
@@ -156,7 +179,8 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     const session = sessions.get(sessionId)
     if (!session) return
     if (session.nativeSessionId && session.nativeSessionId !== nativeId) {
-      nativeSessionMap.delete(`${session.tool}:${session.nativeSessionId}`)
+      const oldNativeKey = `${session.tool}:${session.nativeSessionId}`
+      if (nativeSessionMap.get(oldNativeKey) === sessionId) nativeSessionMap.delete(oldNativeKey)
     }
     session.nativeSessionId = nativeId
     nativeSessionMap.set(`${session.tool}:${nativeId}`, sessionId)
@@ -174,7 +198,10 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
   pty.on('done', ({ sessionId, exitCode, fullLog, nativeId, stopped }) => {
     const session = sessions.get(sessionId)
     if (!session) return
-    if (session.nativeSessionId) nativeSessionMap.delete(`${session.tool}:${session.nativeSessionId}`)
+    if (session.nativeSessionId) {
+      const nativeKey = `${session.tool}:${session.nativeSessionId}`
+      if (nativeSessionMap.get(nativeKey) === sessionId) nativeSessionMap.delete(nativeKey)
+    }
 
     let aiStatus, todoStatus
     if (stopped) {
@@ -191,6 +218,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     session.status = aiStatus
     session.completedAt = Date.now()
 
+    const superseded = Boolean(session.replacedBySessionId) || todoSessionMap.get(session.todoId) !== sessionId
     const todo = db.getTodo(session.todoId)
     if (todo) {
       const newAi = {
@@ -206,8 +234,12 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
       }
       // 用户主动通过删/关 topic 触发的 stop：handleTopicEvent 已把 todo 标 done，
       // 这里别用 stopped→'todo' 的默认逻辑覆写它。只更 aiSessions（记录会话退出状态）。
-      const updates = { aiSessions: mergeTodoAiSessions(todo, newAi) }
-      if (session.userClosedReason !== 'topic_closed') {
+      const updates = {
+        aiSessions: superseded
+          ? replaceTodoAiSessionInPlace(todo, newAi)
+          : mergeTodoAiSessions(todo, newAi),
+      }
+      if (session.userClosedReason !== 'topic_closed' && !superseded) {
         updates.status = todoStatus
       }
       db.updateTodo(session.todoId, updates)
@@ -234,7 +266,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     }
 
     // Telegram 自动关 topic 钩子：PTY 自然退出 / crash / exit 命令都走这里
-    if (typeof onSessionEnded === 'function') {
+    if (!superseded && typeof onSessionEnded === 'function') {
       try {
         const r = onSessionEnded({
           sessionId,
@@ -250,7 +282,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
   })
 
   // ─── 程序化 session 启动入口（供 orchestrator 等模块直接调用，跳过 HTTP） ───
-  function spawnSession({ todoId, prompt, tool, cwd, resumeNativeId, permissionMode, label, extraEnv, sessionId: externalSessionId, skipTelegram = false }) {
+  function spawnSession({ todoId, prompt, tool, cwd, resumeNativeId, permissionMode, label, extraEnv, sessionId: externalSessionId, skipTelegram = false, ignoreExistingNativeSessionId = false }) {
     if (!todoId || typeof prompt !== 'string' || !tool) {
       const err = new Error('missing todoId, prompt, or tool'); err.code = 'bad_request'
       throw err
@@ -264,7 +296,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
       const err = new Error('todo_not_found'); err.code = 'not_found'
       throw err
     }
-    if (resumeNativeId) {
+    if (resumeNativeId && !ignoreExistingNativeSessionId) {
       const existing = nativeSessionMap.get(`${tool}:${resumeNativeId}`)
       if (existing) return { sessionId: existing, reused: true }
     }
@@ -332,6 +364,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
       }
       pty.start({
         sessionId,
+        todoId,
         tool,
         prompt: resumeNativeId ? null : prompt,
         cwd: sessionCwd,
@@ -342,7 +375,10 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     } catch (error) {
       sessions.delete(sessionId)
       if (todoSessionMap.get(todoId) === sessionId) todoSessionMap.delete(todoId)
-      if (resumeNativeId) nativeSessionMap.delete(`${tool}:${resumeNativeId}`)
+      if (resumeNativeId) {
+        const nativeKey = `${tool}:${resumeNativeId}`
+        if (nativeSessionMap.get(nativeKey) === sessionId) nativeSessionMap.delete(nativeKey)
+      }
       throw error
     }
 
@@ -363,7 +399,15 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
 
   router.post('/exec', (req, res) => {
     try {
-      const result = spawnSession(req.body || {})
+      const body = req.body || {}
+      const result = spawnSession({
+        todoId: body.todoId,
+        prompt: body.prompt,
+        tool: body.tool,
+        cwd: body.cwd,
+        resumeNativeId: body.resumeNativeId,
+        permissionMode: body.permissionMode,
+      })
       res.json({ ok: true, ...result })
     } catch (e) {
       const status = e.code === 'bad_request' ? 400 : e.code === 'not_found' ? 404 : 500
@@ -582,6 +626,68 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     broadcastToSession(session, { type: 'pending_cleared' })
   }
 
+  function handleSetAutoMode(sessionId, msg, ws) {
+    const session = sessions.get(sessionId)
+    if (!session) return
+    const nextAutoMode = msg.autoMode || null
+    session.autoMode = nextAutoMode
+    broadcastToSession(session, { type: 'auto_mode', autoMode: session.autoMode || null })
+
+    if (nextAutoMode !== 'bypass' || session.tool !== 'claude') return
+
+    if (!session.nativeSessionId) {
+      sendToBrowser(ws, {
+        type: 'auto_mode_notice',
+        autoMode: 'bypass',
+        immediate: false,
+        reason: 'native_session_missing',
+        message: '当前 Claude 会话尚未拿到原生 session id，全托管将仅对后续启动/恢复的会话生效。',
+      })
+      return
+    }
+
+    const todoSnapshot = db.getTodo(session.todoId)
+    session.replacedBySessionId = '__pending__'
+    let restarted
+    try {
+      restarted = spawnSession({
+        todoId: session.todoId,
+        prompt: session.prompt || '',
+        tool: session.tool,
+        cwd: session.cwd || undefined,
+        resumeNativeId: session.nativeSessionId,
+        permissionMode: 'bypass',
+        label: 'runtime:bypass',
+        skipTelegram: true,
+        ignoreExistingNativeSessionId: true,
+      })
+    } catch (e) {
+      delete session.replacedBySessionId
+      restoreSessionAsCurrent(session, todoSnapshot)
+      sendToBrowser(ws, {
+        type: 'auto_mode_notice',
+        autoMode: 'bypass',
+        immediate: false,
+        reason: 'restart_failed',
+        message: `切换全托管失败：${e.message}`,
+      })
+      return
+    }
+
+    broadcastToSession(session, {
+      type: 'session_restarted',
+      oldSessionId: sessionId,
+      newSessionId: restarted.sessionId,
+      autoMode: 'bypass',
+    })
+    if (restarted.sessionId !== sessionId) {
+      session.replacedBySessionId = restarted.sessionId
+      pty.stop(sessionId)
+    } else {
+      delete session.replacedBySessionId
+    }
+  }
+
   function handleBrowserMessage(sessionId, msg, ws) {
     if (msg.type === 'input') {
       const session = sessions.get(sessionId)
@@ -614,10 +720,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
         pty.resize(sessionId, cols, rows)
       }
     } else if (msg.type === 'set_auto_mode') {
-      const session = sessions.get(sessionId)
-      if (!session) return
-      session.autoMode = msg.autoMode || null
-      broadcastToSession(session, { type: 'auto_mode', autoMode: session.autoMode || null })
+      handleSetAutoMode(sessionId, msg, ws)
     }
   }
 
@@ -631,7 +734,10 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
           && s.browsers.size === 0) {
         sessions.delete(id)
         if (todoSessionMap.get(s.todoId) === id) todoSessionMap.delete(s.todoId)
-        if (s.nativeSessionId) nativeSessionMap.delete(`${s.tool}:${s.nativeSessionId}`)
+        if (s.nativeSessionId) {
+          const nativeKey = `${s.tool}:${s.nativeSessionId}`
+          if (nativeSessionMap.get(nativeKey) === id) nativeSessionMap.delete(nativeKey)
+        }
       }
     }
   }, 5 * 60_000)
@@ -728,7 +834,8 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
         console.warn('[ai-terminal] auto-recover failed:', e.message)
         sessions.delete(sessionId)
         todoSessionMap.delete(todo.id)
-        nativeSessionMap.delete(`${recoverable.tool}:${recoverable.nativeSessionId}`)
+        const nativeKey = `${recoverable.tool}:${recoverable.nativeSessionId}`
+        if (nativeSessionMap.get(nativeKey) === sessionId) nativeSessionMap.delete(nativeKey)
         db.updateTodo(todo.id, { status: 'todo' })
       }
     }

@@ -32,6 +32,7 @@ interface Props {
   cwd?: string | null
   resumeTarget?: ResumeSessionInput | null
   onSessionRecovered?: (nextSessionId: string) => void
+  onSessionSwitch?: (nextSessionId: string) => void
   onClose: () => void
   onDone?: (result: { status: string; exitCode?: number }) => void
   fillHeight?: boolean
@@ -49,7 +50,7 @@ const RESIZE_STABILITY_MS = 200
 const MIN_CONTAINER_WIDTH = 300
 const MIN_VALID_COLS = 30
 
-export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeTarget, onSessionRecovered, onClose, onDone, fillHeight }: Props) {
+export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeTarget, onSessionRecovered, onSessionSwitch, onClose, onDone, fillHeight }: Props) {
   void onClose
   const { theme, preset, override, customPresets, setPreset, setOverride, resetOverride, saveCustomPreset, deleteCustomPreset } = useTerminalTheme()
   const themeRef = useRef(theme)
@@ -107,13 +108,15 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   const recoveryAttemptedRef = useRef(false)
   const resumeTargetRef = useRef<ResumeSessionInput | null>(resumeTarget || null)
   const onSessionRecoveredRef = useRef<typeof onSessionRecovered>(onSessionRecovered)
+  const onSessionSwitchRef = useRef<typeof onSessionSwitch>(onSessionSwitch)
   const turnDoneNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const windowFocusedRef = useRef<boolean>(typeof document === 'undefined' ? true : document.hasFocus())
 
   useEffect(() => {
     resumeTargetRef.current = resumeTarget || null
     onSessionRecoveredRef.current = onSessionRecovered
-  }, [resumeTarget, onSessionRecovered])
+    onSessionSwitchRef.current = onSessionSwitch
+  }, [resumeTarget, onSessionRecovered, onSessionSwitch])
 
   useEffect(() => {
     const handleFocus = () => { windowFocusedRef.current = true }
@@ -486,6 +489,15 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
               break
             case 'auto_mode':
               setAutoMode(msg.autoMode || null)
+              break
+            case 'session_restarted':
+              if (typeof msg.newSessionId === 'string' && msg.newSessionId) {
+                message.info(msg.message || '已切换到恢复后的全托管会话')
+                onSessionSwitchRef.current?.(msg.newSessionId)
+              }
+              break
+            case 'auto_mode_notice':
+              if (msg.message) message.warning(msg.message)
               break
             case 'turn_done':
               showTurnDoneReminder()

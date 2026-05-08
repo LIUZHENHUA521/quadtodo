@@ -601,6 +601,11 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
               setExpandedTerminal({ todoId: todo.id, sessionId: nextSessionId })
               onRefresh()
             }}
+            onSessionSwitch={(nextSessionId) => {
+              onShowTerminal(todo.id)
+              setExpandedTerminal({ todoId: todo.id, sessionId: nextSessionId })
+              onRefresh()
+            }}
             onClose={() => {
               onHideTerminal(todo.id, sessionId)
               setExpandedTerminal(null)
@@ -625,6 +630,10 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                   nativeSessionId: rightSession.nativeSessionId,
                 } : null}
                 onSessionRecovered={() => onRefresh()}
+                onSessionSwitch={(nextSessionId) => {
+                  onSetSideBySide(todo.id, nextSessionId)
+                  onRefresh()
+                }}
                 onClose={() => onSetSideBySide(todo.id, null)}
                 onDone={() => onRefresh()}
                 onFork={() => onRequestFork(todo, rightSession.sessionId)}
@@ -2433,6 +2442,11 @@ export default function TodoManage() {
               resumeTarget={resumeTarget}
               fillHeight
               onSessionRecovered={(nextSessionId) => {
+                setOverlayTerminal({ todoId: t.id, sessionId: nextSessionId })
+                setExpandedTerminal({ todoId: t.id, sessionId: nextSessionId })
+                fetchTodos()
+              }}
+              onSessionSwitch={(nextSessionId) => {
                 setOverlayTerminal({ todoId: t.id, sessionId: nextSessionId })
                 setExpandedTerminal({ todoId: t.id, sessionId: nextSessionId })
                 fetchTodos()

@@ -130,6 +130,24 @@ describe('PtyManager', () => {
     expect(args[idx + 1]).toBe('abcdef12-3456-7890-abcd-ef1234567890')
   })
 
+  it('claude resume with bypass permission mode passes bypassPermissions before --resume', () => {
+    const factory = makeFakePty()
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    pm.start({
+      sessionId: 's1',
+      tool: 'claude',
+      prompt: null,
+      cwd: '/tmp',
+      resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+      permissionMode: 'bypass',
+    })
+    const args = factory.created[0]._args
+    expect(args).toContain('--permission-mode')
+    expect(args).toContain('bypassPermissions')
+    expect(args).toContain('--resume')
+    expect(args.indexOf('--permission-mode')).toBeLessThan(args.indexOf('--resume'))
+  })
+
   it('codex resume uses resume subcommand', () => {
     const factory = makeFakePty()
     const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
