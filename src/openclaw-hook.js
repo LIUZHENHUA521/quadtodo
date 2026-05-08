@@ -300,6 +300,19 @@ export function createOpenClawHookHandler({
     }
   }
 
+  function notifyWebTurnDone(sessionId, todoTitle) {
+    if (!sessionId || !aiTerminal?.notifyTurnDone) return
+    try {
+      aiTerminal.notifyTurnDone(sessionId, {
+        event: 'stop',
+        status: 'idle',
+        todoTitle: todoTitle || undefined,
+      })
+    } catch (e) {
+      logger.warn?.(`[openclaw-hook] notifyTurnDone failed: ${e.message}`)
+    }
+  }
+
   /**
    * 处理一条 hook 事件。
    * 返回 { ok, action: 'sent'|'skipped'|'failed', reason? }
@@ -332,6 +345,10 @@ export function createOpenClawHookHandler({
       if (cd > 0 && isOnCooldown(sessionId, evt, cd)) {
         return { ok: true, action: 'skipped', reason: 'notification_cooldown', cooldownMs: cd }
       }
+    }
+
+    if (evt === 'stop') {
+      notifyWebTurnDone(sessionId, todoTitle)
     }
 
     // 2) cooldown：默认不再对 Stop 启用 cooldown

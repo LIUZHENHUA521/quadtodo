@@ -44,6 +44,19 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     }
   }
 
+  function notifyTurnDone(sessionId, payload = {}) {
+    const session = sessions.get(sessionId)
+    if (!session) return false
+    broadcastToSession(session, {
+      ...payload,
+      type: 'turn_done',
+      event: payload.event || 'stop',
+      status: payload.status || 'idle',
+      timestamp: payload.timestamp || Date.now(),
+    })
+    return true
+  }
+
   function appendOutput(session, data) {
     session.outputHistory.push(data)
     session.outputSize += data.length
@@ -712,6 +725,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     removeBrowser,
     handleBrowserMessage,
     broadcastToSession,
+    notifyTurnDone,
     spawnSession,
     close,
   }

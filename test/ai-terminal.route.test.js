@@ -407,6 +407,45 @@ describe('routes/ai-terminal', () => {
     expect(sent1.some(item => JSON.parse(item).type === 'auto_mode')).toBe(true)
   })
 
+  it('notifyTurnDone broadcasts turn_done to attached browsers', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app)
+      .post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hello', tool: 'claude' })
+
+    const sent = []
+    const ws = {
+      OPEN: 1,
+      readyState: 1,
+      send: vi.fn((data) => sent.push(JSON.parse(data))),
+      close: vi.fn(),
+    }
+    ctx.ait.addBrowser(body.sessionId, ws)
+    sent.length = 0
+
+    const ok = ctx.ait.notifyTurnDone(body.sessionId, {
+      event: 'stop',
+      status: 'idle',
+      todoTitle: 'T',
+      timestamp: 123,
+    })
+
+    expect(ok).toBe(true)
+    expect(sent).toEqual([
+      {
+        type: 'turn_done',
+        event: 'stop',
+        status: 'idle',
+        todoTitle: 'T',
+        timestamp: 123,
+      },
+    ])
+  })
+
+  it('notifyTurnDone returns false for an unknown session', () => {
+    expect(ctx.ait.notifyTurnDone('missing-session')).toBe(false)
+  })
+
   it('addBrowser replays existing outputHistory immediately', async () => {
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
     const { body } = await request(ctx.app).post('/api/ai-terminal/exec')

@@ -12,6 +12,13 @@ import '@xterm/xterm/css/xterm.css'
 import { getTerminalWsUrl, startAiExec, stopAiExec, openTraeCN, TodoStatus, ResumeSessionInput, EditorKind } from './api'
 import { useTerminalTheme } from './hooks/useTerminalTheme'
 import { PRESET_LABELS, PRESET_ORDER, TerminalPresetName, TERMINAL_PRESETS } from './terminalThemes'
+import {
+  getBrowserNotificationPermission,
+  shouldSendTurnDoneSystemNotification,
+  TURN_DONE_BANNER,
+  TURN_DONE_TEXT,
+  BrowserNotificationPermission,
+} from './terminalTurnNotifications'
 
 // 匹配 xterm 一行中的文件路径（相对或绝对，可带 :line 或 :line:col）
 // 规避回溯：只匹配不含空格/冒号/斜杠的 path segment + 已知扩展名
@@ -66,6 +73,8 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   })
   const [sessionStatus, setSessionStatus] = useState<TodoStatus>(status)
   const [wsConnected, setWsConnected] = useState(false)
+  const [turnDoneNotice, setTurnDoneNotice] = useState(false)
+  const [notificationPermission, setNotificationPermission] = useState<BrowserNotificationPermission>(() => getBrowserNotificationPermission())
   const [sessionExpired, setSessionExpired] = useState(false)
   const [height, setHeight] = useState(420)
   const [autoMode, setAutoMode] = useState<string | null>(() => {
@@ -94,11 +103,38 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   const recoveryAttemptedRef = useRef(false)
   const resumeTargetRef = useRef<ResumeSessionInput | null>(resumeTarget || null)
   const onSessionRecoveredRef = useRef<typeof onSessionRecovered>(onSessionRecovered)
+  const turnDoneNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const windowFocusedRef = useRef<boolean>(typeof document === 'undefined' ? true : document.hasFocus())
 
   useEffect(() => {
     resumeTargetRef.current = resumeTarget || null
     onSessionRecoveredRef.current = onSessionRecovered
   }, [resumeTarget, onSessionRecovered])
+
+  useEffect(() => {
+    const handleFocus = () => { windowFocusedRef.current = true }
+    const handleBlur = () => { windowFocusedRef.current = false }
+    window.addEventListener('focus', handleFocus)
+    window.addEventListener('blur', handleBlur)
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('blur', handleBlur)
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (turnDoneNoticeTimerRef.current) clearTimeout(turnDoneNoticeTimerRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    setTurnDoneNotice(false)
+    if (turnDoneNoticeTimerRef.current) {
+      clearTimeout(turnDoneNoticeTimerRef.current)
+      turnDoneNoticeTimerRef.current = null
+    }
+  }, [sessionId])
 
   const tryAutoRecover = useCallback(async () => {
     const latestResumeTarget = resumeTargetRef.current
@@ -125,6 +161,63 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       recoveringRef.current = false
     }
   }, [])
+
+  const requestBrowserNotifications = useCallback(async () => {
+    if (typeof window === 'undefined' || typeof window.Notification === 'undefined') {
+      setNotificationPermission('unsupported')
+      message.info('当前浏览器不支持系统通知')
+      return
+    }
+    try {
+      const permission = await window.Notification.requestPermission()
+      setNotificationPermission(permission)
+      if (permission === 'granted') message.success('已开启浏览器通知')
+      else if (permission === 'denied') message.warning('浏览器通知权限已被拒绝，可在浏览器设置中重新开启')
+      else message.info('浏览器通知暂未开启')
+    } catch (error) {
+      console.warn('[AiTerminalMini] request notification permission failed:', error)
+      setNotificationPermission(getBrowserNotificationPermission())
+      message.warning('浏览器通知权限请求失败')
+    }
+  }, [])
+
+  const showTurnDoneReminder = useCallback(() => {
+    const term = termRef.current
+    if (term) {
+      term.writeln(TURN_DONE_BANNER)
+      if (followTailRef.current) term.scrollToBottom()
+    }
+
+    setTurnDoneNotice(true)
+    if (turnDoneNoticeTimerRef.current) clearTimeout(turnDoneNoticeTimerRef.current)
+    turnDoneNoticeTimerRef.current = setTimeout(() => {
+      setTurnDoneNotice(false)
+      turnDoneNoticeTimerRef.current = null
+    }, 8000)
+
+    if (!document.hidden) {
+      message.success({ content: TURN_DONE_TEXT, key: `turn-done-${sessionId}`, duration: 4 })
+    }
+
+    const permission = getBrowserNotificationPermission()
+    setNotificationPermission(permission)
+    if (!shouldSendTurnDoneSystemNotification({
+      permission,
+      documentHidden: document.hidden,
+      windowFocused: windowFocusedRef.current,
+    })) {
+      return
+    }
+
+    try {
+      new window.Notification('quadtodo', {
+        body: TURN_DONE_TEXT,
+        tag: `quadtodo-turn-done-${sessionId}`,
+      })
+    } catch (error) {
+      console.warn('[AiTerminalMini] show browser notification failed:', error)
+    }
+  }, [sessionId])
 
   /** 去抖发送 resize 到服务端：cols/rows 必须稳定 RESIZE_STABILITY_MS 才真正发，
    *  防止切 tab / 展开瞬间的中间态被后端 PTY 吃掉，进而让 Claude 按窄 cols 折行污染 scrollback。 */
@@ -389,10 +482,11 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
               setAutoMode(msg.autoMode || null)
               break
             case 'turn_done':
+              showTurnDoneReminder()
               break
             case 'done':
               setSessionStatus(msg.status === 'done' ? 'ai_done' : 'todo')
-              term.writeln(`\r\n\x1b[${msg.exitCode === 0 ? '32' : '31'}m=== ${msg.status === 'done' ? 'AI 完成，请验收' : '任务失败'} ===\x1b[0m\r`)
+              term.writeln(`\r\n\x1b[${msg.exitCode === 0 ? '32' : '31'}m=== ${msg.status === 'done' ? 'AI 任务已结束' : '任务失败'} ===\x1b[0m\r`)
               onDone?.({ status: msg.status, exitCode: msg.exitCode })
               break
             case 'stopped':
@@ -601,7 +695,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       wsRef.current = null
       fitRef.current = null
     }
-  }, [sessionId, tryAutoRecover])
+  }, [sessionId, tryAutoRecover, showTurnDoneReminder])
 
   useEffect(() => { setSessionStatus(status) }, [status])
 
@@ -782,14 +876,18 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         // 用 box-shadow 表达 pending 高亮，避免改 border 宽度引起 1px 布局抖动
         boxShadow: sessionStatus === 'ai_pending'
           ? '0 0 0 1px #ff4d4f, 0 10px 24px rgba(8, 13, 30, 0.16)'
-          : '0 10px 24px rgba(8, 13, 30, 0.16)',
+          : turnDoneNotice
+            ? '0 0 0 1px #52c41a, 0 10px 24px rgba(8, 13, 30, 0.16)'
+            : '0 10px 24px rgba(8, 13, 30, 0.16)',
       } : {
         borderRadius: 10, overflow: 'hidden', background: '#1a1a2e',
         display: 'flex', flexDirection: 'column' as const, width: '100%',
         border: '1px solid #303050',
         boxShadow: sessionStatus === 'ai_pending'
           ? '0 0 0 1px #ff4d4f, 0 10px 24px rgba(8, 13, 30, 0.16)'
-          : '0 10px 24px rgba(8, 13, 30, 0.16)',
+          : turnDoneNotice
+            ? '0 0 0 1px #52c41a, 0 10px 24px rgba(8, 13, 30, 0.16)'
+            : '0 10px 24px rgba(8, 13, 30, 0.16)',
       }}
     >
       {/* 工具栏 */}
@@ -808,6 +906,20 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         </span>
         {sessionStatus === 'ai_done' && (
           <Tag color="warning" style={{ fontSize: 10, lineHeight: '16px', margin: 0 }}>请验收</Tag>
+        )}
+        {turnDoneNotice && sessionStatus !== 'ai_done' && (
+          <Tag color="success" style={{ fontSize: 10, lineHeight: '16px', margin: 0 }}>回复完成</Tag>
+        )}
+        {notificationPermission === 'default' && (
+          <Tooltip title="页面隐藏或窗口失焦时，用浏览器系统通知提醒 Claude 回复完成">
+            <Button
+              size="small"
+              onClick={requestBrowserNotifications}
+              style={{ height: 22, paddingInline: 8 }}
+            >
+              开启通知
+            </Button>
+          </Tooltip>
         )}
         {sessionExpired && (
           <Tag color="error" style={{ fontSize: 10, lineHeight: '16px', margin: 0 }}>

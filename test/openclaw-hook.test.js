@@ -185,6 +185,93 @@ describe('openclaw-hook handler', () => {
     expect(bridge.sent[0].message).toContain('🤖')
   })
 
+  it('broadcasts turn_done for Stop events', async () => {
+    const notifyTurnDone = vi.fn(() => true)
+    handler = createOpenClawHookHandler({
+      db,
+      openclaw: bridge,
+      aiTerminal: { notifyTurnDone },
+    })
+
+    const r = await handler.handle({
+      event: 'stop',
+      sessionId: 's1',
+      todoId: 't1',
+      todoTitle: 'Task A',
+    })
+
+    expect(r.ok).toBe(true)
+    expect(r.action).toBe('sent')
+    expect(notifyTurnDone).toHaveBeenCalledWith('s1', {
+      event: 'stop',
+      status: 'idle',
+      todoTitle: 'Task A',
+    })
+  })
+
+  it('broadcasts turn_done even when Telegram/OpenClaw push fails', async () => {
+    bridge = makeFakeBridge({ sendOk: false, sendReason: 'rate_limited' })
+    const notifyTurnDone = vi.fn(() => true)
+    handler = createOpenClawHookHandler({
+      db,
+      openclaw: bridge,
+      aiTerminal: { notifyTurnDone },
+    })
+
+    const r = await handler.handle({
+      event: 'stop',
+      sessionId: 's1',
+      todoId: 't1',
+      todoTitle: 'Task A',
+    })
+
+    expect(r.ok).toBe(false)
+    expect(r.action).toBe('failed')
+    expect(r.reason).toBe('rate_limited')
+    expect(notifyTurnDone).toHaveBeenCalledWith('s1', {
+      event: 'stop',
+      status: 'idle',
+      todoTitle: 'Task A',
+    })
+  })
+
+  it('does not let turn_done broadcast failures break Stop handling', async () => {
+    const logger = { warn: vi.fn() }
+    const notifyTurnDone = vi.fn(() => { throw new Error('ws failed') })
+    handler = createOpenClawHookHandler({
+      db,
+      openclaw: bridge,
+      aiTerminal: { notifyTurnDone },
+      logger,
+    })
+
+    const r = await handler.handle({
+      event: 'stop',
+      sessionId: 's1',
+      todoId: 't1',
+      todoTitle: 'Task A',
+    })
+
+    expect(r.ok).toBe(true)
+    expect(r.action).toBe('sent')
+    expect(logger.warn).toHaveBeenCalledWith('[openclaw-hook] notifyTurnDone failed: ws failed')
+  })
+
+  it('does not broadcast turn_done for non-Stop events', async () => {
+    const notifyTurnDone = vi.fn(() => true)
+    handler = createOpenClawHookHandler({
+      db,
+      openclaw: bridge,
+      aiTerminal: { notifyTurnDone },
+      getConfig: () => ({ telegram: { suppressNotificationEvents: false, notificationCooldownMs: 0 } }),
+    })
+
+    await handler.handle({ event: 'notification', sessionId: 's1', todoId: 't1', todoTitle: 'Task A' })
+    await handler.handle({ event: 'session-end', sessionId: 's1', todoId: 't1', todoTitle: 'Task A' })
+
+    expect(notifyTurnDone).not.toHaveBeenCalled()
+  })
+
   it('SUPPRESSES Stop when there is a pending ask_user for that session', async () => {
     // 先建一条 pending question 给 s1
     db.createPendingQuestion({
