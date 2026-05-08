@@ -7,6 +7,16 @@ import { createNotifier } from '../notifier.js'
 
 const MAX_OUTPUT_BUFFER = 512 * 1024
 const CLEANUP_MS = 30 * 60_000
+const MIN_RESIZE_COLS = 30
+const TERMINAL_RESIZE_STATUSES = new Set(['done', 'failed', 'stopped'])
+
+function isValidResizeSize(cols, rows) {
+  return Number.isFinite(cols) && Number.isFinite(rows) && cols >= MIN_RESIZE_COLS && rows > 0
+}
+
+function canResizeSession(session) {
+  return session && !TERMINAL_RESIZE_STATUSES.has(session.status)
+}
 
 export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, getWebhookConfig, notifier: injectedNotifier, onSessionSpawned = null, onSessionEnded = null }) {
   /** @type {Map<string, any>} */
@@ -524,15 +534,17 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
   // 取所有在线浏览器上报尺寸的 **最小值** 发给 PTY：最窄的窗口看得下，更宽的
   // tab 只是右边留空白，整体输出保持稳定。
   function applyAggregatedResize(session) {
+    if (!canResizeSession(session)) return
+
     let cols = Infinity
     let rows = Infinity
     for (const b of session.browsers) {
       const sz = b.__quadtodoSize
-      if (!sz) continue
+      if (!sz || !isValidResizeSize(sz.cols, sz.rows)) continue
       if (sz.cols < cols) cols = sz.cols
       if (sz.rows < rows) rows = sz.rows
     }
-    if (!Number.isFinite(cols) || !Number.isFinite(rows)) return
+    if (!isValidResizeSize(cols, rows)) return
     if (session.lastAppliedCols === cols && session.lastAppliedRows === rows) return
     session.lastAppliedCols = cols
     session.lastAppliedRows = rows
@@ -583,14 +595,22 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     } else if (msg.type === 'resize') {
       const cols = Number(msg.cols)
       const rows = Number(msg.rows)
-      if (!Number.isFinite(cols) || !Number.isFinite(rows) || cols <= 0 || rows <= 0) return
       const session = sessions.get(sessionId)
-      if (!session) return
+      if (!canResizeSession(session)) return
       if (ws && session.browsers.has(ws)) {
+        if (!isValidResizeSize(cols, rows)) {
+          delete ws.__quadtodoSize
+          applyAggregatedResize(session)
+          return
+        }
         ws.__quadtodoSize = { cols, rows }
         applyAggregatedResize(session)
       } else {
+        if (!isValidResizeSize(cols, rows)) return
         // 没拿到 ws 兜底走老路径，保留对非 WS 调用方的兼容
+        if (session.lastAppliedCols === cols && session.lastAppliedRows === rows) return
+        session.lastAppliedCols = cols
+        session.lastAppliedRows = rows
         pty.resize(sessionId, cols, rows)
       }
     } else if (msg.type === 'set_auto_mode') {

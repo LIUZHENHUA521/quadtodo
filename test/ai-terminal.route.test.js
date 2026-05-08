@@ -468,6 +468,151 @@ describe('routes/ai-terminal', () => {
     expect(ws.close).toHaveBeenCalled()
   })
 
+  it('resize from a browser applies valid dimensions to the pty', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+    const ws = { readyState: 1, OPEN: 1, send: vi.fn() }
+    ctx.ait.addBrowser(body.sessionId, ws)
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 120, rows: 30 }, ws)
+
+    expect(ctx.pty.resizes).toEqual([{ id: body.sessionId, cols: 120, rows: 30 }])
+  })
+
+  it('resize ignores cols below 30 from a browser', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+    const ws = { readyState: 1, OPEN: 1, send: vi.fn() }
+    ctx.ait.addBrowser(body.sessionId, ws)
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 29, rows: 30 }, ws)
+
+    expect(ctx.pty.resizes).toEqual([])
+  })
+
+  it('resize aggregation ignores invalid small browser dimensions', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+    const narrowWs = { readyState: 1, OPEN: 1, send: vi.fn() }
+    const normalWs = { readyState: 1, OPEN: 1, send: vi.fn() }
+    ctx.ait.addBrowser(body.sessionId, narrowWs)
+    ctx.ait.addBrowser(body.sessionId, normalWs)
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 20, rows: 10 }, narrowWs)
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 100, rows: 30 }, normalWs)
+
+    expect(ctx.pty.resizes).toEqual([{ id: body.sessionId, cols: 100, rows: 30 }])
+  })
+
+  it('resize aggregation clears stale dimensions after invalid browser update', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+    const staleWs = { readyState: 1, OPEN: 1, send: vi.fn() }
+    const normalWs = { readyState: 1, OPEN: 1, send: vi.fn() }
+    ctx.ait.addBrowser(body.sessionId, staleWs)
+    ctx.ait.addBrowser(body.sessionId, normalWs)
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 80, rows: 30 }, staleWs)
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 20, rows: 10 }, staleWs)
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 100, rows: 30 }, normalWs)
+
+    expect(ctx.pty.resizes).toEqual([
+      { id: body.sessionId, cols: 80, rows: 30 },
+      { id: body.sessionId, cols: 100, rows: 30 },
+    ])
+  })
+
+  it('resize fallback accepts valid dimensions, dedupes duplicates, and ignores invalid dimensions', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 20, rows: 10 })
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 100, rows: 30 })
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 100, rows: 30 })
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 20, rows: 10 })
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 110, rows: 32 })
+
+    expect(ctx.pty.resizes).toEqual([
+      { id: body.sessionId, cols: 100, rows: 30 },
+      { id: body.sessionId, cols: 110, rows: 32 },
+    ])
+  })
+
+  it('resize applies while session is pending_confirm', async () => {
+    ctx = makeApp({
+      notifier: {
+        detectConfirmMatch: () => 'Press Enter to confirm',
+        detectKeywordMatch: () => null,
+        canNotifyPendingConfirm: () => false,
+        notify: vi.fn(),
+      },
+      getWebhookConfig: () => ({ enabled: true }),
+    })
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+    const ws = { readyState: 1, OPEN: 1, send: vi.fn() }
+    ctx.ait.addBrowser(body.sessionId, ws)
+    ctx.pty.emit('output', { sessionId: body.sessionId, data: 'Press Enter to confirm' })
+    expect(ctx.ait.sessions.get(body.sessionId).status).toBe('pending_confirm')
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 120, rows: 30 }, ws)
+
+    expect(ctx.pty.resizes).toEqual([{ id: body.sessionId, cols: 120, rows: 30 }])
+  })
+
+  it('resize ignores stopped and failed sessions', async () => {
+    for (const { stopped, exitCode, status } of [
+      { stopped: true, exitCode: 0, status: 'stopped' },
+      { stopped: false, exitCode: 1, status: 'failed' },
+    ]) {
+      ctx = makeApp()
+      const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+      const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+        .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+      const ws = { readyState: 1, OPEN: 1, send: vi.fn() }
+      ctx.ait.addBrowser(body.sessionId, ws)
+      ctx.pty.emit('done', {
+        sessionId: body.sessionId,
+        exitCode,
+        fullLog: '',
+        nativeId: null,
+        stopped,
+      })
+      expect(ctx.ait.sessions.get(body.sessionId).status).toBe(status)
+      ctx.pty.resizes = []
+
+      ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 120, rows: 30 }, ws)
+
+      expect(ctx.pty.resizes).toEqual([])
+    }
+  })
+
+  it('resize ignores finished sessions', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+    const ws = { readyState: 1, OPEN: 1, send: vi.fn() }
+    ctx.ait.addBrowser(body.sessionId, ws)
+    ctx.pty.emit('done', {
+      sessionId: body.sessionId,
+      exitCode: 0,
+      fullLog: '',
+      nativeId: null,
+      stopped: false,
+    })
+    ctx.pty.resizes = []
+
+    ctx.ait.handleBrowserMessage(body.sessionId, { type: 'resize', cols: 120, rows: 30 }, ws)
+
+    expect(ctx.pty.resizes).toEqual([])
+  })
+
   it('outputHistory enforces 512KB ceiling', async () => {
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
     const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
