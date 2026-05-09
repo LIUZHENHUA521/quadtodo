@@ -23,62 +23,9 @@
  *   - 工具结果默认折叠（前 200 字 + "(N more chars)"）
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { normalizeContent, blockToText } from './transcripts/blocks.js'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024  // 10MB 上限保护
-
-/** 把 message.content 拍平成 array<block>，无论它是 string 还是 array. */
-function normalizeContent(content) {
-  if (!content) return []
-  if (typeof content === 'string') return [{ type: 'text', text: content }]
-  if (Array.isArray(content)) return content
-  return []
-}
-
-/** 从一个 content 块提取人类可读文本（assistant 视角）。 */
-function blockToText(block, opts = {}) {
-  if (!block || typeof block !== 'object') return ''
-  if (block.type === 'text') {
-    return String(block.text || '')
-  }
-  if (block.type === 'tool_use') {
-    const name = block.name || 'tool'
-    const input = block.input
-    let summary = ''
-    if (input && typeof input === 'object') {
-      // 常见工具：Bash 用 command, Edit 用 file_path, Write 用 file_path, Read 用 file_path
-      const cmd = input.command || input.cmd
-      const fp = input.file_path || input.path || input.filePath
-      const url = input.url
-      const pat = input.pattern || input.query
-      const desc = input.description
-      if (cmd) summary = String(cmd).slice(0, 200)
-      else if (fp) summary = String(fp).slice(0, 200)
-      else if (url) summary = String(url).slice(0, 200)
-      else if (pat) summary = String(pat).slice(0, 200)
-      else if (desc) summary = String(desc).slice(0, 120)
-      else summary = JSON.stringify(input).slice(0, 200)
-    }
-    return `🔧 ${name}${summary ? ': ' + summary : ''}`
-  }
-  if (block.type === 'tool_result') {
-    // user 角色里偶尔出现；assistant 视角一般跳过
-    if (opts.includeToolResult) {
-      const c = block.content
-      let text = ''
-      if (typeof c === 'string') text = c
-      else if (Array.isArray(c)) text = c.map((b) => b.text || JSON.stringify(b)).join('\n')
-      const max = opts.toolResultMaxChars || 300
-      if (text.length > max) text = text.slice(0, max) + ` …(${text.length - max} more chars)`
-      return `📋 result: ${text}`
-    }
-    return ''
-  }
-  if (block.type === 'thinking') {
-    // 思考内容有时也带，默认不展示给用户
-    return ''
-  }
-  return ''
-}
 
 export function readJsonlLines(path) {
   if (!existsSync(path)) return []

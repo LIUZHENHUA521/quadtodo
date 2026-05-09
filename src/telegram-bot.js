@@ -20,6 +20,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from 'no
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { Blob } from 'node:buffer'
+import net from 'node:net'
 import { toTelegramV2, toPlainText } from './telegram-markdown.js'
 import { downloadTelegramFile, pickLargestPhoto } from './telegram-image.js'
 
@@ -28,25 +29,66 @@ const DEFAULT_LONG_POLL_TIMEOUT_SEC = 30
 const DEFAULT_OFFSET_FILE = join(homedir(), '.quadtodo', 'telegram-offset.json')
 const POLL_RETRY_DELAY_MS = 5_000
 
-/** 走 HTTPS_PROXY 的 fetch（懒加载，避免无 proxy 环境失败）。 */
-let _proxyFetch = null
+function readProxyUrl() {
+  return process.env.HTTPS_PROXY || process.env.https_proxy
+      || process.env.HTTP_PROXY  || process.env.http_proxy
+      || ''
+}
+
+/**
+ * 走 HTTPS_PROXY 的 fetch。按 proxyUrl 缓存 dispatcher，URL 变了自动切，
+ * 这样 Clash / 代理重启不再需要重启 quadtodo。
+ */
+const dispatcherCache = new Map()
 async function getProxyFetch() {
-  if (_proxyFetch) return _proxyFetch
-  const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy
-                || process.env.HTTP_PROXY  || process.env.http_proxy
+  const proxyUrl = readProxyUrl()
+  const cached = dispatcherCache.get(proxyUrl)
+  if (cached) return cached
+  let fetcher
   if (!proxyUrl) {
-    _proxyFetch = (url, opts) => fetch(url, opts)
-    return _proxyFetch
+    fetcher = (url, opts) => fetch(url, opts)
+  } else {
+    try {
+      const { ProxyAgent, fetch: undiciFetch } = await import('undici')
+      const dispatcher = new ProxyAgent(proxyUrl)
+      fetcher = (url, opts = {}) => undiciFetch(url, { ...opts, dispatcher })
+    } catch {
+      fetcher = (url, opts) => fetch(url, opts)
+    }
   }
+  dispatcherCache.set(proxyUrl, fetcher)
+  return fetcher
+}
+
+function tcpProbe(host, port, timeoutMs = 500) {
+  return new Promise((resolve) => {
+    let settled = false
+    const sock = net.createConnection({ host, port })
+    const finish = (ok) => {
+      if (settled) return
+      settled = true
+      try { sock.destroy() } catch {}
+      resolve(ok)
+    }
+    sock.once('connect', () => finish(true))
+    sock.once('error', () => finish(false))
+    sock.setTimeout(timeoutMs, () => finish(false))
+  })
+}
+
+async function diagnoseProxyReachability() {
+  const proxyUrl = readProxyUrl()
+  if (!proxyUrl) return { proxyUrl: '', reachable: null }
+  let host, port
   try {
-    const { ProxyAgent, fetch: undiciFetch } = await import('undici')
-    const dispatcher = new ProxyAgent(proxyUrl)
-    _proxyFetch = (url, opts = {}) => undiciFetch(url, { ...opts, dispatcher })
-    return _proxyFetch
+    const u = new URL(proxyUrl)
+    host = u.hostname
+    port = parseInt(u.port, 10) || (u.protocol === 'https:' ? 443 : 80)
   } catch {
-    _proxyFetch = (url, opts) => fetch(url, opts)
-    return _proxyFetch
+    return { proxyUrl, reachable: null }
   }
+  const reachable = await tcpProbe(host, port, 500)
+  return { proxyUrl, reachable }
 }
 
 function readJsonFile(path, fallback) {
@@ -630,15 +672,46 @@ export function createTelegramBot({
 
   async function pollLoop() {
     consecutiveErrors = 0
+    let lastErrorMsg = null
+    let lastErrorLoggedAt = 0
+    let currentErrorStreak = 0
+    let suppressedErrorCount = 0
+    const ERROR_VERBOSE_THRESHOLD = 3
+    const ERROR_QUIET_INTERVAL_MS = 5 * 60 * 1000
     while (running) {
       try {
         await pollOnce()
+        if (consecutiveErrors > 0) {
+          logger.info?.(`[telegram-bot] poll recovered after ${consecutiveErrors} errors`)
+        }
         consecutiveErrors = 0
+        lastErrorMsg = null
+        lastErrorLoggedAt = 0
+        currentErrorStreak = 0
+        suppressedErrorCount = 0
       } catch (e) {
         consecutiveErrors++
         const baseDelayMs = getTgConfig().pollRetryDelayMs || POLL_RETRY_DELAY_MS
         const backoff = Math.min(60_000, baseDelayMs * consecutiveErrors)
-        logger.warn?.(`[telegram-bot] poll error (${consecutiveErrors}): ${e.message}; retry in ${backoff}ms`)
+        const msg = e.message || String(e)
+        const now = Date.now()
+        if (msg === lastErrorMsg) currentErrorStreak++
+        else currentErrorStreak = 1
+        const shouldLog = currentErrorStreak <= ERROR_VERBOSE_THRESHOLD
+          || (now - lastErrorLoggedAt >= ERROR_QUIET_INTERVAL_MS)
+        if (shouldLog) {
+          const diag = await diagnoseProxyReachability().catch(() => null)
+          const diagStr = diag && diag.proxyUrl
+            ? ` proxyUrl=${diag.proxyUrl} proxyReachable=${diag.reachable ? 'yes' : 'no'}`
+            : ''
+          const suffix = suppressedErrorCount > 0 ? ` (suppressed ${suppressedErrorCount} similar)` : ''
+          logger.warn?.(`[telegram-bot] poll error (${consecutiveErrors}): ${msg}; retry in ${backoff}ms${diagStr}${suffix}`)
+          lastErrorMsg = msg
+          lastErrorLoggedAt = now
+          suppressedErrorCount = 0
+        } else {
+          suppressedErrorCount++
+        }
         if (running) await sleep(backoff)
       }
     }
@@ -721,3 +794,6 @@ export function readBotToken(getConfig) {
 }
 
 export const __test__ = { readJsonFile, writeJsonFile }
+
+export async function __getProxyFetch() { return getProxyFetch() }
+export function __resetProxyFetchCache() { dispatcherCache.clear() }

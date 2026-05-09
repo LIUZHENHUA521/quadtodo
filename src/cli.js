@@ -374,6 +374,36 @@ program.command('start')
     console.log(buildStartupBanner({ port, host }))
     console.log(`AI terminal default cwd: ${defaultCwd}`)
 
+    // ─── 自动 bootstrap Claude Code hook（部署 notify.js + 合入 settings.json）───
+    // 设计：缺啥补啥 / 已装则 noop / 用户跑过 uninstall-hook 留下的 marker 会被尊重
+    // 任何错误一律 warn-skip，绝不让 hook bootstrap 把 quadtodo start 挂掉
+    try {
+      const { bootstrapHooks } = await import('./openclaw-hook-installer.js')
+      const r = bootstrapHooks()
+      if (r.skipped) {
+        if (r.reason === 'uninstall_marker') {
+          console.log(`ℹ claude-code hook: 已被你 uninstall-hook 拒绝；想恢复跑 'quadtodo openclaw bootstrap'`)
+        } else if (r.reason === 'malformed_settings') {
+          console.warn(`⚠ claude-code hook: ~/.claude/settings.json JSON 损坏，跳过自动安装；修好后跑 'quadtodo openclaw bootstrap'`)
+        } else {
+          console.log(`ℹ claude-code hook bootstrap skipped: ${r.reason}`)
+        }
+      } else {
+        if (r.scriptResult.action === 'installed') {
+          console.log(`✓ claude-code hook script installed (v${r.scriptResult.version}) → ${r.scriptResult.scriptPath}`)
+        } else if (r.scriptResult.action === 'upgraded') {
+          console.log(`✓ claude-code hook script upgraded v${r.scriptResult.previousVersion ?? 0} → v${r.scriptResult.version} (backup: ${r.scriptResult.backup})`)
+        }
+        if (r.alreadyInstalled) {
+          // 静默：避免每次 start 都刷屏。doctor 会显示状态
+        } else if (r.hookResult) {
+          console.log(`✓ claude-code hooks installed: ${r.hookResult.added.join(', ')}`)
+        }
+      }
+    } catch (e) {
+      console.warn(`⚠ claude-code hook bootstrap failed: ${e?.message || e}`)
+    }
+
     // listen 完成后异步发"重启完成 + Resume N 个会话"通知到 telegram。
     // 不 await，发不发都不阻塞 boot；postText 走 telegram HTTPS 直发，不依赖 long-poll
     if (typeof srv.notifyStartupRecovery === 'function') {
@@ -570,6 +600,7 @@ openclawCmd.command('install-hook')
       console.log(`✓ installed ${out.added.join(', ')} hooks`)
       console.log(`  settings: ${out.settingsPath}`)
       if (out.backup) console.log(`  backup:   ${out.backup}`)
+      if (out.markerCleared) console.log(`  uninstall marker cleared`)
       console.log('')
       console.log('完成。新的 PTY 会话启动后会自动通过 hook 推送状态到微信。')
       console.log('注意：现存的 PTY 会话（重启前已经在跑的）env 已固定，不受影响；')
@@ -579,23 +610,66 @@ openclawCmd.command('install-hook')
       if (e.code === 'malformed_settings') {
         console.error(`  你的 ~/.claude/settings.json JSON 不合法，先修复再试。`)
       }
+      if (e.code === 'hook_script_missing') {
+        console.error(`  hook 脚本缺失。跑 'quadtodo openclaw bootstrap' 一键部署 + 安装。`)
+      }
+      process.exit(1)
+    }
+  })
+
+openclawCmd.command('bootstrap')
+  .description('一键部署 hook script + 安装 hooks（启动期 auto-install 同款逻辑，会清掉 uninstall marker）')
+  .action(async () => {
+    const { bootstrapHooks } = await import('./openclaw-hook-installer.js')
+    try {
+      const r = bootstrapHooks({ respectUninstallMarker: false })
+      if (r.skipped) {
+        if (r.reason === 'malformed_settings') {
+          console.error(`✗ bootstrap skipped: ${r.settingsPath} JSON 不合法，请先修复`)
+          process.exit(1)
+        }
+        console.log(`= bootstrap skipped: ${r.reason}`)
+        return
+      }
+      const sr = r.scriptResult
+      if (sr.action === 'installed') {
+        console.log(`✓ hook script installed (v${sr.version}) → ${sr.scriptPath}`)
+      } else if (sr.action === 'upgraded') {
+        console.log(`✓ hook script upgraded v${sr.previousVersion ?? 0} → v${sr.version}`)
+        if (sr.backup) console.log(`  backup: ${sr.backup}`)
+      } else {
+        console.log(`= hook script up-to-date (v${sr.version}) → ${sr.scriptPath}`)
+      }
+      if (r.alreadyInstalled) {
+        console.log(`= hooks already installed in ~/.claude/settings.json`)
+      } else if (r.hookResult) {
+        console.log(`✓ hooks installed: ${r.hookResult.added.join(', ')}`)
+        if (r.hookResult.backup) console.log(`  settings backup: ${r.hookResult.backup}`)
+      }
+      if (r.markerCleared) console.log(`  uninstall marker cleared`)
+    } catch (e) {
+      console.error(`bootstrap failed: ${e.message}`)
       process.exit(1)
     }
   })
 
 openclawCmd.command('uninstall-hook')
-  .description('从 ~/.claude/settings.json 移除 quadtodo 加的 hook entry，保留你其他 hook')
-  .action(async () => {
+  .description('从 ~/.claude/settings.json 移除 quadtodo 加的 hook entry，保留你其他 hook（默认会写 .uninstalled marker，下次 start 不再自动装回）')
+  .option('--no-marker', '不写 .uninstalled marker（下次 quadtodo start 会自动装回）')
+  .action(async (opts) => {
     const { uninstallHooks } = await import('./openclaw-hook-installer.js')
     try {
-      const out = uninstallHooks()
+      const out = uninstallHooks({ writeUninstallMarker: opts.marker !== false })
       if (out.removed.length === 0) {
         console.log('= no quadtodo hooks installed; nothing to remove')
-        return
+      } else {
+        console.log(`✓ removed quadtodo hooks from ${out.settingsPath}`)
+        for (const r of out.removed) console.log(`   ${r.event}: -${r.removedCount}`)
+        if (out.backup) console.log(`  backup: ${out.backup}`)
       }
-      console.log(`✓ removed quadtodo hooks from ${out.settingsPath}`)
-      for (const r of out.removed) console.log(`   ${r.event}: -${r.removedCount}`)
-      if (out.backup) console.log(`  backup: ${out.backup}`)
+      if (out.markerWritten) {
+        console.log(`  marker written → 下次 'quadtodo start' 不会自动装回；想恢复跑 'quadtodo openclaw bootstrap'`)
+      }
     } catch (e) {
       console.error(`uninstall-hook failed: ${e.message}`)
       process.exit(1)

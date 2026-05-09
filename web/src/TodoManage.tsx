@@ -1048,10 +1048,13 @@ export default function TodoManage() {
 
   // ─── CRUD ───
 
+  const findBrainstormTemplate = () => templates.find(t => t.builtin && t.name === 'Brainstorm（脑爆）')
+
   const handleCreate = () => {
     setEditingTodo(null)
     setParentForCreate(null)
     form.resetFields()
+    const brainstormTpl = findBrainstormTemplate()
     form.setFieldsValue({
       quadrant: 1,
       workDir: undefined,
@@ -1059,6 +1062,8 @@ export default function TodoManage() {
       recurringFrequency: 'daily',
       recurringWeekdays: [1, 2, 3, 4, 5],
       recurringMonthDays: [1],
+      useTemplates: !!brainstormTpl,
+      appliedTemplateIds: brainstormTpl ? [brainstormTpl.id] : [],
     })
     setDrawerOpen(true)
   }
@@ -1067,7 +1072,13 @@ export default function TodoManage() {
     setEditingTodo(null)
     setParentForCreate(todo)
     form.resetFields()
-    form.setFieldsValue({ quadrant: todo.quadrant, workDir: todo.workDir || undefined })
+    const brainstormTpl = findBrainstormTemplate()
+    form.setFieldsValue({
+      quadrant: todo.quadrant,
+      workDir: todo.workDir || undefined,
+      useTemplates: !!brainstormTpl,
+      appliedTemplateIds: brainstormTpl ? [brainstormTpl.id] : [],
+    })
     setDrawerOpen(true)
   }
 

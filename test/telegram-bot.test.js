@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createTelegramBot, readBotTokenWithSource } from '../src/telegram-bot.js'
+import { createTelegramBot, readBotTokenWithSource, __getProxyFetch, __resetProxyFetchCache } from '../src/telegram-bot.js'
 
 function makeWizard(handler) {
   return { handleInbound: handler }
@@ -536,6 +536,33 @@ describe('pollRetryDelayMs reads from config', () => {
       logger: { warn() {}, info() {} },
     })
     expect(bot.__getPollRetryDelayMs()).toBe(5000)
+  })
+})
+
+describe('getProxyFetch dispatcher cache', () => {
+  // 防止测试相互污染：每个 case 自己清缓存 + 还原 env
+  it('caches by HTTPS_PROXY url; URL change yields a fresh fetcher (no quadtodo restart needed)', async () => {
+    __resetProxyFetchCache()
+    const orig = process.env.HTTPS_PROXY
+    try {
+      process.env.HTTPS_PROXY = 'http://127.0.0.1:9999'
+      const f1 = await __getProxyFetch()
+      const f2 = await __getProxyFetch()
+      expect(f1).toBe(f2)            // 同一 URL → 复用
+
+      process.env.HTTPS_PROXY = 'http://127.0.0.1:9998'
+      const f3 = await __getProxyFetch()
+      expect(f3).not.toBe(f1)        // 切 URL → 新 fetcher
+
+      process.env.HTTPS_PROXY = ''
+      const fNone = await __getProxyFetch()
+      expect(fNone).not.toBe(f1)
+      expect(fNone).not.toBe(f3)     // 清空 proxy → 又一份独立 fetcher
+    } finally {
+      if (orig === undefined) delete process.env.HTTPS_PROXY
+      else process.env.HTTPS_PROXY = orig
+      __resetProxyFetchCache()
+    }
   })
 })
 

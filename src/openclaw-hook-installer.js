@@ -8,13 +8,22 @@
  *   - 卸载时仅删带这个标记的 entry，其他保留不动
  *   - settings.json 不存在 → 创建
  *   - settings.json 损坏 → 抛错让用户修，绝不擅自覆盖
+ *
+ * 启动期 bootstrap（bootstrapHooks）：
+ *   - 部署/升级 ~/.quadtodo/claude-hooks/notify.js（带版本号比对）
+ *   - 合并 hooks 到 settings.json（已装则 noop，避免 .bak 刷屏）
+ *   - 用户跑过 uninstall-hook → 留 .uninstalled marker，bootstrap 默认尊重；
+ *     `quadtodo openclaw bootstrap` 显式忽略 marker 强制装回
+ *   - settings.json 损坏 → warn-skip，不让 quadtodo start 挂掉
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 
 const QUADTODO_MANAGED_KEY = '_quadtodoManaged'
 const HOOK_EVENTS = ['Stop', 'Notification', 'SessionEnd']
+const HOOK_VERSION_RE = /quadtodo-hook-version:\s*(\d+)/
 
 function defaultHookScriptPath() {
   return join(homedir(), '.quadtodo', 'claude-hooks', 'notify.js')
@@ -22,6 +31,20 @@ function defaultHookScriptPath() {
 
 function defaultSettingsPath() {
   return join(homedir(), '.claude', 'settings.json')
+}
+
+function defaultTemplatePath() {
+  return fileURLToPath(new URL('./templates/claude-hooks/notify.js', import.meta.url))
+}
+
+function defaultUninstallMarkerPath() {
+  return join(homedir(), '.quadtodo', 'claude-hooks', '.uninstalled')
+}
+
+function parseHookVersion(content) {
+  if (!content) return null
+  const m = content.match(HOOK_VERSION_RE)
+  return m ? Number(m[1]) : 0 // 0 = unversioned legacy script
 }
 
 function buildHookEntry(event, hookScriptPath) {
@@ -78,6 +101,8 @@ export function installHooks({
   settingsPath = defaultSettingsPath(),
   hookScriptPath = defaultHookScriptPath(),
   events = HOOK_EVENTS,
+  uninstallMarkerPath = defaultUninstallMarkerPath(),
+  clearUninstallMarker = true,
 } = {}) {
   if (!existsSync(hookScriptPath)) {
     const err = new Error(`hook script not found: ${hookScriptPath}`)
@@ -99,15 +124,38 @@ export function installHooks({
   }
 
   saveSettings(settingsPath, data)
-  return { settingsPath, backup, added, skipped: [] }
+  // 用户重新装 = 收回之前的 uninstall 拒绝；下次 start 不再被 marker 拦
+  let markerCleared = false
+  if (clearUninstallMarker && existsSync(uninstallMarkerPath)) {
+    try { unlinkSync(uninstallMarkerPath); markerCleared = true } catch { /* 不阻塞 */ }
+  }
+  return { settingsPath, backup, added, skipped: [], markerCleared }
 }
 
 /**
  * 移除 quadtodo 加的所有 hook entry（按 _quadtodoManaged 标记）。
- * 不动其他 entry。
+ * 不动其他 entry。默认会写一个 .uninstalled marker，让后续 `quadtodo start` 自检不再回写。
  */
-export function uninstallHooks({ settingsPath = defaultSettingsPath() } = {}) {
-  if (!existsSync(settingsPath)) return { settingsPath, removed: [], backup: null }
+export function uninstallHooks({
+  settingsPath = defaultSettingsPath(),
+  uninstallMarkerPath = defaultUninstallMarkerPath(),
+  writeUninstallMarker = true,
+} = {}) {
+  let markerWritten = false
+  const writeMarker = () => {
+    if (!writeUninstallMarker) return
+    try {
+      const dir = dirname(uninstallMarkerPath)
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+      writeFileSync(uninstallMarkerPath, `${new Date().toISOString()}\n`)
+      markerWritten = true
+    } catch { /* 不阻塞 */ }
+  }
+
+  if (!existsSync(settingsPath)) {
+    writeMarker()
+    return { settingsPath, removed: [], backup: null, markerWritten }
+  }
 
   const data = loadSettings(settingsPath)
   const backup = backupSettings(settingsPath)
@@ -128,7 +176,8 @@ export function uninstallHooks({ settingsPath = defaultSettingsPath() } = {}) {
   }
 
   saveSettings(settingsPath, data)
-  return { settingsPath, removed, backup }
+  writeMarker()
+  return { settingsPath, removed, backup, markerWritten }
 }
 
 /**
@@ -163,4 +212,126 @@ export function inspectHooks({
   }
 }
 
-export const __test__ = { buildHookEntry, QUADTODO_MANAGED_KEY, HOOK_EVENTS }
+/**
+ * 把仓库内置的 notify.js 模板部署到 ~/.quadtodo/claude-hooks/notify.js。
+ *
+ * 行为：
+ *   - 目标不存在 → 直接写（action: 'installed'）
+ *   - 目标版本 < 模板版本 → 备份旧脚本，覆盖（action: 'upgraded'）
+ *   - 目标版本 = 模板版本 → 不动（action: 'unchanged'）
+ *   - 目标存在但解析不出版本号 → 视为 v0，按升级路径处理（保护用户改动）
+ *
+ * 返回 { action, version, previousVersion, scriptPath, backup }
+ */
+export function deployHookScript({
+  scriptPath = defaultHookScriptPath(),
+  templatePath = defaultTemplatePath(),
+} = {}) {
+  if (!existsSync(templatePath)) {
+    const err = new Error(`hook template not found: ${templatePath}`)
+    err.code = 'hook_template_missing'
+    throw err
+  }
+  const templateContent = readFileSync(templatePath, 'utf8')
+  const templateVersion = parseHookVersion(templateContent)
+
+  const dir = dirname(scriptPath)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+
+  const previousVersion = existsSync(scriptPath)
+    ? parseHookVersion(readFileSync(scriptPath, 'utf8'))
+    : null
+
+  if (previousVersion !== null && previousVersion === templateVersion) {
+    return { action: 'unchanged', version: templateVersion, previousVersion, scriptPath, backup: null }
+  }
+
+  let backup = null
+  if (previousVersion !== null) {
+    backup = `${scriptPath}.bak.${Date.now()}`
+    copyFileSync(scriptPath, backup)
+  }
+  writeFileSync(scriptPath, templateContent)
+  return {
+    action: previousVersion === null ? 'installed' : 'upgraded',
+    version: templateVersion,
+    previousVersion,
+    scriptPath,
+    backup,
+  }
+}
+
+/**
+ * `quadtodo start` 启动时调用：部署 notify.js + 合入 settings.json hook entry。
+ *
+ * 设计要点：
+ *   - 已经装好（inspectHooks.installed === true）→ 不重写 settings.json，避免每次 start 都生成 .bak
+ *   - settings.json 损坏 → skip + 返回 reason，让调用方 warn 而不是让启动挂掉
+ *   - 用户跑过 uninstall-hook 留下 marker → respectUninstallMarker=true 时 skip
+ *     `quadtodo openclaw bootstrap` 子命令传 false 强装回（同时清掉 marker）
+ *
+ * 返回 { skipped, reason?, scriptResult, hookResult, alreadyInstalled }
+ */
+export function bootstrapHooks({
+  settingsPath = defaultSettingsPath(),
+  scriptPath = defaultHookScriptPath(),
+  templatePath = defaultTemplatePath(),
+  uninstallMarkerPath = defaultUninstallMarkerPath(),
+  respectUninstallMarker = true,
+} = {}) {
+  if (respectUninstallMarker && existsSync(uninstallMarkerPath)) {
+    return { skipped: true, reason: 'uninstall_marker', uninstallMarkerPath }
+  }
+
+  // 显式 bootstrap 时清掉 marker（即便文件不存在也安全）
+  let markerCleared = false
+  if (!respectUninstallMarker && existsSync(uninstallMarkerPath)) {
+    try { unlinkSync(uninstallMarkerPath); markerCleared = true } catch { /* 不阻塞 */ }
+  }
+
+  const scriptResult = deployHookScript({ scriptPath, templatePath })
+
+  const inspect = inspectHooks({ settingsPath, hookScriptPath: scriptPath })
+  if (inspect.error === 'malformed_settings') {
+    return {
+      skipped: true,
+      reason: 'malformed_settings',
+      settingsPath,
+      scriptResult,
+      markerCleared,
+    }
+  }
+
+  if (inspect.installed) {
+    return {
+      skipped: false,
+      alreadyInstalled: true,
+      scriptResult,
+      hookResult: null,
+      markerCleared,
+    }
+  }
+
+  const hookResult = installHooks({
+    settingsPath,
+    hookScriptPath: scriptPath,
+    uninstallMarkerPath,
+    clearUninstallMarker: false, // 已在上面处理
+  })
+  return {
+    skipped: false,
+    alreadyInstalled: false,
+    scriptResult,
+    hookResult,
+    markerCleared,
+  }
+}
+
+export const __test__ = {
+  buildHookEntry,
+  QUADTODO_MANAGED_KEY,
+  HOOK_EVENTS,
+  parseHookVersion,
+  defaultTemplatePath,
+  defaultUninstallMarkerPath,
+}

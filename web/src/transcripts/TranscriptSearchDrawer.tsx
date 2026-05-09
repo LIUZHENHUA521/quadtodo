@@ -47,6 +47,16 @@ const boundTagSlotStyle: React.CSSProperties = {
   maxWidth: '100%',
 }
 
+function roleStyle(role: string): { color: string; tagColor?: string } {
+  switch (role) {
+    case 'user': return { color: '#1677ff', tagColor: 'blue' }
+    case 'assistant': return { color: '#52c41a', tagColor: 'green' }
+    case 'tool_use': return { color: '#fa8c16', tagColor: 'orange' }
+    case 'tool_result': return { color: '#bfbfbf', tagColor: 'default' }
+    default: return { color: '#bfbfbf' }
+  }
+}
+
 export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId, initialQuery, initialCwd, onBindingChanged }: Props) {
   const [q, setQ] = useState('')
   const [tool, setTool] = useState<AiTool | ''>('')
@@ -62,7 +72,13 @@ export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId,
   const [bindTodoId, setBindTodoId] = useState<string>('')
   const [previewFile, setPreviewFile] = useState<TranscriptFile | null>(null)
   const [previewTurns, setPreviewTurns] = useState<{ role: string; content: string }[]>([])
+  const [previewTotal, setPreviewTotal] = useState(0)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewLoadingMore, setPreviewLoadingMore] = useState(false)
+  const [expandedTurns, setExpandedTurns] = useState<Set<number>>(new Set())
+
+  const PREVIEW_PAGE_SIZE = 500
+  const TURN_COLLAPSE_CHARS = 1500
 
   async function doSearch() {
     setLoading(true)
@@ -149,11 +165,35 @@ export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId,
   async function handlePreview(f: TranscriptFile) {
     setPreviewFile(f)
     setPreviewLoading(true)
+    setPreviewTurns([])
+    setPreviewTotal(0)
+    setExpandedTurns(new Set())
     try {
-      const r = await previewTranscript(f.id, 0, 80)
+      const r = await previewTranscript(f.id, 0, PREVIEW_PAGE_SIZE)
       setPreviewTurns(r.turns)
+      setPreviewTotal(r.totalTurns)
     } catch (e) { message.error((e as Error).message) }
     finally { setPreviewLoading(false) }
+  }
+
+  async function loadMorePreview() {
+    if (!previewFile) return
+    setPreviewLoadingMore(true)
+    try {
+      const r = await previewTranscript(previewFile.id, previewTurns.length, PREVIEW_PAGE_SIZE)
+      setPreviewTurns(prev => [...prev, ...r.turns])
+      setPreviewTotal(r.totalTurns)
+    } catch (e) { message.error((e as Error).message) }
+    finally { setPreviewLoadingMore(false) }
+  }
+
+  function toggleTurnExpand(idx: number) {
+    setExpandedTurns(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
   }
 
   const todoOptions = useMemo(() => todos.map(t => ({ label: t.title, value: t.id })), [todos])
@@ -265,19 +305,59 @@ export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId,
 
       <Modal
         open={!!previewFile}
-        title="Transcript 预览"
-        onCancel={() => { setPreviewFile(null); setPreviewTurns([]) }}
+        title={
+          <Space size={8}>
+            <span>Transcript 预览</span>
+            {previewTotal > 0 && (
+              <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 'normal' }}>
+                已加载 {previewTurns.length} / 共 {previewTotal} 轮
+              </Typography.Text>
+            )}
+          </Space>
+        }
+        onCancel={() => {
+          setPreviewFile(null)
+          setPreviewTurns([])
+          setPreviewTotal(0)
+          setExpandedTurns(new Set())
+        }}
         footer={null}
         width={720}
       >
         <Spin spinning={previewLoading}>
           <div style={{ maxHeight: 480, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {previewTurns.map((t, i) => (
-              <div key={i} style={{ borderLeft: `3px solid ${t.role === 'user' ? '#1677ff' : '#52c41a'}`, padding: '4px 8px' }}>
-                <Tag>{t.role}</Tag>
-                <pre style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0', fontSize: 12 }}>{t.content.length > 2000 ? t.content.slice(0, 2000) + '…' : t.content}</pre>
+            {previewTurns.map((t, i) => {
+              const expanded = expandedTurns.has(i)
+              const overflowed = t.content.length > TURN_COLLAPSE_CHARS
+              const display = !expanded && overflowed ? t.content.slice(0, TURN_COLLAPSE_CHARS) : t.content
+              const { color: borderColor, tagColor } = roleStyle(t.role)
+              return (
+                <div key={i} style={{ borderLeft: `3px solid ${borderColor}`, padding: '4px 8px' }}>
+                  <Tag color={tagColor}>{t.role}</Tag>
+                  <pre style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0', fontSize: 12 }}>
+                    {display}
+                    {!expanded && overflowed && '…'}
+                  </pre>
+                  {overflowed && (
+                    <Button
+                      size="small"
+                      type="link"
+                      style={{ padding: 0, marginTop: 2, fontSize: 12 }}
+                      onClick={() => toggleTurnExpand(i)}
+                    >
+                      {expanded ? '收起' : `展开（${t.content.length - TURN_COLLAPSE_CHARS} 字隐藏）`}
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
+            {previewTotal > previewTurns.length && (
+              <div style={{ textAlign: 'center', padding: 8 }}>
+                <Button size="small" loading={previewLoadingMore} onClick={loadMorePreview}>
+                  加载更多 {Math.min(PREVIEW_PAGE_SIZE, previewTotal - previewTurns.length)} 条
+                </Button>
               </div>
-            ))}
+            )}
           </div>
         </Spin>
       </Modal>

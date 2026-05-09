@@ -2,7 +2,7 @@
  * AiTerminalMini — 可内嵌在待办卡片中的迷你终端
  */
 
-import React, { useEffect, useRef, useCallback, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useCallback, useState } from 'react'
 import { Button, Tooltip, Tag, Dropdown, Modal, ColorPicker, Input, Divider, message } from 'antd'
 import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, CloseOutlined, VerticalAlignBottomOutlined, LockOutlined, UnlockOutlined, BgColorsOutlined, DeleteOutlined, UpOutlined, LeftOutlined, RightOutlined, DragOutlined } from '@ant-design/icons'
 import { Terminal } from '@xterm/xterm'
@@ -11,7 +11,7 @@ import { CanvasAddon } from '@xterm/addon-canvas'
 import '@xterm/xterm/css/xterm.css'
 import { getTerminalWsUrl, startAiExec, stopAiExec, openTraeCN, TodoStatus, ResumeSessionInput, EditorKind } from './api'
 import { useTerminalTheme } from './hooks/useTerminalTheme'
-import { PRESET_LABELS, PRESET_ORDER, TerminalPresetName, TERMINAL_PRESETS } from './terminalThemes'
+import { PRESET_LABELS, PRESET_ORDER, TerminalPresetName, TERMINAL_PRESETS, deriveChrome } from './terminalThemes'
 import {
   getBrowserNotificationPermission,
   shouldSendTurnDoneSystemNotification,
@@ -56,6 +56,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   const { theme, preset, override, customPresets, setPreset, setOverride, resetOverride, saveCustomPreset, deleteCustomPreset } = useTerminalTheme()
   const themeRef = useRef(theme)
   useEffect(() => { themeRef.current = theme }, [theme])
+  const chrome = useMemo(() => deriveChrome(theme), [theme])
   const [customModalOpen, setCustomModalOpen] = useState(false)
   const [saveAsName, setSaveAsName] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
@@ -880,12 +881,12 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         left: 0, right: 0,
         // 有 visualViewport 时用其高度（键盘弹出会缩小）；否则回退到 100dvh
         height: vvSize ? vvSize.height : '100dvh',
-        zIndex: 9999, background: '#1a1a2e', display: 'flex', flexDirection: 'column',
+        zIndex: 9999, background: chrome.outer, display: 'flex', flexDirection: 'column',
       } : fillHeight ? {
-        borderRadius: 10, overflow: 'hidden', background: '#1a1a2e',
+        borderRadius: 10, overflow: 'hidden', background: chrome.outer,
         display: 'flex', flexDirection: 'column' as const, width: '100%',
         flex: 1, minHeight: 0, height: '100%',
-        border: '1px solid #303050',
+        border: `1px solid ${chrome.border}`,
         // 用 box-shadow 表达 pending 高亮，避免改 border 宽度引起 1px 布局抖动
         boxShadow: sessionStatus === 'ai_pending'
           ? '0 0 0 1px #ff4d4f, 0 10px 24px rgba(8, 13, 30, 0.16)'
@@ -893,9 +894,9 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             ? '0 0 0 1px #52c41a, 0 10px 24px rgba(8, 13, 30, 0.16)'
             : '0 10px 24px rgba(8, 13, 30, 0.16)',
       } : {
-        borderRadius: 10, overflow: 'hidden', background: '#1a1a2e',
+        borderRadius: 10, overflow: 'hidden', background: chrome.outer,
         display: 'flex', flexDirection: 'column' as const, width: '100%',
-        border: '1px solid #303050',
+        border: `1px solid ${chrome.border}`,
         boxShadow: sessionStatus === 'ai_pending'
           ? '0 0 0 1px #ff4d4f, 0 10px 24px rgba(8, 13, 30, 0.16)'
           : turnDoneNotice
@@ -906,10 +907,10 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       {/* 工具栏 */}
       <div className="xterm-terminal-toolbar" style={{
         display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
-        padding: '8px 10px', background: '#16213e', borderBottom: '1px solid #303050',
-        fontSize: 11, color: '#888',
+        padding: '8px 10px', background: chrome.surface, borderBottom: `1px solid ${chrome.border}`,
+        fontSize: 11, color: chrome.mutedText,
       }}>
-        <span style={{ color: '#569cd6', fontWeight: 500 }}>AI</span>
+        <span style={{ color: chrome.accent, fontWeight: 500 }}>AI</span>
         <span style={{
           width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
           background: wsConnected ? '#52c41a' : '#ff4d4f',
@@ -1160,16 +1161,16 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
           onMouseDown={onDragStart}
           onTouchStart={onDragStart}
           style={{
-            height: 6, cursor: 'ns-resize', background: '#16213e', flexShrink: 0,
+            height: 6, cursor: 'ns-resize', background: chrome.surface, flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            borderTop: '1px solid #303050',
+            borderTop: `1px solid ${chrome.border}`,
           }}
         >
-          <div style={{ width: 30, height: 2, borderRadius: 1, background: '#555' }} />
+          <div style={{ width: 30, height: 2, borderRadius: 1, background: chrome.mutedText }} />
         </div>
       )}
       {fullscreen && (
-        <div style={{ padding: '4px 8px', background: '#16213e', borderTop: '1px solid #303050', fontSize: 10, color: '#555', textAlign: 'center', flexShrink: 0 }}>
+        <div style={{ padding: '4px 8px', background: chrome.surface, borderTop: `1px solid ${chrome.border}`, fontSize: 10, color: chrome.mutedText, textAlign: 'center', flexShrink: 0 }}>
           按 ESC 或点击右上角退出全屏
         </div>
       )}

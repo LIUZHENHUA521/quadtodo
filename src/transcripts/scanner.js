@@ -3,6 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 import readline from 'node:readline'
 import { extractUsage } from '../usage-parser.js'
+import { normalizeContent, blockToText } from './blocks.js'
 
 export const DEFAULT_CLAUDE_DIR = path.join(os.homedir(), '.claude', 'projects')
 export const DEFAULT_CODEX_DIR = path.join(os.homedir(), '.codex', 'sessions')
@@ -41,7 +42,8 @@ function decodeCursorCwdFromDir(dirName) {
   return '/' + dirName.replace(/-/g, '/')
 }
 
-async function parseClaudeFile(filePath) {
+async function parseClaudeFile(filePath, opts = {}) {
+  const preview = Boolean(opts.preview)
   const rl = readline.createInterface({ input: fs.createReadStream(filePath, 'utf8'), crlfDelay: Infinity })
   let nativeId = null
   let cwd = null
@@ -63,16 +65,22 @@ async function parseClaudeFile(filePath) {
       if (!startedAt || ts < startedAt) startedAt = ts
       if (!endedAt || ts > endedAt) endedAt = ts
     }
-    const role = j.type || j.role
-    const msg = j.message
-    let content = ''
-    if (typeof msg === 'string') content = msg
-    else if (msg?.content) {
-      if (typeof msg.content === 'string') content = msg.content
-      else if (Array.isArray(msg.content)) {
-        content = msg.content.map(c => typeof c === 'string' ? c : c?.text || '').filter(Boolean).join('\n')
-      }
+    // preview 模式：和 buildFullTranscript 对齐 —— 过滤 meta/sidechain，只取 user/assistant
+    if (preview) {
+      if (j.isMeta || j.isSidechain) continue
+      if (j.type !== 'user' && j.type !== 'assistant') continue
     }
+    const role = j.message?.role || j.type || j.role
+    const msg = j.message
+    let blocks
+    if (typeof msg === 'string') blocks = [{ type: 'text', text: msg }]
+    else blocks = normalizeContent(msg?.content)
+    const parts = []
+    for (const blk of blocks) {
+      const piece = blockToText(blk, { includeToolUse: preview, includeToolResult: preview, toolResultMaxChars: 300 })
+      if (piece) parts.push(piece)
+    }
+    const content = parts.join('\n').trim()
     if (!content) continue
     turnCount++
     turns.push({ role: role || 'raw', content })
@@ -88,7 +96,8 @@ async function parseClaudeFile(filePath) {
   return { nativeId, cwd, startedAt, endedAt, firstUserPrompt, turnCount, turns, usage }
 }
 
-async function parseCursorFile(filePath) {
+// eslint-disable-next-line no-unused-vars
+async function parseCursorFile(filePath, _opts = {}) {
   // cursor jsonl 格式：每行 {"role":"user|assistant","message":{"content":[...]}}
   // 没有顶层 timestamp / sessionId / cwd，需要从路径反推。
   //   ~/.cursor/projects/<encoded-cwd>/agent-transcripts/<chatId>/<chatId>.jsonl
@@ -136,7 +145,13 @@ async function parseCursorFile(filePath) {
   return { nativeId: chatId, cwd, startedAt, endedAt, firstUserPrompt, turnCount, turns, usage: null }
 }
 
-async function parseCodexFile(filePath) {
+function safeParseJson(s) {
+  if (typeof s !== 'string') return s
+  try { return JSON.parse(s) } catch { return null }
+}
+
+async function parseCodexFile(filePath, opts = {}) {
+  const preview = Boolean(opts.preview)
   const rl = readline.createInterface({ input: fs.createReadStream(filePath, 'utf8'), crlfDelay: Infinity })
   let nativeId = null
   let cwd = null
@@ -165,13 +180,45 @@ async function parseCodexFile(filePath) {
       }
       continue
     }
+    if (preview && j.type === 'event_msg') continue   // task_started/task_complete/error 等噪音
+
     const payload = j.payload || j
-    const role = payload.role || j.type
-    let content = ''
-    if (typeof payload.content === 'string') content = payload.content
-    else if (Array.isArray(payload.content)) {
-      content = payload.content.map(c => typeof c === 'string' ? c : c?.text || '').filter(Boolean).join('\n')
-    } else if (typeof payload.text === 'string') content = payload.text
+    let role
+    let blocks = []
+
+    if (payload.type === 'reasoning') {
+      // 思考块默认隐藏，和 Claude thinking 行为一致
+      continue
+    } else if (preview && payload.type === 'function_call') {
+      role = 'tool_use'
+      blocks = [{ type: 'tool_use', name: payload.name, input: safeParseJson(payload.arguments) }]
+    } else if (preview && payload.type === 'function_call_output') {
+      role = 'tool_result'
+      const outRaw = payload.output ?? payload.content ?? ''
+      // codex 的 output 有时是字符串，有时是 {output: '...', metadata: {...}} 的 JSON 串
+      let outText = outRaw
+      if (typeof outRaw === 'string') {
+        const parsed = safeParseJson(outRaw)
+        if (parsed && typeof parsed === 'object') outText = parsed.output ?? parsed.content ?? outRaw
+      }
+      blocks = [{ type: 'tool_result', content: typeof outText === 'string' ? outText : JSON.stringify(outText) }]
+    } else if (payload.type === 'message') {
+      role = payload.role || 'raw'
+      blocks = normalizeContent(payload.content)
+    } else {
+      // 兜底：旧格式 / 测试 fixtures 的扁平 payload（{role, content}）
+      role = payload.role || j.type
+      if (typeof payload.content === 'string') blocks = [{ type: 'text', text: payload.content }]
+      else if (Array.isArray(payload.content)) blocks = normalizeContent(payload.content)
+      else if (typeof payload.text === 'string') blocks = [{ type: 'text', text: payload.text }]
+    }
+
+    const parts = []
+    for (const blk of blocks) {
+      const piece = blockToText(blk, { includeToolUse: preview, includeToolResult: preview, toolResultMaxChars: 300 })
+      if (piece) parts.push(piece)
+    }
+    const content = parts.join('\n').trim()
     if (!content) continue
     turnCount++
     turns.push({ role: role || 'raw', content })
@@ -202,9 +249,9 @@ export function listTranscriptFiles({ claudeDir = DEFAULT_CLAUDE_DIR, codexDir =
   return result
 }
 
-export async function parseTranscriptFile(tool, filePath) {
-  if (tool === 'claude') return parseClaudeFile(filePath)
-  if (tool === 'codex') return parseCodexFile(filePath)
-  if (tool === 'cursor') return parseCursorFile(filePath)
+export async function parseTranscriptFile(tool, filePath, opts = {}) {
+  if (tool === 'claude') return parseClaudeFile(filePath, opts)
+  if (tool === 'codex') return parseCodexFile(filePath, opts)
+  if (tool === 'cursor') return parseCursorFile(filePath, opts)
   throw new Error(`unknown tool: ${tool}`)
 }

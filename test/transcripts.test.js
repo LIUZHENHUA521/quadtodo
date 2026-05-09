@@ -75,6 +75,121 @@ describe('scanner', () => {
   })
 })
 
+describe('scanner preview mode', () => {
+  let tmp
+  beforeEach(() => { tmp = mkTmpDir() })
+  afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }) })
+
+  function writeClaudeRich(dir, cwd, uuid = 'rich1234-0000-0000-0000-000000000001') {
+    const encoded = cwd.replace(/\//g, '-')
+    const projDir = path.join(dir, encoded)
+    fs.mkdirSync(projDir, { recursive: true })
+    const filePath = path.join(projDir, `${uuid}.jsonl`)
+    const lines = [
+      // 1) 真正的 user 输入（纯文本）
+      { type: 'user', sessionId: uuid, cwd, timestamp: '2026-04-14T10:00:00.000Z',
+        message: { role: 'user', content: 'first user prompt' } },
+      // 2) assistant 文本 + tool_use 混合
+      { type: 'assistant', sessionId: uuid, timestamp: '2026-04-14T10:00:01.000Z',
+        message: { role: 'assistant', content: [
+          { type: 'text', text: 'Let me check.' },
+          { type: 'tool_use', name: 'Bash', input: { command: 'ls /tmp' } },
+        ] } },
+      // 3) user 角色但 content 是 tool_result —— 旧实现会整轮丢失
+      { type: 'user', sessionId: uuid, timestamp: '2026-04-14T10:00:02.000Z',
+        message: { role: 'user', content: [
+          { type: 'tool_result', tool_use_id: 'x', content: 'file1\nfile2\nfile3' },
+        ] } },
+      // 4) 用户中途追加的纯文本输入
+      { type: 'user', sessionId: uuid, timestamp: '2026-04-14T10:00:03.000Z',
+        message: { role: 'user', content: 'second user prompt' } },
+      // 5) meta 行（应被 preview 过滤）
+      { type: 'user', isMeta: true, sessionId: uuid, timestamp: '2026-04-14T10:00:04.000Z',
+        message: { role: 'user', content: '<meta-noise>' } },
+      // 6) sidechain 行（应被 preview 过滤）
+      { type: 'assistant', isSidechain: true, sessionId: uuid, timestamp: '2026-04-14T10:00:05.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: '<sidechain-noise>' }] } },
+      // 7) assistant 纯 tool_use（无 text）—— 旧实现会整轮丢失
+      { type: 'assistant', sessionId: uuid, timestamp: '2026-04-14T10:00:06.000Z',
+        message: { role: 'assistant', content: [
+          { type: 'tool_use', name: 'Edit', input: { file_path: '/foo/bar.ts' } },
+        ] } },
+    ]
+    fs.writeFileSync(filePath, lines.map(l => JSON.stringify(l)).join('\n') + '\n')
+    return filePath
+  }
+
+  it('preview=true 保留 tool_result-only user turn', async () => {
+    const fp = writeClaudeRich(tmp, '/Users/me/proj')
+    const r = await parseTranscriptFile('claude', fp, { preview: true })
+    const userTurns = r.turns.filter(t => t.role === 'user')
+    expect(userTurns.length).toBe(3)
+    expect(userTurns.map(t => t.content)).toEqual([
+      'first user prompt',
+      expect.stringContaining('📋 result:'),
+      'second user prompt',
+    ])
+    expect(userTurns[1].content).toContain('file1')
+  })
+
+  it('preview=true 保留 tool_use-only assistant turn 并渲染 🔧 摘要', async () => {
+    const fp = writeClaudeRich(tmp, '/Users/me/proj')
+    const r = await parseTranscriptFile('claude', fp, { preview: true })
+    const assistantTurns = r.turns.filter(t => t.role === 'assistant')
+    expect(assistantTurns.length).toBe(2)
+    expect(assistantTurns[0].content).toContain('🔧 Bash: ls /tmp')
+    expect(assistantTurns[1].content).toBe('🔧 Edit: /foo/bar.ts')
+  })
+
+  it('preview=true 过滤 isMeta / isSidechain', async () => {
+    const fp = writeClaudeRich(tmp, '/Users/me/proj')
+    const r = await parseTranscriptFile('claude', fp, { preview: true })
+    const all = r.turns.map(t => t.content).join('\n')
+    expect(all).not.toContain('<meta-noise>')
+    expect(all).not.toContain('<sidechain-noise>')
+  })
+
+  it('默认 (preview=false) 保持向后兼容：tool_result-only / tool_use-only 仍被丢弃，meta 不过滤', async () => {
+    const fp = writeClaudeRich(tmp, '/Users/me/proj')
+    const r = await parseTranscriptFile('claude', fp)
+    // index 模式不应该把 tool_use/tool_result 写进 FTS 文本，避免改动现有搜索行为
+    const joined = r.turns.map(t => t.content).join('\n')
+    expect(joined).not.toContain('🔧')
+    expect(joined).not.toContain('📋')
+    // meta/sidechain 在默认模式下保持原行为（含其文本，若可解析）
+    expect(joined).toContain('<meta-noise>')
+  })
+
+  it('codex preview=true 渲染 function_call / function_call_output 摘要', async () => {
+    const codexRoot = path.join(tmp, 'codex')
+    const day = path.join(codexRoot, '2026', '04', '14')
+    fs.mkdirSync(day, { recursive: true })
+    const uuid = 'codex001-0000-0000-0000-000000000001'
+    const fp = path.join(day, `rollout-2026-04-14T10-00-00-${uuid}.jsonl`)
+    const lines = [
+      { type: 'session_meta', payload: { id: uuid, cwd: '/Users/me/p', timestamp: '2026-04-14T10:00:00.000Z' } },
+      { type: 'response_item', timestamp: '2026-04-14T10:00:01.000Z', payload: { type: 'message', role: 'user', content: [{ text: 'do thing' }] } },
+      { type: 'response_item', timestamp: '2026-04-14T10:00:02.000Z', payload: { type: 'function_call', name: 'shell', arguments: '{"command":"ls /tmp"}' } },
+      { type: 'response_item', timestamp: '2026-04-14T10:00:03.000Z', payload: { type: 'function_call_output', output: 'a\nb\nc' } },
+      { type: 'response_item', timestamp: '2026-04-14T10:00:04.000Z', payload: { type: 'reasoning', summary: 'should be hidden' } },
+      { type: 'response_item', timestamp: '2026-04-14T10:00:05.000Z', payload: { type: 'message', role: 'assistant', content: [{ text: 'done' }] } },
+    ]
+    fs.writeFileSync(fp, lines.map(l => JSON.stringify(l)).join('\n') + '\n')
+
+    const r = await parseTranscriptFile('codex', fp, { preview: true })
+    expect(r.turns.length).toBe(4)
+    expect(r.turns[0]).toEqual({ role: 'user', content: 'do thing' })
+    expect(r.turns[1].role).toBe('tool_use')
+    expect(r.turns[1].content).toContain('🔧 shell: ls /tmp')
+    expect(r.turns[2].role).toBe('tool_result')
+    expect(r.turns[2].content).toContain('📋 result:')
+    expect(r.turns[2].content).toContain('a\nb\nc')
+    expect(r.turns[3]).toEqual({ role: 'assistant', content: 'done' })
+    // reasoning 应被隐藏
+    expect(r.turns.find(t => t.content.includes('should be hidden'))).toBeUndefined()
+  })
+})
+
 describe('matcher', () => {
   it('auto-binds when cwd + time ±60s + prompt[:100] all match', () => {
     const orphans = collectOrphans([{
