@@ -15,7 +15,6 @@ import { PRESET_LABELS, PRESET_ORDER, TerminalPresetName, TERMINAL_PRESETS } fro
 import {
   getBrowserNotificationPermission,
   shouldSendTurnDoneSystemNotification,
-  TURN_DONE_BANNER,
   TURN_DONE_TEXT,
   BrowserNotificationPermission,
 } from './terminalTurnNotifications'
@@ -189,12 +188,6 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   }, [])
 
   const showTurnDoneReminder = useCallback(() => {
-    const term = termRef.current
-    if (term) {
-      term.writeln(TURN_DONE_BANNER)
-      if (followTailRef.current) term.scrollToBottom()
-    }
-
     setTurnDoneNotice(true)
     if (turnDoneNoticeTimerRef.current) clearTimeout(turnDoneNoticeTimerRef.current)
     turnDoneNoticeTimerRef.current = setTimeout(() => {

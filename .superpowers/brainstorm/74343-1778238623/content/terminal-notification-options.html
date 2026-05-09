@@ -1,0 +1,62 @@
+<h2>Web/xterm 终端回复完成提醒：3 个视觉方向</h2>
+<p class="subtitle">你可以先看感受，点击偏好的方向；最终以终端回复为准。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. 终端内醒目标记</div>
+        <div class="mockup-body" style="background:#0b1020;color:#cbd5e1;font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.45;">
+          <div style="color:#94a3b8">... Claude 输出内容 ...</div>
+          <div style="margin-top:12px;border:1px solid #22c55e;color:#bbf7d0;background:#052e16;padding:10px 12px;border-radius:6px;font-weight:700;text-align:center;box-shadow:0 0 0 1px rgba(34,197,94,.2)">════════ AI 回复完成，请验收 ════════</div>
+          <div style="margin-top:8px;color:#64748b">$ 光标停在最新位置</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 只增强 xterm 内完成横幅</h3>
+      <p>不改浏览器权限、不发系统通知，最稳；但用户不看页面时提醒仍弱。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. 页面级 Toast + 终端横幅</div>
+        <div class="mockup-body" style="background:#0b1020;color:#cbd5e1;font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.45;position:relative;min-height:180px;">
+          <div style="color:#94a3b8">... Claude 输出内容 ...</div>
+          <div style="margin-top:10px;border:1px solid #22c55e;color:#bbf7d0;background:#052e16;padding:8px 10px;border-radius:6px;font-weight:700;text-align:center">AI 回复完成，请验收</div>
+          <div style="position:absolute;right:14px;top:14px;background:#16a34a;color:white;padding:10px 14px;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);font-weight:700">AI 回复完成</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 终端横幅 + 页面 Toast/状态高亮</h3>
+      <p>页面打开时更显眼，仍不依赖系统权限；适合 Web 端默认优化。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. 浏览器系统通知 + 声音/Bell</div>
+        <div class="mockup-body" style="background:#0b1020;color:#cbd5e1;font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.45;position:relative;min-height:180px;">
+          <div style="color:#94a3b8">... Claude 输出内容 ...</div>
+          <div style="margin-top:10px;border:1px solid #22c55e;color:#bbf7d0;background:#052e16;padding:8px 10px;border-radius:6px;font-weight:700;text-align:center">AI 回复完成，请验收</div>
+          <div style="position:absolute;left:18px;bottom:18px;background:#f8fafc;color:#0f172a;padding:12px 16px;border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.45);width:260px">
+            <div style="font-weight:800">quadtodo</div>
+            <div style="font-size:12px;margin-top:4px;color:#334155">Claude Code 回复完成，请回到任务验收</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 系统通知/声音 + 页面提示</h3>
+      <p>最醒目，适合切走浏览器；但有权限、浏览器兼容、打扰和配置开关风险。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="subtitle">我目前倾向 B 作为默认方案：明显提升 Web 端体验，同时避免系统通知权限和噪音问题。</p>
+</div>

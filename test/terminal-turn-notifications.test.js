@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import {
-  TURN_DONE_BANNER,
+import * as turnNotifications from '../web/src/terminalTurnNotifications.ts'
+
+const {
   TURN_DONE_TEXT,
   getBrowserNotificationPermission,
   shouldSendTurnDoneSystemNotification,
-} from '../web/src/terminalTurnNotifications.ts'
+} = turnNotifications
 
 describe('terminal turn notification helpers', () => {
-  it('provides an ANSI banner with the approved copy', () => {
+  it('does not expose an xterm output banner for turn completion reminders', () => {
     expect(TURN_DONE_TEXT).toBe('AI 回复完成，请验收')
-    expect(TURN_DONE_BANNER).toContain(TURN_DONE_TEXT)
-    expect(TURN_DONE_BANNER).toContain('\x1b[')
+    expect(turnNotifications).not.toHaveProperty('TURN_DONE_BANNER')
   })
 
   it('reports browser notification support as unsupported without the browser Notification API', () => {

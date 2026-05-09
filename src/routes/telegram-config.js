@@ -10,16 +10,46 @@
  *   - probeRegistry: createProbeRegistry() 返回的对象（Task 9 用）
  */
 import { Router } from 'express'
+import { isMaskedToken } from '../telegram-config-service.js'
 import { readBotTokenWithSource } from '../telegram-bot.js'
 
-export function createTelegramConfigRouter({ getConfig, getTelegramBot, probeRegistry }) {
+const TELEGRAM_API = 'https://api.telegram.org'
+
+async function getMeWithToken(token, fetchFn) {
+  const res = await fetchFn(`${TELEGRAM_API}/bot${token}/getMe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok || !data?.ok) throw new Error(data?.description || `HTTP ${res.status}`)
+  return data.result
+}
+
+export function createTelegramConfigRouter({ getConfig, getTelegramBot, probeRegistry, fetchFn = fetch }) {
   if (typeof getConfig !== 'function') throw new Error('getConfig required')
   if (typeof getTelegramBot !== 'function') throw new Error('getTelegramBot required')
 
   const router = Router()
 
   // POST /test —— getMe 探测
-  router.post('/test', async (_req, res) => {
+  router.post('/test', async (req, res) => {
+    const inputToken = typeof req.body?.botToken === 'string' ? req.body.botToken.trim() : ''
+    if (inputToken && !isMaskedToken(inputToken)) {
+      try {
+        const me = await getMeWithToken(inputToken, fetchFn)
+        return res.json({
+          ok: true,
+          botId: me.id,
+          botUsername: me.username || null,
+          botFirstName: me.first_name || null,
+          source: 'input',
+        })
+      } catch (e) {
+        return res.json({ ok: false, errorReason: e.message || 'unknown', source: 'input' })
+      }
+    }
+
     const { token, source } = readBotTokenWithSource(getConfig)
     if (!token) {
       return res.json({ ok: false, errorReason: 'token_missing', source })

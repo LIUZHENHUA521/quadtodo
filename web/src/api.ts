@@ -23,6 +23,7 @@ export interface AiSession {
     topicName?: string | null
     channel?: string | null
   } | null
+  localResume?: { openedAt: number }
 }
 
 export interface Todo {
@@ -532,12 +533,12 @@ export async function openNativeAiResume(input: {
   nativeSessionId: string
   todoId?: string
   sessionId?: string
-}): Promise<{ cwd: string; command: string; warnings: NativeResumeWarning[] }> {
-  const body = await jsonFetch<{ ok: true; cwd: string; command: string; warnings?: NativeResumeWarning[] }>('/api/system/open-native-ai-resume', {
+}): Promise<{ cwd: string; command: string; warnings: NativeResumeWarning[]; todo?: Todo }> {
+  const body = await jsonFetch<{ ok: true; cwd: string; command: string; warnings?: NativeResumeWarning[]; todo?: Todo }>('/api/system/open-native-ai-resume', {
     method: 'POST',
     body: JSON.stringify(input),
   })
-  return { cwd: body.cwd, command: body.command, warnings: body.warnings || [] }
+  return { cwd: body.cwd, command: body.command, warnings: body.warnings || [], todo: body.todo }
 }
 
 /** 浏览器 WS 地址：开发时走 vite proxy，生产同源 */
@@ -939,15 +940,16 @@ export interface TelegramTestResult {
   botId?: number
   botUsername?: string | null
   botFirstName?: string | null
-  source: 'quadtodo' | 'openclaw' | 'missing'
+  source: 'quadtodo' | 'openclaw' | 'missing' | 'input'
   errorReason?: string
 }
 
-export async function testTelegram(): Promise<TelegramTestResult> {
+export async function testTelegram(input: { botToken?: string } = {}): Promise<TelegramTestResult> {
   // 这个端点的 ok=false 是合法业务回包（不是 HTTP 错误），所以绕过 jsonFetch 的 .ok 抛错
   const r = await fetch(BASE + '/api/config/telegram/test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
   })
   return await r.json() as TelegramTestResult
 }

@@ -61,6 +61,17 @@ function joinCommandLine(command: string, args: string[] = []): string {
     .join(' ')
 }
 
+function isMaskedToken(value: unknown): boolean {
+  return typeof value === 'string' && value.startsWith('tg_***')
+}
+
+function telegramSourceLabel(source: 'quadtodo' | 'openclaw' | 'missing' | 'input'): string {
+  if (source === 'input') return '当前输入，保存后生效'
+  if (source === 'quadtodo') return 'quadtodo'
+  if (source === 'openclaw') return 'openclaw'
+  return 'missing'
+}
+
 export default function SettingsDrawer({ open, onClose }: Props) {
   const [status, setStatus] = useState<{ version: string; activeSessions: number } | null>(null)
   const [config, setConfig] = useState<AppConfig | null>(null)
@@ -553,10 +564,13 @@ export default function SettingsDrawer({ open, onClose }: Props) {
                         onClick={async () => {
                           setTesting(true)
                           try {
-                            const r = await testTelegram()
+                            const rawToken = String(form.getFieldValue('telegramBotToken') || '').trim()
+                            const input = rawToken && !isMaskedToken(rawToken) ? { botToken: rawToken } : {}
+                            const r = await testTelegram(input)
                             if (r.ok) {
-                              setTestResult(`✓ ${r.botUsername ? '@' + r.botUsername : `id=${r.botId}`}（来源：${r.source}）`)
-                              message.success('Telegram 连通')
+                              const sourceLabel = telegramSourceLabel(r.source)
+                              setTestResult(`✓ ${r.botUsername ? '@' + r.botUsername : `id=${r.botId}`}（来源：${sourceLabel}）`)
+                              message.success(r.source === 'input' ? 'Telegram 连通，保存后生效' : 'Telegram 连通')
                             } else {
                               setTestResult(`✗ ${r.errorReason || 'unknown'}`)
                               message.error(r.errorReason || '测试失败')

@@ -787,6 +787,18 @@ export function createServer(opts = {}) {
 			}
 			const command = `${buildShellExports(hook.env)}${baseCommand}`;
 			const result = await openNativeTerminal({ cwd, command, title });
+			let markedTodo = null;
+			if (todo && aiSession) {
+				const openedAt = Date.now();
+				const sessions = Array.isArray(todo.aiSessions) ? todo.aiSessions : [];
+				markedTodo = db.updateTodo(todo.id, {
+					aiSessions: sessions.map((item) =>
+						item?.sessionId === aiSession.sessionId
+							? { ...item, localResume: { openedAt } }
+							: item,
+					),
+				});
+			}
 			res.json({
 				ok: true,
 				cwd: result?.cwd || cwd,
@@ -794,6 +806,7 @@ export function createServer(opts = {}) {
 				command: result?.command || command,
 				action: result?.action || "created",
 				warnings: hook.warnings,
+				...(markedTodo ? { todo: markedTodo } : {}),
 			});
 		} catch (e) {
 			const status = [

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import express from 'express'
 import request from 'supertest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -21,10 +21,10 @@ afterAll(() => {
   try { rmSync(tmpHome, { recursive: true, force: true }) } catch {}
 })
 
-function makeApp({ getConfig, getTelegramBot, probeRegistry = null }) {
+function makeApp({ getConfig, getTelegramBot, probeRegistry = null, fetchFn }) {
   const app = express()
   app.use(express.json())
-  app.use('/api/config/telegram', createTelegramConfigRouter({ getConfig, getTelegramBot, probeRegistry }))
+  app.use('/api/config/telegram', createTelegramConfigRouter({ getConfig, getTelegramBot, probeRegistry, fetchFn }))
   return app
 }
 
@@ -37,6 +37,42 @@ describe('POST /api/config/telegram/test', () => {
     const r = await request(app).post('/api/config/telegram/test').send({})
     expect(r.status).toBe(200)
     expect(r.body).toMatchObject({ ok: false, errorReason: 'token_missing' })
+  })
+
+  it('tests provided unsaved token without requiring a running bot', async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true, result: { id: 67890, username: 'draftBot', first_name: 'Draft' } }),
+    }))
+    const app = makeApp({
+      getConfig: () => ({ telegram: {} }),
+      getTelegramBot: () => null,
+      fetchFn,
+    })
+
+    const r = await request(app).post('/api/config/telegram/test').send({ botToken: '123456:ABCDEF' })
+
+    expect(r.status).toBe(200)
+    expect(r.body).toMatchObject({ ok: true, botId: 67890, botUsername: 'draftBot', source: 'input' })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    const [url, opts] = fetchFn.mock.calls[0]
+    expect(String(url)).toContain('/bot123456:ABCDEF/getMe')
+    expect(opts).toMatchObject({ method: 'POST' })
+  })
+
+  it('does not treat masked token input as a real token', async () => {
+    const fetchFn = vi.fn()
+    const app = makeApp({
+      getConfig: () => ({ telegram: {} }),
+      getTelegramBot: () => null,
+      fetchFn,
+    })
+
+    const r = await request(app).post('/api/config/telegram/test').send({ botToken: 'tg_***1234' })
+
+    expect(r.status).toBe(200)
+    expect(r.body).toMatchObject({ ok: false, errorReason: 'token_missing', source: 'missing' })
+    expect(fetchFn).not.toHaveBeenCalled()
   })
 
   it('calls getMe via getTelegramBot when bot exists', async () => {

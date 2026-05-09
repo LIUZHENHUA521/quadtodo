@@ -1,0 +1,71 @@
+<h2>AI 终端残影/错行修复方案</h2>
+<p class="subtitle">基于截图 B：终端内容出现重叠、重复、残影、错行。请选择你更倾向的风险/收益平衡。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. 前端重放前清屏 + 稳定写入</div>
+        <div class="mockup-body" style="font-family:monospace;font-size:12px;line-height:1.5;background:#0d1117;color:#c9d1d9;border-radius:8px;padding:12px;min-height:150px">
+          <div style="color:#58a6ff">replay received</div>
+          <div style="color:#8b949e">reset xterm buffer</div>
+          <div style="color:#8b949e">write chunks sequentially</div>
+          <div style="color:#3fb950">stable final screen</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 先修前端回放/重连污染</h3>
+      <p>每次 replay 前重置 xterm，避免旧 buffer 与新 replay 叠加；并保证 replay chunks 按序写完后再滚到底。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>改动小，最贴近“残影/重复”现象</li><li>风险低，不影响 PTY 进程</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>如果根因是后端 resize 污染，不能完全治本</li><li>重连时可能短暂清屏再恢复</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. 后端 resize 防抖/会话尺寸锁定</div>
+        <div class="mockup-body" style="font-family:monospace;font-size:12px;line-height:1.5;background:#0d1117;color:#c9d1d9;border-radius:8px;padding:12px;min-height:150px">
+          <div>tab 1: 120 cols</div>
+          <div>tab 2: 80 cols</div>
+          <div style="color:#f2cc60">aggregate resize</div>
+          <div style="color:#3fb950">only stable changes reach PTY</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 加强 resize 聚合与日志污染防护</h3>
+      <p>限制异常尺寸、重复 resize、完成态 resize；必要时对多浏览器尺寸选择策略做更稳的锁定。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>更治本，减少 Claude TUI 被反复重排</li><li>对正在运行的终端更稳定</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>需要更精确复现，避免影响正常自适应</li><li>移动端/分屏可能有兼容风险</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. 回放用 headless xterm 规范化</div>
+        <div class="mockup-body" style="font-family:monospace;font-size:12px;line-height:1.5;background:#0d1117;color:#c9d1d9;border-radius:8px;padding:12px;min-height:150px">
+          <div>raw PTY bytes</div>
+          <div style="color:#f2cc60">→ headless xterm replay</div>
+          <div style="color:#3fb950">→ clean snapshot / canonical stream</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 后端规范化输出后再给前端</h3>
+      <p>把 ANSI 光标移动、覆盖式 TUI 输出先在后端归一化，再发送更干净的终端快照/日志。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>长期最鲁棒，可改善历史日志阅读</li><li>不依赖浏览器 xterm 状态</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>实现复杂，可能超出本次 bugfix</li><li>实时交互与 raw PTY 语义容易被破坏</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">我的初步推荐：先做 A，并补 B 中最保守的 guard；C 作为后续专项，不建议这次直接上。</p>

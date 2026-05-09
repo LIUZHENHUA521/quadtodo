@@ -222,7 +222,8 @@ describe('routes/ai-terminal', () => {
   it('auto-recovers restartable sessions on startup', () => {
     const db = openDb(':memory:')
     const workDir = mkdtempSync(join(tmpdir(), 'quadtodo-workdir-'))
-    const sessionCwd = mkdtempSync(join(tmpdir(), 'quadtodo-session-cwd-'))
+    const sessionCwd = mkdtempSync(join(workDir, 'session-'))
+    const defaultCwd = mkdtempSync(join(tmpdir(), 'quadtodo-default-cwd-'))
     const todo = db.createTodo({
       title: 'T',
       quadrant: 1,
@@ -241,7 +242,7 @@ describe('routes/ai-terminal', () => {
     })
     const pty = new FakePty()
     const logDir = mkdtempSync(join(tmpdir(), 'quadtodo-log-'))
-    const ait = createAiTerminal({ db, pty, logDir, defaultCwd: workDir })
+    const ait = createAiTerminal({ db, pty, logDir, defaultCwd })
     expect(pty.started).toHaveLength(1)
     expect(pty.started[0].resumeNativeId).toBe('abcdef12-3456-7890-abcd-ef1234567890')
     expect(pty.started[0].prompt).toBeNull()
@@ -254,7 +255,7 @@ describe('routes/ai-terminal', () => {
     ait.close()
     rmSync(logDir, { recursive: true, force: true })
     rmSync(workDir, { recursive: true, force: true })
-    rmSync(sessionCwd, { recursive: true, force: true })
+    rmSync(defaultCwd, { recursive: true, force: true })
     db.close()
   })
 

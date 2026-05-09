@@ -71,6 +71,7 @@ describe("server", () => {
 	let pickDirectoryCalls;
 	let nativeTerminalCalls;
 	let hookStatus;
+	let openNativeTerminalImpl;
 	beforeEach(() => {
 		const logDir = mkdtempSync(join(tmpdir(), "quadtodo-srv-"));
 		configRootDir = mkdtempSync(join(tmpdir(), "quadtodo-cfg-"));
@@ -78,6 +79,7 @@ describe("server", () => {
 		pickDirectoryCalls = [];
 		nativeTerminalCalls = [];
 		hookStatus = { installed: false, scriptExists: false };
+		openNativeTerminalImpl = async (input) => ({ cwd: input.cwd });
 		mkdirSync(join(workRootDir, "client"));
 		mkdirSync(join(workRootDir, "server"));
 		loadConfig({ rootDir: configRootDir });
@@ -95,7 +97,7 @@ describe("server", () => {
 			},
 			openNativeTerminal: async (input) => {
 				nativeTerminalCalls.push(input);
-				return { cwd: input.cwd };
+				return openNativeTerminalImpl(input);
 			},
 			inspectHooks: () => hookStatus,
 		});
@@ -450,6 +452,78 @@ describe("server", () => {
 		expect(nativeTerminalCalls[0].command).toContain("--resume");
 		expect(nativeTerminalCalls[0].command).toContain("native-123");
 		expect(srv.pty.started.length).toBe(before);
+	});
+
+	it("POST /api/system/open-native-ai-resume marks matching AI session after opening native terminal", async () => {
+		const todo = srv.db.createTodo({
+			title: "T",
+			quadrant: 1,
+			status: "todo",
+			aiSessions: [
+				{ sessionId: "session-1", nativeSessionId: "native-123", tool: "claude" },
+				{ sessionId: "session-2", nativeSessionId: "native-456", tool: "claude" },
+			],
+		});
+		const before = Date.now();
+
+		const r = await request(srv.app)
+			.post("/api/system/open-native-ai-resume")
+			.send({
+				cwd: join(workRootDir, "client"),
+				tool: "claude",
+				nativeSessionId: "native-123",
+				todoId: todo.id,
+				sessionId: "session-1",
+			});
+		const after = Date.now();
+
+		expect(r.status).toBe(200);
+		expect(r.body.ok).toBe(true);
+		expect(r.body.cwd).toBe(join(workRootDir, "client"));
+		expect(r.body.title).toBe("quadtodo:claude:native-123");
+		expect(r.body.command).toContain("--resume");
+		expect(r.body.action).toBe("created");
+		expect(r.body.todo.status).toBe("todo");
+		expect(r.body.todo.aiSessions[0].localResume.openedAt).toBeGreaterThanOrEqual(before);
+		expect(r.body.todo.aiSessions[0].localResume.openedAt).toBeLessThanOrEqual(after);
+		expect(r.body.todo.aiSessions[1].localResume).toBeUndefined();
+
+		const persisted = srv.db.getTodo(todo.id);
+		expect(persisted.status).toBe("todo");
+		expect(persisted.aiSessions[0].localResume.openedAt).toBe(r.body.todo.aiSessions[0].localResume.openedAt);
+		expect(persisted.aiSessions[1].localResume).toBeUndefined();
+		expect(nativeTerminalCalls).toHaveLength(1);
+		expect(srv.pty.started).toHaveLength(0);
+	});
+
+	it("POST /api/system/open-native-ai-resume does not mark AI session when native terminal opening fails", async () => {
+		openNativeTerminalImpl = async () => {
+			throw new Error("open failed");
+		};
+		const todo = srv.db.createTodo({
+			title: "T",
+			quadrant: 1,
+			aiSessions: [
+				{ sessionId: "session-1", nativeSessionId: "native-123", tool: "claude" },
+			],
+		});
+
+		const r = await request(srv.app)
+			.post("/api/system/open-native-ai-resume")
+			.send({
+				cwd: join(workRootDir, "client"),
+				tool: "claude",
+				nativeSessionId: "native-123",
+				todoId: todo.id,
+				sessionId: "session-1",
+			});
+
+		expect(r.status).toBe(500);
+		expect(r.body.ok).toBe(false);
+		const persisted = srv.db.getTodo(todo.id);
+		expect(persisted.aiSessions[0].localResume).toBeUndefined();
+		expect(nativeTerminalCalls).toHaveLength(1);
+		expect(srv.pty.started).toHaveLength(0);
 	});
 
 	it("POST /api/system/open-native-ai-resume injects quadtodo hook env for Claude sessions", async () => {
