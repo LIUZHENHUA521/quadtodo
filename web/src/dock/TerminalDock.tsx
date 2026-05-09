@@ -2,11 +2,23 @@
 import React, { useCallback, useEffect, useRef } from 'react'
 import { Button, Tooltip } from 'antd'
 import { CloseOutlined, MenuFoldOutlined } from '@ant-design/icons'
-import { useTerminalDockStore, DOCK_LIMITS } from '../store/terminalDockStore'
+import type { ResumeSessionInput } from '../api'
+import { useTerminalDockStore, DOCK_LIMITS, DockTab } from '../store/terminalDockStore'
 import TerminalDockTab from './TerminalDockTab'
 import './dock.css'
 
-export default function TerminalDock() {
+interface Props {
+  // Resolve per-tab context. TodoManage looks up its `todos` to provide cwd + resumeTarget.
+  resolveTabContext?: (tab: DockTab) => { cwd: string | null; resumeTarget: ResumeSessionInput | null }
+  onSessionRecovered?: (todoId: string, nextSessionId: string) => void
+  onSessionSwitch?: (todoId: string, nextSessionId: string) => void
+  onDone?: (todoId: string, sessionId: string, r: { status: string; exitCode?: number }) => void
+  onFork?: (todoId: string, sessionId: string) => void
+}
+
+export default function TerminalDock({
+  resolveTabContext, onSessionRecovered, onSessionSwitch, onDone, onFork,
+}: Props = {}) {
   const { widthPx, isCollapsed, openTabs, activeTabId, toggleCollapsed, setWidth } = useTerminalDockStore()
   const dragStartRef = useRef<{ x: number; w: number } | null>(null)
   const moveHandlerRef = useRef<((ev: MouseEvent) => void) | null>(null)
@@ -78,14 +90,22 @@ export default function TerminalDock() {
         {openTabs.length === 0 ? (
           <div className="terminal-dock__empty">没有打开的会话</div>
         ) : (
-          openTabs.map(tab => (
-            <TerminalDockTab
-              key={tab.id}
-              tab={tab}
-              cwd={null}
-              visible={tab.id === activeTabId}
-            />
-          ))
+          openTabs.map(tab => {
+            const ctx = resolveTabContext?.(tab) ?? { cwd: null, resumeTarget: null }
+            return (
+              <TerminalDockTab
+                key={tab.id}
+                tab={tab}
+                cwd={ctx.cwd}
+                resumeTarget={ctx.resumeTarget}
+                visible={tab.id === activeTabId}
+                onSessionRecovered={onSessionRecovered ? (next) => onSessionRecovered(tab.todoId, next) : undefined}
+                onSessionSwitch={onSessionSwitch ? (next) => onSessionSwitch(tab.todoId, next) : undefined}
+                onDone={onDone ? (r) => onDone(tab.todoId, tab.id, r) : undefined}
+                onFork={onFork ? () => onFork(tab.todoId, tab.id) : undefined}
+              />
+            )
+          })
         )}
       </div>
     </div>

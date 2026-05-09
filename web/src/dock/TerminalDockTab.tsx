@@ -1,6 +1,6 @@
 // web/src/dock/TerminalDockTab.tsx
 import React from 'react'
-import AiTerminalMini from '../AiTerminalMini'
+import SessionViewer from '../SessionViewer'
 import { TodoStatus, ResumeSessionInput } from '../api'
 import { useTerminalDockStore, DockTab } from '../store/terminalDockStore'
 
@@ -12,11 +12,12 @@ interface Props {
   onSessionRecovered?: (next: string) => void
   onSessionSwitch?: (next: string) => void
   onDone?: (r: { status: string; exitCode?: number }) => void
+  onFork?: () => void
 }
 
 export default function TerminalDockTab({
   tab, cwd, resumeTarget, visible,
-  onSessionRecovered, onSessionSwitch, onDone,
+  onSessionRecovered, onSessionSwitch, onDone, onFork,
 }: Props) {
   const close = useTerminalDockStore(s => s.close)
   const setStatus = useTerminalDockStore(s => s.setStatus)
@@ -40,9 +41,9 @@ export default function TerminalDockTab({
   return (
     <div
       className="terminal-dock-tab"
-      style={{ display: visible ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}
+      style={{ display: visible ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}
     >
-      <AiTerminalMini
+      <SessionViewer
         sessionId={tab.id}
         todoId={tab.todoId}
         status={todoStatus}
@@ -55,6 +56,7 @@ export default function TerminalDockTab({
           setStatus(tab.id, r.exitCode === 0 ? 'idle' : 'closed')
           onDone?.(r)
         }}
+        onFork={onFork ? () => onFork() : undefined}
         fillHeight
       />
     </div>
