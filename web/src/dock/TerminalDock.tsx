@@ -3,10 +3,11 @@ import React, { useCallback, useEffect, useRef } from 'react'
 import { Button, Tooltip } from 'antd'
 import { CloseOutlined, MenuFoldOutlined } from '@ant-design/icons'
 import { useTerminalDockStore, DOCK_LIMITS } from '../store/terminalDockStore'
+import TerminalDockTab from './TerminalDockTab'
 import './dock.css'
 
 export default function TerminalDock() {
-  const { widthPx, isCollapsed, openTabs, toggleCollapsed, setWidth } = useTerminalDockStore()
+  const { widthPx, isCollapsed, openTabs, activeTabId, toggleCollapsed, setWidth } = useTerminalDockStore()
   const dragStartRef = useRef<{ x: number; w: number } | null>(null)
   const moveHandlerRef = useRef<((ev: MouseEvent) => void) | null>(null)
   const upHandlerRef = useRef<(() => void) | null>(null)
@@ -77,7 +78,14 @@ export default function TerminalDock() {
         {openTabs.length === 0 ? (
           <div className="terminal-dock__empty">没有打开的会话</div>
         ) : (
-          <div className="terminal-dock__placeholder">[会话渲染区]</div>
+          openTabs.map(tab => (
+            <TerminalDockTab
+              key={tab.id}
+              tab={tab}
+              cwd={null}
+              visible={tab.id === activeTabId}
+            />
+          ))
         )}
       </div>
     </div>
