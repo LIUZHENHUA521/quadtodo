@@ -39,6 +39,7 @@ import { createOpenClawWizard } from "./openclaw-wizard.js";
 import { createOpenClawInboundRouter } from "./routes/openclaw-inbound.js";
 import { createTelegramConfigRouter } from "./routes/telegram-config.js";
 import { createTelegramBot, readBotTokenWithSource } from "./telegram-bot.js";
+import { createLarkBot } from "./lark-bot.js";
 import { createLoadingTracker } from "./telegram-loading-status.js";
 import { buildTelegramCommands } from "./telegram-commands.js";
 import { createProbeRegistry, isMaskedToken, maskBotToken } from "./telegram-config-service.js";
@@ -516,19 +517,23 @@ export function createServer(opts = {}) {
 			delete telegramPatch.botTokenMasked;
 			delete telegramPatch.botTokenSource;
 
-			// 合并 telegram 段
+			// 合并 telegram / lark 段
 			const mergedTelegram = { ...current.telegram, ...telegramPatch };
+			const larkPatch = { ...(req.body?.lark || {}) };
+			const mergedLark = { ...current.lark, ...larkPatch };
 
-			// 检测 telegram 段是否变化（用于触发热重启）
+			// 检测 bot 段是否变化（用于触发热重启）
 			const telegramChanged = JSON.stringify(mergedTelegram) !== JSON.stringify(current.telegram);
+			const larkChanged = JSON.stringify(mergedLark) !== JSON.stringify(current.lark);
 
 			// 不能直接 ...req.body 因为里面可能有原始 telegramPatch（含 mask）—— 排除掉再 spread
-			const { telegram: _t, ...bodyWithoutTelegram } = req.body || {};
+			const { telegram: _t, lark: _l, ...bodyWithoutTelegram } = req.body || {};
 
 			const next = {
 				...current,
 				...bodyWithoutTelegram,
 				telegram: mergedTelegram,
+				lark: mergedLark,
 				tools: {
 					...current.tools,
 					claude: mergeToolConfig(current.tools?.claude, nextToolsPatch.claude),
@@ -552,7 +557,7 @@ export function createServer(opts = {}) {
 			runtimeConfig.webhook = next.webhook || runtimeConfig.webhook;
 			pty.tools = runtimeConfig.tools;
 
-			// 触发 telegram stack 热重启
+			// 触发 bot stack 热重启
 			let telegramRestart = { applied: false };
 			if (telegramChanged) {
 				try {
@@ -560,6 +565,15 @@ export function createServer(opts = {}) {
 					telegramRestart = { applied: true };
 				} catch (e) {
 					telegramRestart = { applied: false, error: e.message };
+				}
+			}
+			let larkRestart = { applied: false };
+			if (larkChanged) {
+				try {
+					await restartLarkStack();
+					larkRestart = { applied: true };
+				} catch (e) {
+					larkRestart = { applied: false, error: e.message };
 				}
 			}
 
@@ -583,6 +597,7 @@ export function createServer(opts = {}) {
 				runtimeApplied: {
 					defaultCwd: runtimeConfig.defaultCwd,
 					defaultTool: runtimeConfig.defaultTool,
+					larkRestart,
 				},
 				telegramRestart,
 			});
@@ -965,6 +980,7 @@ export function createServer(opts = {}) {
 	// ─── Telegram stack（可热重启）─────────────────────────────────
 	// holder 模式：所有依赖方持有 holder.current 而非裸引用，重启时只换 .current
 	const telegramBotHolder = { current: null }
+	const larkBotHolder = { current: null }
 	const loadingTrackerHolder = { current: null }
 	const probeRegistry = createProbeRegistry()
 
@@ -1033,6 +1049,42 @@ export function createServer(opts = {}) {
 		startTelegramStack()
 	}
 
+	function startLarkStack() {
+		const cfg = loadConfig({ rootDir: configRootDir })
+		const lark = cfg.lark || {}
+		if (!lark.enabled) {
+			larkBotHolder.current = null
+			try { openclawBridge.setLarkBot?.(null) } catch { /* ignore */ }
+			console.log('[lark] disabled, skipping bot start')
+			return
+		}
+		const bot = createLarkBot({
+			getConfig: () => loadConfig({ rootDir: configRootDir }),
+			wizard: {
+				handleInbound: (...args) => openclawWizardLazyRef.handleInbound(...args),
+			},
+			logger: { warn: (...a) => console.warn(...a), info: (...a) => console.log(...a) },
+		})
+		larkBotHolder.current = bot
+		openclawBridge.setLarkBot?.(bot)
+		bot.start?.()
+		console.log(`[lark] bot started; chatId=${lark.chatId || '(unset)'}`)
+	}
+
+	async function stopLarkStack() {
+		const bot = larkBotHolder.current
+		larkBotHolder.current = null
+		try { openclawBridge.setLarkBot?.(null) } catch { /* ignore */ }
+		if (!bot) return
+		try { await bot.stop?.() } catch (e) { console.warn(`[lark] stop failed: ${e.message}`) }
+		console.log('[lark] bot stopped')
+	}
+
+	async function restartLarkStack() {
+		await stopLarkStack()
+		startLarkStack()
+	}
+
 	// PTY 事件：永远走 holder.current，所以重启 bot 后还能跑
 	pty.on('native-session', ({ sessionId }) => {
 		loadingTrackerHolder.current?.start({ sessionId })
@@ -1068,10 +1120,11 @@ export function createServer(opts = {}) {
 				if (!inst) {
 					// 当 bot 未启动时，常用方法返回安全的 reject，其他属性返回 undefined
 					const asyncMethods = new Set([
-						'sendMessage', 'sendDocument', 'editMessageText', 'editMessageReplyMarkup',
+						'start', 'stop', 'sendMessage', 'sendDocument', 'editMessageText', 'editMessageReplyMarkup',
 						'answerCallbackQuery',
 						'createForumTopic', 'closeForumTopic', 'reopenForumTopic', 'editForumTopic',
 						'setMessageReaction', 'setMyCommands', 'deleteMyCommands', 'getMe',
+						'replyInThread', 'handleEvent',
 					])
 					if (asyncMethods.has(prop)) {
 						return async () => { throw new Error(`${kind}_not_running`) }
@@ -1090,6 +1143,7 @@ export function createServer(opts = {}) {
 	}
 
 	const telegramBotProxy = unwrapHolder(telegramBotHolder, 'telegram_bot')
+	const larkBotProxy = unwrapHolder(larkBotHolder, 'lark_bot')
 	const loadingTrackerProxy = unwrapHolder(loadingTrackerHolder, 'loading_tracker')
 
 	const openclawHookHandler = createOpenClawHookHandler({
@@ -1111,6 +1165,7 @@ export function createServer(opts = {}) {
 		pending: pendingCoord,
 		pty,
 		telegramBot: telegramBotProxy,
+		larkBot: larkBotProxy,
 		loadingTracker: loadingTrackerProxy,                  // wizard stdin proxy → 标题切回 🔄
 		getConfig: () => loadConfig({ rootDir: configRootDir }),
 	});
@@ -1125,8 +1180,9 @@ export function createServer(opts = {}) {
 		probeRegistry,
 	}))
 
-	// 首次启动 telegram stack（按当前 config）
+	// 首次启动 bot stacks（按当前 config）
 	startTelegramStack()
+	startLarkStack()
 
 	// 懒检测：bridge 推送时 topic 已被删 / thread 失效 → 走关闭流程（mark done + 杀 PTY）
 	openclawBridge.setTopicGoneHandler?.(({ chatId, threadId }) => {
@@ -1191,11 +1247,15 @@ export function createServer(opts = {}) {
 					openclawBridge.registerSessionRoute(sid, aiSess.telegramRoute)
 					rehydrated++
 				}
+				if (aiSess?.larkRoute) {
+					openclawBridge.registerSessionRoute(sid, aiSess.larkRoute)
+					rehydrated++
+				}
 			} catch (e) {
 				console.warn(`[server] rehydrate route failed for ${sid}: ${e.message}`)
 			}
 		}
-		if (rehydrated > 0) console.log(`[server] rehydrated ${rehydrated} telegram session route(s)`)
+		if (rehydrated > 0) console.log(`[server] rehydrated ${rehydrated} session route(s)`)
 
 		// rehydration 之后注册 tracker（仅记录 in-memory state，不调 telegram API）：
 		// 这样后续 PTY done 事件能改成终态 ✅/❌/⏹。boot 时不改 🔄（topic 上一轮可能已经是终态）。
@@ -1331,11 +1391,12 @@ export function createServer(opts = {}) {
 		});
 	}
 
-	function close() {
+	async function close() {
+		try { pendingCoord.stop() } catch { /* ignore */ }
+		try { telegramBotHolder.current?.stop?.() } catch { /* ignore */ }
+		await stopLarkStack()
+		ait.close();
 		return new Promise((resolve) => {
-			try { pendingCoord.stop() } catch { /* ignore */ }
-			try { telegramBotHolder.current?.stop?.() } catch { /* ignore */ }
-			ait.close();
 			wss.close(() => {
 				httpServer.close(() => {
 					try {

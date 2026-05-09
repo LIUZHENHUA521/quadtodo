@@ -238,13 +238,12 @@ function buildTemplatePrompt(templates) {
 }
 
 /**
- * 把 (chatId, threadId) 映射成内部 wizards/lastPush 的复合 key。
+ * 把 (channel, chatId, threadId) 映射成内部 wizards/lastPush 的复合 key。
  * Telegram 的 General topic（threadId=null）和具体 topic 用不同 key，互不干扰。
- * 老的 weixin 路径只有 peer（=chatId），threadId=null → key=`${peer}:general`，
- * 行为跟之前完全一致。
+ * 老的 weixin/openclaw 路径只有 peer（=chatId），threadId=null → key=`openclaw:${peer}:general`。
  */
-function makeRouteKey(chatId, threadId) {
-  return `${chatId}:${threadId || 'general'}`
+function makeRouteKey(channel, chatId, threadId) {
+  return `${channel || 'openclaw'}:${chatId}:${threadId || 'general'}`
 }
 
 /**
@@ -280,7 +279,7 @@ const QUADTODO_GLOBAL_SLASH = new Set(['list', 'pending', 'stop'])
  */
 export function createOpenClawWizard({
   db, aiTerminal, openclaw, pending,
-  pty = null, telegramBot = null, loadingTracker = null,
+  pty = null, telegramBot = null, larkBot = null, loadingTracker = null,
   getConfig, logger = console,
 } = {}) {
   if (!db) throw new Error('db_required')
@@ -348,8 +347,8 @@ export function createOpenClawWizard({
     return out
   }
 
-  function startWizard({ chatId, threadId, text, messageId = null, imagePaths = [] }) {
-    const routeKey = makeRouteKey(chatId, threadId)
+  function startWizard({ channel = 'openclaw', chatId, threadId, text, messageId = null, imagePaths = [] }) {
+    const routeKey = makeRouteKey(channel, chatId, threadId)
     const title = extractTitle(text) || '(未命名任务)'
     const workdirHint = tryExtractWorkdir(text)
     const quadrantHint = tryExtractQuadrant(text)
@@ -357,6 +356,7 @@ export function createOpenClawWizard({
 
     const w = {
       peer: chatId,        // 兼容字段（旧代码读 w.peer）
+      channel,
       chatId,
       threadId,
       triggerMessageId: messageId,   // 用户触发本任务的消息 id（D 方案：tracker 加 reaction）
@@ -510,11 +510,15 @@ export function createOpenClawWizard({
       const shortCode = String(todo.id).replace(/[^a-z0-9]/gi, '').slice(-3).toLowerCase()
       const topicName = `#t${shortCode} ${w.title}`.slice(0, 128)
 
-      // ── 新增：尝试创建 Telegram Topic（只在有 telegramBot 且 chatId 是 telegram 数字 ID 时）──
+      // ── 新增：尝试创建 Telegram Topic（只在有 telegramBot 且 channel=telegram/chatId 是 telegram 数字 ID 时）──
       let createdThreadId = null
+      let larkRootMessageId = null
+      let larkThreadId = null
+      let larkMessageAppLink = null
+      const channel = w.channel || 'openclaw'
       const canCreateTopic = !!telegramBot?.createForumTopic
-      const looksLikeTelegram = w.chatId && /^-?\d+$/.test(String(w.chatId))   // 只有 telegram chat id 是纯数字
-      logger.info?.(`[wizard] finalize: chatId=${w.chatId} canCreateTopic=${canCreateTopic} looksLikeTelegram=${looksLikeTelegram} topicName="${topicName}"`)
+      const looksLikeTelegram = channel === 'telegram' && w.chatId && /^-?\d+$/.test(String(w.chatId))   // 只有 telegram chat id 是纯数字
+      logger.info?.(`[wizard] finalize: channel=${channel} chatId=${w.chatId} canCreateTopic=${canCreateTopic} looksLikeTelegram=${looksLikeTelegram} topicName="${topicName}"`)
       if (canCreateTopic && looksLikeTelegram) {
         // 网络抖动重试 1 次：createForumTopic 经常因 fetch failed / timeout 等瞬时错误挂掉，
         // 跟 sendMessage / 图片下载的策略一致 —— 1s 后重试，再失败才 fallback
@@ -539,7 +543,27 @@ export function createOpenClawWizard({
       } else if (!canCreateTopic) {
         logger.info?.(`[wizard] no telegramBot — skipping topic creation (likely weixin path)`)
       } else if (!looksLikeTelegram) {
-        logger.info?.(`[wizard] chatId="${w.chatId}" is not telegram-shaped (numeric); skipping topic creation`)
+        logger.info?.(`[wizard] channel=${channel} chatId="${w.chatId}" is not telegram-shaped (numeric); skipping topic creation`)
+      }
+
+      if (channel === 'lark' && larkBot?.sendMessage && w.chatId) {
+        const intro = [
+          `${topicName}`,
+          `AI 已启动，后续输出会回复在这个话题里。`,
+          ``,
+          `象限 Q${w.chosenQuadrant || 2} · 目录 ${w.chosenWorkdir || '默认'} · 模板 ${w.chosenTemplate?.name || '自由模式'}`,
+        ].join('\n')
+        try {
+          const sent = await larkBot.sendMessage({ chatId: w.chatId, text: intro })
+          if (sent?.ok !== false) {
+            const payload = sent?.payload || sent || {}
+            larkRootMessageId = payload.message_id != null ? String(payload.message_id) : null
+            larkThreadId = payload.thread_id != null ? String(payload.thread_id) : null
+            larkMessageAppLink = payload.message_app_link != null ? String(payload.message_app_link) : null
+          }
+        } catch (e) {
+          logger.warn?.(`[wizard] lark root message failed: ${e.message}`)
+        }
       }
 
       // 启动 PTY
@@ -579,15 +603,30 @@ export function createOpenClawWizard({
         }
         if (w.peer) extraEnv.QUADTODO_TARGET_USER = String(w.peer)
 
-        if (openclaw?.registerSessionRoute && w.peer) {
-          openclaw.registerSessionRoute(sessionId, {
+        let sessionRoute = null
+        if (w.channel === 'lark' && larkRootMessageId) {
+          sessionRoute = {
+            targetUserId: w.peer,
+            threadId: larkThreadId,
+            rootMessageId: larkRootMessageId,
+            topicName,
+            messageAppLink: larkMessageAppLink,
+            triggerMessageId: w.triggerMessageId || null,
+            account: null,
+            channel: 'lark',
+          }
+        } else if (channel !== 'lark' && w.peer) {
+          sessionRoute = {
             targetUserId: w.peer,
             threadId: createdThreadId,    // ← 关键：把 topic 的 thread id 绑到 session 上
             topicName,                    // ← 给 SessionEnd 改名 ✅ 用
             triggerMessageId: w.triggerMessageId || null,   // D 方案：tracker 加 reaction 用
             account: null,
-            channel: null,
-          })
+            channel: createdThreadId ? 'telegram' : null,
+          }
+        }
+        if (openclaw?.registerSessionRoute && sessionRoute) {
+          openclaw.registerSessionRoute(sessionId, sessionRoute)
         }
 
         try {
@@ -611,23 +650,19 @@ export function createOpenClawWizard({
         // 此时 aiSessions[0] 已被写入）→ quadtodo 重启时 recoverPendingTodosOnStartup
         // 复活 session 时通过 mergeTodoAiSessions 的 spread 保留 telegramRoute；
         // server.js 启动时扫描 ait.sessions 并 re-register 到 openclaw-bridge
-        if (createdThreadId && sessionInfo) {
+        if (sessionInfo && ((createdThreadId && sessionRoute) || (larkRootMessageId && sessionRoute))) {
           try {
             const todoNow = db.getTodo(todo.id)
             if (todoNow) {
-              const route = {
-                targetUserId: w.peer,
-                threadId: createdThreadId,
-                topicName,
-                channel: 'telegram',
-              }
-              const updatedSessions = (todoNow.aiSessions || []).map((s) =>
-                s.sessionId === sessionId ? { ...s, telegramRoute: route } : s,
-              )
+              const updatedSessions = (todoNow.aiSessions || []).map((s) => {
+                if (s.sessionId !== sessionId) return s
+                if (larkRootMessageId) return { ...s, larkRoute: sessionRoute }
+                return { ...s, telegramRoute: sessionRoute }
+              })
               db.updateTodo(todo.id, { aiSessions: updatedSessions })
             }
           } catch (e) {
-            logger.warn?.(`[wizard] persist telegramRoute failed: ${e.message}`)
+            logger.warn?.(`[wizard] persist session route failed: ${e.message}`)
           }
         }
       }
@@ -918,7 +953,9 @@ export function createOpenClawWizard({
   async function handleInbound(args = {}) {
     // 兼容老路径
     const chatId = args.chatId != null ? String(args.chatId) : (args.peer != null ? String(args.peer) : null)
+    const channel = args.channel || (chatId && /^-?\d+$/.test(String(chatId)) ? 'telegram' : 'openclaw')
     const threadId = args.threadId != null ? args.threadId : null
+    const rootMessageId = args.rootMessageId != null ? String(args.rootMessageId) : null
     const text = args.text || ''
     const messageId = args.messageId != null ? args.messageId : null
     const replyToMessageId = args.replyToMessageId != null ? args.replyToMessageId : null
@@ -930,7 +967,54 @@ export function createOpenClawWizard({
     if (!text && imagePaths.length === 0) return { reply: '🤔 空消息，请重试' }
     if (typeof text !== 'string') return { reply: '🤔 空消息，请重试' }
     const trimmed = text.trim()
-    const routeKey = makeRouteKey(chatId, threadId)
+    const routeKey = makeRouteKey(channel, chatId, threadId)
+    const isLarkThreadReply = channel === 'lark' && (threadId || rootMessageId)
+
+    // Lark 任务话题/root 回复必须严格隔离到原始路由：不允许被全局 ask_user、新任务触发词、
+    // lastPush 或单活跃 session 等模糊 fallback 消费，避免把群内任务线程回复送到不相关会话。
+    if (isLarkThreadReply) {
+      if (!openclaw?.findSessionByRoute) {
+        return { reply: '没有找到对应运行中的任务', action: 'session_not_found' }
+      }
+      const sid = openclaw.findSessionByRoute({ channel, chatId, threadId, rootMessageId })
+      if (!sid) {
+        return { reply: '没有找到对应运行中的任务', action: 'session_not_found' }
+      }
+      if (!pty?.write || !pty.has?.(sid)) {
+        return {
+          reply: '这个任务已结束，请在群里重新发起任务。',
+          action: 'session_ended',
+          sessionId: sid,
+        }
+      }
+      try {
+        loadingTracker?.markRunning?.(sid)?.catch?.(() => {})
+        let payload = trimmed
+        if (imagePaths.length > 0) {
+          const ats = imagePaths.map((p) => `@${p}`).join(' ')
+          payload = trimmed ? `${ats} ${trimmed}` : ats
+        }
+        pty.write(sid, payload)
+        setTimeout(() => {
+          try { pty.write(sid, '\r') } catch (e) {
+            logger.warn?.(`[wizard] stdin proxy submit failed: ${e.message}`)
+          }
+        }, 80)
+        return {
+          reply: '',
+          action: 'stdin_proxy',
+          sessionId: sid,
+          imagePaths: imagePaths.length > 0 ? imagePaths : undefined,
+        }
+      } catch (e) {
+        logger.warn?.(`[wizard] lark exact stdin proxy failed: ${e.message}`)
+        return {
+          reply: '这个任务已结束，请在群里重新发起任务。',
+          action: 'session_ended',
+          sessionId: sid,
+        }
+      }
+    }
 
     // 0. ask_user 的 ✏️ 补充流：如果是回复我们的 force_reply 提示 → 拼"选项 · 补充"调 submitReply
     //    放在最顶 —— 优先级高于 wizard / ask_user ticket / PTY proxy；
@@ -989,7 +1073,7 @@ export function createOpenClawWizard({
     // 优先级：放在 active wizard / NEW_TASK / ask_user / PTY proxy 之前，
     // 这样在 wizard 进行中也能用 /list 看一眼任务列表（不影响 wizard 状态）。
     const quadtodoSlash = trimmed.match(/^\/([a-z][a-z0-9_]*)\b\s*(.*)$/i)
-    const isSupergroup = chatId && /^-100\d+/.test(String(chatId))
+    const isSupergroup = channel === 'telegram' && chatId && /^-100\d+/.test(String(chatId))
     if (isSupergroup && quadtodoSlash && QUADTODO_GLOBAL_SLASH.has(quadtodoSlash[1].toLowerCase())) {
       const cmd = quadtodoSlash[1].toLowerCase()
       const argText = quadtodoSlash[2].trim()
@@ -1007,11 +1091,11 @@ export function createOpenClawWizard({
     // —— 用户已在跟某个 PTY 对话，那段文字是要喂给 Claude Code 的，不是要再建任务。
     // 只在 General（threadId 空）才允许 NEW_TASK_TRIGGERS 启动 wizard。
     const isInTopicOfSupergroup =
-      chatId && /^-100\d+/.test(String(chatId)) && threadId != null
-    const newTaskGateOpen = !isInTopicOfSupergroup
+      channel === 'telegram' && chatId && /^-100\d+/.test(String(chatId)) && threadId != null
+    const newTaskGateOpen = !isInTopicOfSupergroup && !isLarkThreadReply
 
     // 2. 进行中 wizard → 推进
-    const active = getActiveWizard(routeKey)
+    const active = isLarkThreadReply ? null : getActiveWizard(routeKey)
     if (active) {
       // 触发完成动作的 message id 总是最新一条 → 滚动更新
       if (messageId) active.triggerMessageId = messageId
@@ -1022,7 +1106,7 @@ export function createOpenClawWizard({
       // 如果用户在 wizard 中又发新任务触发词 → 重启（仅在 General/DM/普通群有效）
       if (newTaskGateOpen && NEW_TASK_TRIGGERS.some((re) => re.test(trimmed))) {
         wizards.delete(routeKey)
-        const w = startWizard({ chatId, threadId, text: trimmed, messageId, imagePaths })
+        const w = startWizard({ channel, chatId, threadId, text: trimmed, messageId, imagePaths })
         if (w.step === STEP_DONE) return await finalizeWizard(w)
         if (w.step === STEP_QUADRANT) {
           const p = buildQuadrantPrompt()
@@ -1045,7 +1129,7 @@ export function createOpenClawWizard({
     // 仅在 General/DM/普通群触发；在 supergroup task topic 里"做 X"是给已有 PTY 的输入，
     // 不该建新任务（避免污染 task 上下文 + 防止用户被意外拉进 wizard）
     if (newTaskGateOpen && NEW_TASK_TRIGGERS.some((re) => re.test(trimmed))) {
-      const w = startWizard({ chatId, threadId, text: trimmed, messageId, imagePaths })
+      const w = startWizard({ channel, chatId, threadId, text: trimmed, messageId, imagePaths })
       if (w.step === STEP_DONE) return await finalizeWizard(w)
       if (w.step === STEP_QUADRANT) {
         const p = buildQuadrantPrompt()
@@ -1103,13 +1187,15 @@ export function createOpenClawWizard({
     // 在 General 只允许严格 thread 匹配 (a)，但 (a) 在 General 里必然匹配失败（没 threadId），
     // 等于完全跳过 stdin proxy → 落到 fallback reply 提示用户。
     const isInGeneralOfSupergroup =
-      chatId && /^-100\d+/.test(String(chatId)) && (threadId == null || threadId === undefined)
+      channel === 'telegram' && chatId && /^-100\d+/.test(String(chatId)) && (threadId == null || threadId === undefined)
     if (pty?.write && !isInGeneralOfSupergroup) {
       const targetSid = (() => {
-        // a) thread 精确路由：找绑定到 (chatId, threadId) 的 sessionId
-        if (threadId && openclaw?.findSessionByRoute) {
-          const sid = openclaw.findSessionByRoute({ chatId, threadId })
+        // a) thread/root 精确路由：找绑定到 (channel, chatId, threadId/rootMessageId) 的 sessionId
+        if ((threadId || rootMessageId) && openclaw?.findSessionByRoute) {
+          const sid = openclaw.findSessionByRoute({ channel, chatId, threadId, rootMessageId })
           if (sid && pty.has?.(sid)) return sid
+          if (sid && channel === 'lark') return { ended: true, sid }
+          if (channel === 'lark') return { notFound: true }
         }
         // b) lastPushByPeer
         const recent = openclaw?.getLastPushedSession?.(peer)
@@ -1124,6 +1210,19 @@ export function createOpenClawWizard({
         return null
       })()
 
+      if (targetSid && typeof targetSid === 'object' && targetSid.ended) {
+        return {
+          reply: '这个任务已结束，请在群里重新发起任务。',
+          action: 'session_ended',
+          sessionId: targetSid.sid,
+        }
+      }
+      if (targetSid && typeof targetSid === 'object' && targetSid.notFound) {
+        return {
+          reply: '没有找到对应运行中的任务',
+          action: 'session_not_found',
+        }
+      }
       if (targetSid && typeof targetSid === 'string') {
         // ESC 兜底：用户已经卡在 modal 里 → 发文本 "esc" / "退出菜单" / "cancel modal"
         // 我们把它翻译成单字节 \x1b 写到 PTY stdin，触发 Claude Code TUI 退出 modal
@@ -1313,7 +1412,8 @@ export function createOpenClawWizard({
       return handleRouteCallback(callbackData.slice(6), { chatId, threadId })
     }
 
-    const routeKey = makeRouteKey(chatId, threadId)
+    const channel = args.channel || (chatId && /^-?\d+$/.test(String(chatId)) ? 'telegram' : 'openclaw')
+    const routeKey = makeRouteKey(channel, chatId, threadId)
     const w = getActiveWizard(routeKey)
     if (!w) {
       // wizard 已超时 / 不存在 → 提示用户重启，editOriginal=true 顺手把按钮去掉
@@ -1859,7 +1959,10 @@ export function createOpenClawWizard({
   function _peek(peerOrRouteKey) {
     if (peerOrRouteKey == null) return null
     const k = String(peerOrRouteKey)
-    return wizards.get(k) || wizards.get(makeRouteKey(k, null)) || null
+    return wizards.get(k)
+      || [...wizards.entries()].find(([routeKey]) => routeKey.endsWith(`:${k}`))?.[1]
+      || wizards.get(makeRouteKey('openclaw', k, null))
+      || null
   }
   function _reset() { wizards.clear() }
 

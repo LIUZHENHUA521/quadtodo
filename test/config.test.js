@@ -225,3 +225,48 @@ describe('telegram defaults: pollRetryDelayMs / minRenameIntervalMs', () => {
 		rmSync(tmp, { recursive: true, force: true });
 	});
 });
+
+describe('lark defaults', () => {
+	it('adds lark defaults when config file omits lark section', async () => {
+		const { loadConfig } = await import('../src/config.js');
+		const tmp = mkdtempSync(join(tmpdir(), 'quadtodo-lark-config-'));
+		try {
+			const cfg = loadConfig({ rootDir: tmp });
+			expect(cfg.lark).toEqual({
+				enabled: false,
+				chatId: '',
+				requireThreadGroup: true,
+				eventSubscribeEnabled: true,
+				notificationCooldownMs: 600000,
+			});
+		} finally {
+			rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+
+	it('normalizes lark chatId and preserves explicit booleans', async () => {
+		const { loadConfig } = await import('../src/config.js');
+		const tmp = mkdtempSync(join(tmpdir(), 'quadtodo-lark-config-'));
+		try {
+			writeFileSync(join(tmp, 'config.json'), JSON.stringify({
+				lark: {
+					enabled: true,
+					chatId: '  oc_abc  ',
+					requireThreadGroup: false,
+					eventSubscribeEnabled: false,
+					notificationCooldownMs: 0,
+				},
+			}));
+			const cfg = loadConfig({ rootDir: tmp });
+			expect(cfg.lark).toEqual({
+				enabled: true,
+				chatId: 'oc_abc',
+				requireThreadGroup: false,
+				eventSubscribeEnabled: false,
+				notificationCooldownMs: 0,
+			});
+		} finally {
+			rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+});

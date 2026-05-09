@@ -85,6 +85,14 @@ const DEFAULT_TELEGRAM_CONFIG = {
 	minRenameIntervalMs: 30_000,
 };
 
+const DEFAULT_LARK_CONFIG = {
+	enabled: false,
+	chatId: "",
+	requireThreadGroup: true,
+	eventSubscribeEnabled: true,
+	notificationCooldownMs: 600_000,
+};
+
 function detectBinary(name) {
 	try {
 		const result = execSync(`command -v ${name}`, {
@@ -275,6 +283,7 @@ function defaultConfig() {
 			allowedChatIds: [...DEFAULT_TELEGRAM_CONFIG.allowedChatIds],
 			allowedFromUserIds: [...DEFAULT_TELEGRAM_CONFIG.allowedFromUserIds],
 		},
+		lark: { ...DEFAULT_LARK_CONFIG },
 		// Clone DEFAULT_PRICING so user mutations (e.g. via setConfigValue) don't
 		// leak back into the module-level constant.
 		pricing: cloneDefaultPricing(),
@@ -339,6 +348,13 @@ function normalizeConfig(cfg = {}) {
 			allowedFromUserIds: Array.isArray(cfg.telegram?.allowedFromUserIds)
 				? cfg.telegram.allowedFromUserIds.map((x) => String(x).trim()).filter(Boolean)
 				: [...DEFAULT_TELEGRAM_CONFIG.allowedFromUserIds],
+		},
+		lark: {
+			...DEFAULT_LARK_CONFIG,
+			...(cfg.lark || {}),
+			chatId: typeof cfg.lark?.chatId === "string"
+				? cfg.lark.chatId.trim()
+				: DEFAULT_LARK_CONFIG.chatId,
 		},
 		// Note on models merge precedence: user entries with the SAME key as a
 		// default (e.g. 'claude-opus-4-*') override the default. To override

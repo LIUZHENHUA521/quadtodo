@@ -188,6 +188,116 @@ describe('openclaw-bridge.postText', () => {
     expect(route.topicName).toBe('#tabc 修复 X')
   })
 
+  it('registerSessionRoute preserves lark rootMessageId threadId and app link', async () => {
+    const bridge = createOpenClawBridge({
+      getConfig: () => ({ openclaw: { enabled: true, channel: 'lark', targetUserId: 'oc_1' } }),
+      spawnFn: spy({ stdout: '{}' }),
+      logger: { warn() {}, info() {} },
+    })
+    bridge.registerSessionRoute('s-lark', {
+      channel: 'lark',
+      targetUserId: 'oc_1',
+      threadId: 'omt_1',
+      rootMessageId: 'om_root',
+      topicName: '#lark-topic',
+      messageAppLink: 'https://example.feishu.cn/message/app-link',
+    })
+    const route = bridge.resolveRoute('s-lark')
+    expect(route.channel).toBe('lark')
+    expect(route.targetUserId).toBe('oc_1')
+    expect(route.threadId).toBe('omt_1')
+    expect(route.rootMessageId).toBe('om_root')
+    expect(route.topicName).toBe('#lark-topic')
+    expect(route.messageAppLink).toBe('https://example.feishu.cn/message/app-link')
+  })
+
+  it('postText sends lark session messages via larkBot.replyInThread', async () => {
+    const sent = []
+    const bridge = createOpenClawBridge({
+      getConfig: () => ({ openclaw: { enabled: true, channel: 'lark' } }),
+      spawnFn: spy({ stdout: '{}' }),
+      logger: { warn() {}, info() {} },
+      larkBot: {
+        replyInThread: async (args) => {
+          sent.push(args)
+          return { ok: true, payload: { messageId: 'om_reply' } }
+        },
+      },
+    })
+    bridge.registerSessionRoute('s-lark', {
+      channel: 'lark',
+      targetUserId: 'oc_1',
+      threadId: 'omt_1',
+      rootMessageId: 'om_root',
+    })
+    const r = await bridge.postText({ sessionId: 's-lark', message: 'AI output' })
+    expect(r).toEqual({ ok: true, payload: { messageId: 'om_reply' }, fast: true })
+    expect(sent).toEqual([{ rootMessageId: 'om_root', text: 'AI output' }])
+    expect(calls).toHaveLength(0)
+  })
+
+  it('postText refuses lark route without rootMessageId', async () => {
+    const sent = []
+    const bridge = createOpenClawBridge({
+      getConfig: () => ({ openclaw: { enabled: true, channel: 'lark' } }),
+      spawnFn: spy({ stdout: '{}' }),
+      logger: { warn() {}, info() {} },
+      larkBot: {
+        replyInThread: async (args) => {
+          sent.push(args)
+          return { ok: true, payload: {} }
+        },
+      },
+    })
+    bridge.registerSessionRoute('s-lark', {
+      channel: 'lark',
+      targetUserId: 'oc_1',
+      threadId: 'omt_1',
+    })
+    const r = await bridge.postText({ sessionId: 's-lark', message: 'AI output' })
+    expect(r.ok).toBe(false)
+    expect(r.reason).toBe('lark_root_message_missing')
+    expect(sent).toHaveLength(0)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('findSessionByRoute can match lark by threadId or rootMessageId', async () => {
+    const bridge = createOpenClawBridge({
+      getConfig: () => ({ openclaw: { enabled: true, channel: 'lark', targetUserId: 'oc_1' } }),
+      spawnFn: spy({ stdout: '{}' }),
+      logger: { warn() {}, info() {} },
+    })
+    bridge.registerSessionRoute('s-lark', {
+      channel: 'lark',
+      targetUserId: 'oc_1',
+      threadId: 'omt_1',
+      rootMessageId: 'om_root',
+    })
+    expect(bridge.findSessionByRoute({ channel: 'lark', chatId: 'oc_1', threadId: 'omt_1' })).toBe('s-lark')
+    expect(bridge.findSessionByRoute({ channel: 'lark', chatId: 'oc_1', rootMessageId: 'om_root' })).toBe('s-lark')
+  })
+
+  it('findSessionByRoute does not fall back to thread matching when lark rootMessageId is wrong', async () => {
+    const bridge = createOpenClawBridge({
+      getConfig: () => ({ openclaw: { enabled: true, channel: 'lark', targetUserId: 'oc_1' } }),
+      spawnFn: spy({ stdout: '{}' }),
+      logger: { warn() {}, info() {} },
+    })
+    bridge.registerSessionRoute('s-lark', {
+      channel: 'lark',
+      targetUserId: 'oc_1',
+      rootMessageId: 'om_root',
+    })
+    bridge.registerSessionRoute('s-lark-other', {
+      channel: 'lark',
+      targetUserId: 'oc_1',
+      rootMessageId: 'om_other',
+    })
+
+    expect(bridge.findSessionByRoute({ channel: 'lark', chatId: 'oc_1', rootMessageId: 'wrong' })).toBeNull()
+    expect(bridge.findSessionByRoute({ channel: 'lark', chatId: 'oc_1', rootMessageId: 'om_other' })).toBe('s-lark-other')
+  })
+
   it('telegram fast-path: passes threadId from session route to sender', async () => {
     const captured = []
     const bridge = createOpenClawBridge({

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -367,6 +367,18 @@ describe('openclaw-wizard state machine', () => {
     expect(r.reply).toContain('📁')
   })
 
+  it('Lark: main-stream event starts wizard', async () => {
+    const r = await wizard.handleInbound({
+      channel: 'lark',
+      chatId: 'oc_1',
+      threadId: null,
+      messageId: 'om_main',
+      text: '帮我做 飞书任务',
+    })
+    expect(r.action).toBe('wizard_started')
+    expect(r.reply).toContain('📁')
+  })
+
   it('Telegram: per-thread wizard isolation', async () => {
     // 在 thread 42 启动 wizard
     await wizard.handleInbound({ chatId: '-100', threadId: 42, text: '帮我做 X' })
@@ -451,6 +463,108 @@ describe('openclaw-wizard state machine', () => {
     expect(bridge.routes.get(ses.sessionId).targetUserId).toBe('-100')
   })
 
+  it('Lark: finalizeWizard sends root topic message and registers route', async () => {
+    const fakeLarkBot = {
+      sendMessage: vi.fn(async () => ({
+        ok: true,
+        payload: {
+          message_id: 'om_root',
+          thread_id: 'omt_1',
+          message_app_link: 'https://example.test/thread',
+        },
+      })),
+    }
+    const aiWithDb = {
+      sessions: [],
+      spawnSession({ sessionId, todoId, tool }) {
+        this.sessions.push({ sessionId, todoId, tool })
+        const t = db.getTodo(todoId)
+        if (t) {
+          db.updateTodo(todoId, {
+            aiSessions: [{ sessionId, tool, status: 'running', startedAt: Date.now() }, ...(t.aiSessions || [])],
+          })
+        }
+        return { sessionId, reused: false }
+      },
+    }
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: aiWithDb, openclaw: bridge, pending,
+      larkBot: fakeLarkBot,
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+    })
+    const r = await w2.handleInbound({
+      channel: 'lark',
+      chatId: 'oc_1',
+      threadId: null,
+      messageId: 'om_main',
+      text: '帮我做 飞书路由测试，目录 /tmp/foo, 象限 2, Bug 修复 模板',
+    })
+    expect(r.action).toBe('wizard_done')
+    expect(fakeLarkBot.sendMessage).toHaveBeenCalledTimes(1)
+    expect(fakeLarkBot.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      chatId: 'oc_1',
+      text: expect.stringContaining('#t'),
+    }))
+    expect(fakeLarkBot.sendMessage.mock.calls[0][0].text).toContain('AI 已启动，后续输出会回复在这个话题里。')
+    const ses = aiWithDb.sessions[0]
+    const route = bridge.routes.get(ses.sessionId)
+    expect(route).toEqual(expect.objectContaining({
+      channel: 'lark',
+      targetUserId: 'oc_1',
+      threadId: 'omt_1',
+      rootMessageId: 'om_root',
+      messageAppLink: 'https://example.test/thread',
+      triggerMessageId: 'om_main',
+      account: null,
+    }))
+    expect(route.topicName).toContain('飞书路由测试')
+    const todo = db.getTodo(r.todoId)
+    expect(todo.aiSessions[0].larkRoute).toEqual(route)
+  })
+
+  it('Lark: finalizeWizard does not fall back to generic route when root topic message fails', async () => {
+    const fakeLarkBot = {
+      sendMessage: vi.fn(async () => ({ ok: false, reason: 'cli_failed' })),
+    }
+    const aiWithDb = {
+      sessions: [],
+      spawnSession({ sessionId, todoId, tool }) {
+        this.sessions.push({ sessionId, todoId, tool })
+        const t = db.getTodo(todoId)
+        if (t) {
+          db.updateTodo(todoId, {
+            aiSessions: [{ sessionId, tool, status: 'running', startedAt: Date.now() }, ...(t.aiSessions || [])],
+          })
+        }
+        return { sessionId, reused: false }
+      },
+    }
+    const registerSessionRoute = vi.fn((sid, info) => bridge.routes.set(sid, info))
+    const bridgeWithSpy = { ...bridge, registerSessionRoute }
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: aiWithDb, openclaw: bridgeWithSpy, pending,
+      larkBot: fakeLarkBot,
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+    })
+
+    const r = await w2.handleInbound({
+      channel: 'lark',
+      chatId: 'oc_1',
+      threadId: null,
+      messageId: 'om_main',
+      text: '帮我做 飞书根消息失败路由测试，目录 /tmp/foo, 象限 2, Bug 修复 模板',
+    })
+
+    expect(r.action).toBe('wizard_done')
+    expect(fakeLarkBot.sendMessage).toHaveBeenCalledTimes(1)
+    const ses = aiWithDb.sessions[0]
+    expect(registerSessionRoute).not.toHaveBeenCalledWith(ses.sessionId, expect.anything())
+    expect(bridgeWithSpy.routes.has(ses.sessionId)).toBe(false)
+    const todo = db.getTodo(r.todoId)
+    expect(todo.aiSessions[0]).not.toHaveProperty('larkRoute')
+    expect(todo.aiSessions[0]).not.toHaveProperty('telegramRoute')
+  })
+
   it('Telegram: stdin proxy uses findSessionByRoute when threadId set', async () => {
     let writes = []
     const fakePty = {
@@ -472,6 +586,191 @@ describe('openclaw-wizard state machine', () => {
     expect(r.action).toBe('stdin_proxy')
     expect(r.sessionId).toBe('sess-task42')
     expect(writes[0].sid).toBe('sess-task42')
+  })
+
+  it('Lark: thread reply routes to exact PTY before pending ask_user', async () => {
+    vi.useFakeTimers()
+    const writes = []
+    const fakePty = {
+      has: (sid) => sid === 's-lark',
+      write: (sid, data) => writes.push({ sid, data }),
+    }
+    const findSessionByRoute = vi.fn(({ channel, chatId, threadId, rootMessageId }) =>
+      (channel === 'lark' && chatId === 'oc_1' && threadId === 'omt_1' && rootMessageId === 'om_root') ? 's-lark' : null)
+    const submitReply = vi.fn(() => ({ matched: true, ticket: 'unrelated', chosenIndex: 0, chosen: 'wrong route' }))
+    const fakeBridge = {
+      ...bridge,
+      findSessionByRoute,
+      getLastPushedSession: () => null,
+    }
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: ai, openclaw: fakeBridge, pending: { submitReply },
+      pty: fakePty,
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+    })
+    const r = await w2.handleInbound({
+      channel: 'lark',
+      chatId: 'oc_1',
+      threadId: 'omt_1',
+      rootMessageId: 'om_root',
+      text: '1',
+    })
+    expect(r.action).toBe('stdin_proxy')
+    expect(r.sessionId).toBe('s-lark')
+    expect(findSessionByRoute).toHaveBeenCalledWith({
+      channel: 'lark',
+      chatId: 'oc_1',
+      threadId: 'omt_1',
+      rootMessageId: 'om_root',
+    })
+    expect(submitReply).not.toHaveBeenCalled()
+    expect(writes[0]).toEqual({ sid: 's-lark', data: '1' })
+    await vi.advanceTimersByTimeAsync(80)
+    expect(writes[1]).toEqual({ sid: 's-lark', data: '\r' })
+    vi.useRealTimers()
+  })
+
+  it('Lark: ended routed session returns session_ended instead of writing PTY', async () => {
+    const writes = []
+    const fakePty = {
+      has: () => false,
+      write: (sid, data) => writes.push({ sid, data }),
+    }
+    const fakeBridge = {
+      ...bridge,
+      findSessionByRoute: ({ channel, chatId, threadId, rootMessageId }) =>
+        (channel === 'lark' && chatId === 'oc_1' && threadId === 'omt_1' && rootMessageId === 'om_root') ? 's-lark' : null,
+      getLastPushedSession: () => null,
+    }
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: ai, openclaw: fakeBridge, pending,
+      pty: fakePty,
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+    })
+    const r = await w2.handleInbound({
+      channel: 'lark',
+      chatId: 'oc_1',
+      threadId: 'omt_1',
+      rootMessageId: 'om_root',
+      text: '继续',
+    })
+    expect(r.action).toBe('session_ended')
+    expect(r.reply).toBe('这个任务已结束，请在群里重新发起任务。')
+    expect(writes).toHaveLength(0)
+  })
+
+  it('Lark: thread reply starting with new-task trigger routes to PTY instead of wizard', async () => {
+    vi.useFakeTimers()
+    const writes = []
+    const fakePty = {
+      has: (sid) => sid === 's-lark',
+      write: (sid, data) => writes.push({ sid, data }),
+    }
+    const findSessionByRoute = vi.fn(({ channel, chatId, threadId, rootMessageId }) =>
+      (channel === 'lark' && chatId === 'oc_1' && threadId === 'omt_1' && rootMessageId === 'om_root') ? 's-lark' : null)
+    const fakeBridge = {
+      ...bridge,
+      findSessionByRoute,
+      getLastPushedSession: () => null,
+    }
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: ai, openclaw: fakeBridge, pending,
+      pty: fakePty,
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+    })
+    const r = await w2.handleInbound({
+      channel: 'lark',
+      chatId: 'oc_1',
+      threadId: 'omt_1',
+      rootMessageId: 'om_root',
+      text: '帮我做 继续修复这个问题',
+    })
+    expect(r.action).toBe('stdin_proxy')
+    expect(r.sessionId).toBe('s-lark')
+    expect(r.reply).not.toContain('📁')
+    expect(r.reply).not.toContain('任务:')
+    expect(writes[0]).toEqual({ sid: 's-lark', data: '帮我做 继续修复这个问题' })
+    await vi.advanceTimersByTimeAsync(80)
+    expect(writes[1]).toEqual({ sid: 's-lark', data: '\r' })
+    vi.useRealTimers()
+  })
+
+  it('Lark: thread/root reply without exact route does not fallback to unrelated session', async () => {
+    const writes = []
+    const ai2 = {
+      sessions: new Map([
+        ['only-sess', { status: 'running', startedAt: Date.now(), lastOutputAt: Date.now() }],
+      ]),
+    }
+    const fakePty = {
+      has: (sid) => sid === 'last-sess' || sid === 'only-sess',
+      write: (sid, data) => writes.push({ sid, data }),
+    }
+    const findSessionByRoute = vi.fn(() => null)
+    const getLastPushedSession = vi.fn(() => 'last-sess')
+    const fakeBridge = {
+      ...bridge,
+      findSessionByRoute,
+      getLastPushedSession,
+    }
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: ai2, openclaw: fakeBridge, pending,
+      pty: fakePty,
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+    })
+    const r = await w2.handleInbound({
+      channel: 'lark',
+      chatId: 'oc_1',
+      threadId: 'omt_missing',
+      rootMessageId: 'om_missing',
+      text: '继续',
+    })
+    expect(r.action).toBe('session_not_found')
+    expect(r.reply).toContain('没有找到对应运行中的任务')
+    expect(findSessionByRoute).toHaveBeenCalledWith({
+      channel: 'lark',
+      chatId: 'oc_1',
+      threadId: 'omt_missing',
+      rootMessageId: 'om_missing',
+    })
+    expect(getLastPushedSession).not.toHaveBeenCalled()
+    expect(writes).toHaveLength(0)
+  })
+
+  it('Lark: thread/root reply fails closed when route lookup is unavailable', async () => {
+    const writes = []
+    const ai2 = {
+      sessions: new Map([
+        ['only-sess', { status: 'running', startedAt: Date.now(), lastOutputAt: Date.now() }],
+      ]),
+    }
+    const fakePty = {
+      has: (sid) => sid === 'last-sess' || sid === 'only-sess',
+      write: (sid, data) => writes.push({ sid, data }),
+    }
+    const submitReply = vi.fn(() => ({ matched: true, ticket: 'unrelated', chosenIndex: 0, chosen: 'wrong route' }))
+    const getLastPushedSession = vi.fn(() => 'last-sess')
+    const fakeBridge = {
+      ...bridge,
+      findSessionByRoute: undefined,
+      getLastPushedSession,
+    }
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: ai2, openclaw: fakeBridge, pending: { submitReply },
+      pty: fakePty,
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+    })
+    const r = await w2.handleInbound({
+      channel: 'lark',
+      chatId: 'oc_1',
+      rootMessageId: 'om_missing',
+      text: '帮我做 不应启动新任务',
+    })
+    expect(r.action).toBe('session_not_found')
+    expect(r.reply).toContain('没有找到对应运行中的任务')
+    expect(submitReply).not.toHaveBeenCalled()
+    expect(getLastPushedSession).not.toHaveBeenCalled()
+    expect(writes).toHaveLength(0)
   })
 
   it('PTY stdin proxy: pure fallback when no recent push and no active sessions', async () => {
@@ -1070,10 +1369,9 @@ describe('listWorkdirOptions: 默认目录 + 子目录', () => {
     })
   })
 
-  afterEach()
-  function afterEach() {
+  afterEach(() => {
     try { rmSync(tmpRoot, { recursive: true, force: true }) } catch {}
-  }
+  })
 
   it('reply 包含默认目录本身 + 所有 1 级子目录', async () => {
     const r = await wizard.handleInbound({ peer: 'u1', text: '帮我做 写个 demo' })

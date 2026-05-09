@@ -150,8 +150,10 @@ export function createOpenClawBridge({
   loadTelegramToken = loadTelegramTokenFromOpenClaw,  // 测试用：可 mock null
   telegramSender = sendViaTelegramAPI,                // 测试用：可 mock fake fetch
   telegramBot: initialTelegramBot = null,              // 可选：用于 sendDocument 附件
+  larkBot: initialLarkBot = null,
 } = {}) {
   let telegramBot = initialTelegramBot
+  let larkBot = initialLarkBot
   let topicGoneHandler = null   // ({chatId, threadId}) → void：sendMessage 拿到 topic 已删错时调用
   if (typeof getConfig !== 'function') throw new Error('getConfig_required')
 
@@ -185,15 +187,17 @@ export function createOpenClawBridge({
     sendTimestamps.push(nowMs())
   }
 
-  function registerSessionRoute(sessionId, { targetUserId, account, channel, threadId, topicName, triggerMessageId } = {}) {
+  function registerSessionRoute(sessionId, { targetUserId, account, channel, threadId, rootMessageId, topicName, triggerMessageId, messageAppLink } = {}) {
     if (!sessionId || !targetUserId) return
     sessionRoutes.set(sessionId, {
       targetUserId,
       account: account || null,
       channel: channel || getOpenClawConfig().channel || 'openclaw-weixin',
       threadId: threadId != null ? threadId : null,    // ← Telegram Topic 路由用
+      rootMessageId: rootMessageId || null,
       topicName: topicName || null,                     // ← SessionEnd 改名 ✅ 用
       triggerMessageId: triggerMessageId != null ? triggerMessageId : null,  // D 方案：reaction 加在用户触发消息上
+      messageAppLink: messageAppLink || null,
     })
   }
 
@@ -217,6 +221,11 @@ export function createOpenClawBridge({
       targetUserId: oc.targetUserId,
       account: null,
       channel: oc.channel || 'openclaw-weixin',
+      threadId: null,
+      rootMessageId: null,
+      topicName: null,
+      triggerMessageId: null,
+      messageAppLink: null,
     }
   }
 
@@ -237,6 +246,22 @@ export function createOpenClawBridge({
     const effectiveAccount = account || route?.account
 
     if (!effectiveTarget) return { ok: false, reason: 'misconfigured', detail: 'targetUserId missing' }
+
+    if (effectiveChannel === 'lark') {
+      const rootMessageId = route?.rootMessageId || null
+      if (!rootMessageId) {
+        logger.warn?.(`[openclaw-bridge] refuse lark send: sid=${sessionId} has no rootMessageId`)
+        return { ok: false, reason: 'lark_root_message_missing' }
+      }
+      if (!larkBot?.replyInThread) return { ok: false, reason: 'lark_bot_not_running' }
+      const r = await larkBot.replyInThread({ rootMessageId, text: message })
+      if (r.ok) {
+        recordSend()
+        if (sessionId && rawTarget) lastPushByPeer.set(String(rawTarget), { sessionId, sentAt: Date.now() })
+        return { ok: true, payload: r.payload, fast: true }
+      }
+      return { ok: false, reason: r.reason || 'lark_send_failed', detail: r.detail || r.stderr }
+    }
 
     // ─── Telegram 快路径：直接 HTTPS POST Bot API（~1-3s vs CLI 30+s 冷启动） ───
     if (effectiveChannel === 'telegram') {
@@ -426,15 +451,20 @@ export function createOpenClawBridge({
   }
 
   /**
-   * 反查：找绑定到 (chatId, threadId) 的 session。
-   * Telegram Topic 路由用：用户在 task topic 里回话时知道写哪个 PTY。
+   * 反查：找绑定到 (chatId, threadId/rootMessageId) 的 session。
+   * Telegram Topic / Lark thread 路由用：用户在 task topic/thread 里回话时知道写哪个 PTY。
    * 返回 sessionId 或 null。
    */
-  function findSessionByRoute({ chatId, threadId } = {}) {
+  function findSessionByRoute({ channel = null, chatId, threadId = null, rootMessageId = null } = {}) {
     if (!chatId) return null
     const targetStr = String(chatId)
     for (const [sid, info] of sessionRoutes) {
+      if (channel && info?.channel !== channel) continue
       if (String(info?.targetUserId || '') !== targetStr) continue
+      if (rootMessageId) {
+        if (info?.rootMessageId === rootMessageId) return sid
+        continue
+      }
       if ((info?.threadId || null) !== (threadId || null)) continue
       return sid
     }
@@ -485,6 +515,7 @@ export function createOpenClawBridge({
   }
 
   function setTelegramBot(bot) { telegramBot = bot }
+  function setLarkBot(bot) { larkBot = bot || null }
   function setTopicGoneHandler(fn) { topicGoneHandler = typeof fn === 'function' ? fn : null }
   function listSessionRoutes() {
     return Array.from(sessionRoutes.entries()).map(([sessionId, info]) => ({ sessionId, ...info }))
@@ -504,6 +535,7 @@ export function createOpenClawBridge({
     findSessionsByTarget,
     findSessionByRoute,
     setTelegramBot,
+    setLarkBot,
     setTopicGoneHandler,
     listSessionRoutes,
     hasExplicitRoute,

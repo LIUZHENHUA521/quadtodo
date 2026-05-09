@@ -3,8 +3,29 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadConfig } from "../src/config.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { loadConfig, saveConfig } from "../src/config.js";
+
+const larkBotMockState = vi.hoisted(() => ({
+	instances: [],
+	nextBot: null,
+}));
+
+vi.mock("../src/lark-bot.js", () => ({
+	createLarkBot: vi.fn(() => {
+		const bot = larkBotMockState.nextBot || {
+			start: vi.fn(async () => ({ ok: true, action: "started" })),
+			stop: vi.fn(async () => ({ ok: true })),
+			replyInThread: vi.fn(async () => ({ ok: true, payload: { message_id: "om_mock" } })),
+			handleEvent: vi.fn(async () => ({ ok: true })),
+			describe: vi.fn(() => ({ enabled: true, running: true })),
+		};
+		larkBotMockState.nextBot = null;
+		larkBotMockState.instances.push(bot);
+		return bot;
+	}),
+}));
+
 import {
 	buildNativeResumeLaunch,
 	buildNativeResumeMarker,
@@ -60,6 +81,8 @@ describe("server", () => {
 		mkdirSync(join(workRootDir, "client"));
 		mkdirSync(join(workRootDir, "server"));
 		loadConfig({ rootDir: configRootDir });
+		larkBotMockState.instances = [];
+		larkBotMockState.nextBot = null;
 		srv = createServer({
 			dbFile: ":memory:",
 			logDir,
@@ -77,8 +100,8 @@ describe("server", () => {
 			inspectHooks: () => hookStatus,
 		});
 	});
-	afterEach(() => {
-		srv.close();
+	afterEach(async () => {
+		await srv.close();
 	});
 
 	it("GET /api/status returns ok + version + activeSessions", async () => {
@@ -103,11 +126,17 @@ describe("server", () => {
 		expect(r.status).toBe(200);
 	});
 
-	it("GET /api/config returns current config", async () => {
+	it("GET /api/config returns current config including lark defaults", async () => {
 		const r = await request(srv.app).get("/api/config");
 		expect(r.status).toBe(200);
 		expect(r.body.ok).toBe(true);
 		expect(r.body.config.defaultTool).toBe("claude");
+		expect(r.body.config.lark).toMatchObject({
+			enabled: false,
+			chatId: "",
+			requireThreadGroup: true,
+			eventSubscribeEnabled: true,
+		});
 		expect(r.body.toolDiagnostics.claude.installHint).toContain(
 			"@anthropic-ai/claude-code",
 		);
@@ -124,6 +153,7 @@ describe("server", () => {
 				},
 			});
 		expect(update.status).toBe(200);
+		expect(update.body.runtimeApplied.larkRestart).toEqual({ applied: false });
 
 		const todo = srv.db.createTodo({ title: "T", quadrant: 1 });
 		await request(srv.app)
@@ -154,6 +184,183 @@ describe("server", () => {
 		expect(update.body.toolDiagnostics.codex.command).toBe("codex-w");
 		expect(update.body.toolDiagnostics.codex.configuredBin).toBe(null);
 		expect(update.body.toolDiagnostics.codex.bin).not.toBe(staleBin);
+	});
+
+	it("PUT /api/config persists lark edits and reports runtime restart", async () => {
+		const update = await request(srv.app)
+			.put("/api/config")
+			.send({
+				lark: {
+					enabled: false,
+					chatId: "oc_test_chat",
+					requireThreadGroup: false,
+				},
+			});
+
+		expect(update.status).toBe(200);
+		expect(update.body.config.lark).toMatchObject({
+			enabled: false,
+			chatId: "oc_test_chat",
+			requireThreadGroup: false,
+			eventSubscribeEnabled: true,
+		});
+		expect(update.body.runtimeApplied.larkRestart).toEqual({ applied: true });
+		expect(loadConfig({ rootDir: configRootDir }).lark.chatId).toBe("oc_test_chat");
+	});
+
+	it("rehydrates persisted lark session routes on startup", async () => {
+		const dbFile = join(mkdtempSync(join(tmpdir(), "quadtodo-db-rehydrate-")), "db.sqlite");
+		const srv1 = createServer({
+			dbFile,
+			logDir: mkdtempSync(join(tmpdir(), "quadtodo-log-rehydrate1-")),
+			pty: new FakePty(),
+			defaultCwd: workRootDir,
+			configRootDir,
+		});
+		const t = srv1.db.createTodo({ title: "Lark routed", quadrant: 1 });
+		srv1.db.updateTodo(t.id, {
+			status: "ai_running",
+			aiSessions: [{
+				sessionId: "ai-old-lark1",
+				tool: "codex",
+				nativeSessionId: "native-lark-1",
+				cwd: workRootDir,
+				prompt: "continue",
+				status: "running",
+				larkRoute: {
+					channel: "lark",
+					targetUserId: "oc_lark_chat",
+					rootMessageId: "om_root_1",
+					messageAppLink: "https://example.test/message",
+				},
+			}],
+		});
+		await srv1.close();
+
+		const srv2 = createServer({
+			dbFile,
+			logDir: mkdtempSync(join(tmpdir(), "quadtodo-log-rehydrate2-")),
+			pty: new FakePty(),
+			defaultCwd: workRootDir,
+			configRootDir,
+		});
+		try {
+			const [route] = srv2.openclawBridge.listSessionRoutes();
+			expect(route).toMatchObject({
+				channel: "lark",
+				targetUserId: "oc_lark_chat",
+				rootMessageId: "om_root_1",
+				messageAppLink: "https://example.test/message",
+			});
+			expect(route.sessionId).not.toBe("ai-old-lark1");
+		} finally {
+			await srv2.close();
+		}
+	});
+
+	it("returns structured lark_bot_not_running for lark routes when lark is disabled", async () => {
+		saveConfig({
+			...loadConfig({ rootDir: configRootDir }),
+			openclaw: {
+				enabled: true,
+				channel: "lark",
+				targetUserId: "oc_lark_chat",
+			},
+			lark: {
+				enabled: false,
+				chatId: "oc_lark_chat",
+			},
+		}, { rootDir: configRootDir });
+		await srv.close();
+
+		srv = createServer({
+			dbFile: ":memory:",
+			logDir: mkdtempSync(join(tmpdir(), "quadtodo-log-lark-disabled-")),
+			pty: new FakePty(),
+			defaultCwd: workRootDir,
+			configRootDir,
+		});
+		srv.openclawBridge.registerSessionRoute("sid-disabled-lark", {
+			channel: "lark",
+			targetUserId: "oc_lark_chat",
+			rootMessageId: "om_root_disabled",
+		});
+
+		await expect(srv.openclawBridge.postText({
+			sessionId: "sid-disabled-lark",
+			message: "hello",
+		})).resolves.toMatchObject({
+			ok: false,
+			reason: "lark_bot_not_running",
+		});
+	});
+
+	it("close awaits and clears the running Lark stack from OpenClaw bridge", async () => {
+		const stopStarted = [];
+		let releaseStop;
+		const stopFinished = new Promise((resolve) => { releaseStop = resolve; });
+		const larkBot = {
+			start: vi.fn(async () => ({ ok: true, action: "started" })),
+			stop: vi.fn(async () => {
+				stopStarted.push(true);
+				await stopFinished;
+				return { ok: true };
+			}),
+			replyInThread: vi.fn(async () => ({ ok: true, payload: { message_id: "om_before_close" } })),
+			handleEvent: vi.fn(async () => ({ ok: true })),
+			describe: vi.fn(() => ({ enabled: true, running: true })),
+		};
+		larkBotMockState.nextBot = larkBot;
+		saveConfig({
+			...loadConfig({ rootDir: configRootDir }),
+			openclaw: {
+				enabled: true,
+				channel: "lark",
+				targetUserId: "oc_lark_chat",
+			},
+			lark: {
+				enabled: true,
+				chatId: "oc_lark_chat",
+				eventSubscribeEnabled: true,
+			},
+		}, { rootDir: configRootDir });
+		await srv.close();
+
+		srv = createServer({
+			dbFile: ":memory:",
+			logDir: mkdtempSync(join(tmpdir(), "quadtodo-log-lark-close-")),
+			pty: new FakePty(),
+			defaultCwd: workRootDir,
+			configRootDir,
+		});
+		srv.openclawBridge.registerSessionRoute("sid-close-lark", {
+			channel: "lark",
+			targetUserId: "oc_lark_chat",
+			rootMessageId: "om_root_close",
+		});
+		await expect(srv.openclawBridge.postText({
+			sessionId: "sid-close-lark",
+			message: "before close",
+		})).resolves.toMatchObject({ ok: true });
+
+		const closePromise = srv.close();
+		await vi.waitFor(() => expect(stopStarted).toHaveLength(1));
+		await expect(srv.openclawBridge.postText({
+			sessionId: "sid-close-lark",
+			message: "during close",
+		})).resolves.toMatchObject({
+			ok: false,
+			reason: "lark_bot_not_running",
+		});
+		let closeResolved = false;
+		closePromise.then(() => { closeResolved = true; });
+		await Promise.resolve();
+		expect(closeResolved).toBe(false);
+
+		releaseStop();
+		await closePromise;
+		expect(larkBot.stop).toHaveBeenCalledTimes(1);
+		expect(closeResolved).toBe(true);
 	});
 
 	it("PUT /api/config persists pricing edits and merges partial patches", async () => {
