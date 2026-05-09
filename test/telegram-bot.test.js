@@ -358,6 +358,73 @@ describe('telegram-bot inbound dispatch', () => {
     expect(sentMessages[0].message_thread_id).toBe(42)
   })
 
+  it('forwards (sessionId, chatId, messageId) to reactionTracker.noteUserMessage when wizard returns sessionId', async () => {
+    const noteCalls = []
+    const reactionTracker = {
+      noteUserMessage: vi.fn(async (args) => { noteCalls.push(args) }),
+    }
+    const fetchFn = makeFetchSeq([{
+      body: { ok: true, result: [{
+        update_id: 1,
+        message: {
+          message_id: 7777,
+          chat: { id: '-100authorized' },
+          text: 'do something',
+          from: { id: '999' },
+          message_thread_id: 88,
+        },
+      }] },
+    }])
+    const bot = createTelegramBot({
+      getConfig: () => ({ telegram: { botToken: 'X', allowedChatIds: ['-100authorized'] } }),
+      wizard: makeWizard(async () => ({ sessionId: 'sid-xyz' })),
+      reactionTracker,
+      fetchFn, offsetFile,
+      logger: { warn() {}, info() {} },
+    })
+    await bot.pollOnce()
+    // 异步 fire-and-forget；让 microtask 跑完
+    await new Promise((r) => setImmediate(r))
+    expect(noteCalls).toEqual([{ sessionId: 'sid-xyz', chatId: '-100authorized', messageId: 7777 }])
+  })
+
+  it('skips reactionTracker.noteUserMessage when wizard does not return sessionId', async () => {
+    const reactionTracker = { noteUserMessage: vi.fn(async () => {}) }
+    const fetchFn = makeFetchSeq([{
+      body: { ok: true, result: [{
+        update_id: 1,
+        message: { message_id: 1, chat: { id: '-100authorized' }, text: 'hi', from: { id: '999' } },
+      }] },
+    }])
+    const bot = createTelegramBot({
+      getConfig: () => ({ telegram: { botToken: 'X', allowedChatIds: ['-100authorized'] } }),
+      wizard: makeWizard(async () => ({ reply: 'pong' })),
+      reactionTracker,
+      fetchFn, offsetFile,
+      logger: { warn() {}, info() {} },
+    })
+    await bot.pollOnce()
+    await new Promise((r) => setImmediate(r))
+    expect(reactionTracker.noteUserMessage).not.toHaveBeenCalled()
+  })
+
+  it('does not throw when reactionTracker is null and wizard returns sessionId', async () => {
+    const fetchFn = makeFetchSeq([{
+      body: { ok: true, result: [{
+        update_id: 1,
+        message: { message_id: 9, chat: { id: '-100authorized' }, text: 'go', from: { id: '999' } },
+      }] },
+    }])
+    const bot = createTelegramBot({
+      getConfig: () => ({ telegram: { botToken: 'X', allowedChatIds: ['-100authorized'] } }),
+      wizard: makeWizard(async () => ({ sessionId: 'sid-q' })),
+      reactionTracker: null,
+      fetchFn, offsetFile,
+      logger: { warn() {}, info() {} },
+    })
+    await expect(bot.pollOnce()).resolves.not.toThrow()
+  })
+
   it('does NOT send reply when wizard returns empty string (silent stdin proxy)', async () => {
     const sentMessages = []
     const fetchFn = async (url, opts) => {

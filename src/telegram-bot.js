@@ -118,6 +118,7 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)) }
 export function createTelegramBot({
   getConfig,
   wizard,
+  reactionTracker = null,
   logger = console,
   fetchFn,
   offsetFile = DEFAULT_OFFSET_FILE,
@@ -624,6 +625,16 @@ export function createTelegramBot({
       logger.warn?.(`[telegram-bot] wizard.handleInbound threw: ${e.message}`)
       return
     }
+    // wizard 返回 sessionId 表示这条消息触发了一轮 PTY 处理 → 通知 reactionTracker
+    // 加 ✍ reaction，并记录 (chatId, messageId)；等 Stop hook 触发 clearReactionsForSession 时统一删
+    if (result?.sessionId && reactionTracker?.noteUserMessage) {
+      reactionTracker.noteUserMessage({
+        sessionId: result.sessionId,
+        chatId,
+        messageId: msg.message_id,
+      }).catch((e) => logger.warn?.(`[telegram-bot] reactionTracker.noteUserMessage failed: ${e.message}`))
+    }
+
     // 图片下载失败时给用户提个示：我们用 caption 当文本送了，但图丢了
     if (photoDownloadFailed && result?.action === 'stdin_proxy') {
       try {
