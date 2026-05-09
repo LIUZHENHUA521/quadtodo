@@ -232,7 +232,7 @@ todo
   二、状态感知 & 通知（中价值）                                                                                                                     
                                                                                                                                                     
   4. 桌面通知 + 系统托盘                                                                                                                            
-    - pending_confirm 状态触发 macOS 原生通知（不用只靠飞书/企微 webhook）
+    - pending_confirm 状态触发 macOS 原生通知
     - 菜单栏图标显示"有 N 个待交互会话"徽标                                                                                                         
   5. 静默工作时长统计                                                                                                                               
     - 记录每个会话实际运行时长、token 消耗估算（解析 Claude 输出里的 usage）                                                                        

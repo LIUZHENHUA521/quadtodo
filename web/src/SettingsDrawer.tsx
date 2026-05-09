@@ -135,13 +135,6 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           codexBin: result.config.tools.codex.bin,
           cursorCommand: joinCommandLine(result.config.tools.cursor.command, result.config.tools.cursor.args),
           cursorBin: result.config.tools.cursor.bin,
-          webhookEnabled: result.config.webhook.enabled,
-          webhookProvider: result.config.webhook.provider,
-          webhookUrl: result.config.webhook.url,
-          webhookKeywords: result.config.webhook.keywords.join('\n'),
-          webhookCooldownMs: result.config.webhook.cooldownMs,
-          notifyOnPendingConfirm: result.config.webhook.notifyOnPendingConfirm,
-          notifyOnKeywordMatch: result.config.webhook.notifyOnKeywordMatch,
           telegramEnabled: result.config.telegram?.enabled ?? false,
           telegramBotToken: result.config.telegram?.botTokenMasked || '',
           telegramSupergroupId: result.config.telegram?.supergroupId || '',
@@ -191,18 +184,6 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           claude: buildToolPatch('claude', values.claudeCommand || '', values.claudeBin || ''),
           codex: buildToolPatch('codex', values.codexCommand || '', values.codexBin || ''),
           cursor: buildToolPatch('cursor', values.cursorCommand || '', values.cursorBin || ''),
-        },
-        webhook: {
-          enabled: Boolean(values.webhookEnabled),
-          provider: values.webhookProvider || 'wecom',
-          url: values.webhookUrl || '',
-          keywords: String(values.webhookKeywords || '')
-            .split('\n')
-            .map((item: string) => item.trim())
-            .filter(Boolean),
-          cooldownMs: Number(values.webhookCooldownMs) || 180000,
-          notifyOnPendingConfirm: values.notifyOnPendingConfirm !== false,
-          notifyOnKeywordMatch: values.notifyOnKeywordMatch !== false,
         },
         telegram: {
           enabled: Boolean(values.telegramEnabled),
@@ -498,53 +479,6 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           extra="端口会保存到配置文件，重启 quadtodo 后生效。"
         >
           <Input type="number" min={1} max={65535} />
-        </Form.Item>
-
-        <Paragraph style={{ marginTop: 24, marginBottom: 12 }}>
-          <Text strong>Webhook 通知</Text>
-        </Paragraph>
-
-        <Form.Item name="webhookEnabled" label="启用机器人通知" valuePropName="checked">
-          <Switch />
-        </Form.Item>
-
-        <Form.Item name="webhookProvider" label="机器人类型">
-          <Radio.Group>
-            <Radio.Button value="wecom">企业微信</Radio.Button>
-            <Radio.Button value="feishu">飞书</Radio.Button>
-          </Radio.Group>
-        </Form.Item>
-
-        <Form.Item
-          name="webhookUrl"
-          label="Webhook 地址"
-          extra="当 AI 进入待人工确认环节时，会向这里发送提醒。"
-        >
-          <Input placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." />
-        </Form.Item>
-
-        <Form.Item name="notifyOnPendingConfirm" label="pending_confirm 时通知" valuePropName="checked">
-          <Switch />
-        </Form.Item>
-
-        <Form.Item name="notifyOnKeywordMatch" label="关键词命中时兜底通知" valuePropName="checked">
-          <Switch />
-        </Form.Item>
-
-        <Form.Item
-          name="webhookKeywords"
-          label="补充关键词"
-          extra="每行一个关键词或正则。内置关键词会始终生效，这里是追加兜底。"
-        >
-          <Input.TextArea rows={4} placeholder={'Do you want to proceed\n是否继续\n按回车确认'} />
-        </Form.Item>
-
-        <Form.Item
-          name="webhookCooldownMs"
-          label="通知节流毫秒数"
-          extra="同一会话在这个时间窗口内不会重复推送相同原因。"
-        >
-          <Input type="number" min={1000} step={1000} />
         </Form.Item>
 
         <Paragraph style={{ marginTop: 24, marginBottom: 12 }}>

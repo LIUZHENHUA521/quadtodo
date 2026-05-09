@@ -112,7 +112,7 @@ export interface AppConfig {
     codex: { command: string; bin: string; args: string[] }
     cursor: { command: string; bin: string; args: string[] }
   }
-  webhook: {
+  webhook?: {
     enabled: boolean
     provider: 'wecom' | 'feishu'
     url: string

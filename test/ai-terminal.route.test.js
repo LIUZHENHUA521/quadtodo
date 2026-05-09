@@ -44,7 +44,6 @@ function makeApp(opts = {}) {
     logDir,
     defaultCwd: opts.defaultCwd,
     getWebhookConfig: opts.getWebhookConfig,
-    notifier: opts.notifier,
     onSessionEnded: opts.onSessionEnded,
     onSessionSpawned: opts.onSessionSpawned,
   })
@@ -631,15 +630,7 @@ describe('routes/ai-terminal', () => {
   })
 
   it('resize applies while session is pending_confirm', async () => {
-    ctx = makeApp({
-      notifier: {
-        detectConfirmMatch: () => 'Press Enter to confirm',
-        detectKeywordMatch: () => null,
-        canNotifyPendingConfirm: () => false,
-        notify: vi.fn(),
-      },
-      getWebhookConfig: () => ({ enabled: true }),
-    })
+    ctx = makeApp()
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
     const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
       .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
@@ -856,39 +847,57 @@ describe('routes/ai-terminal', () => {
     expect(session.outputHistory.length).toBeLessThan(10)
   })
 
-  it('confirm-like output marks todo as ai_pending and notifies', async () => {
-    const notify = vi.fn(async () => true)
-    ctx = makeApp({
-      notifier: {
-        detectConfirmMatch: () => 'Press Enter to confirm',
-        detectKeywordMatch: () => null,
-        canNotifyPendingConfirm: () => true,
-        notify,
-      },
-      getWebhookConfig: () => ({ enabled: true }),
-    })
+  it('confirm-like output marks todo as ai_pending and broadcasts pending_confirm', async () => {
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
     const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
       .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+    const sent = []
+    const ws = { readyState: 1, OPEN: 1, send: (d) => sent.push(JSON.parse(d)) }
+    ctx.ait.addBrowser(body.sessionId, ws)
 
     ctx.pty.emit('output', { sessionId: body.sessionId, data: 'Press Enter to confirm' })
 
     const updated = ctx.db.getTodo(todo.id)
     expect(updated.status).toBe('ai_pending')
     expect(updated.aiSession.status).toBe('pending_confirm')
-    expect(notify).toHaveBeenCalledTimes(1)
+    expect(sent).toContainEqual(expect.objectContaining({
+      type: 'pending_confirm',
+      matchedKeyword: 'Press Enter to confirm',
+    }))
+  })
+
+  it('keyword-like output does not send webhook notifications from legacy config', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true })
+    try {
+      ctx = makeApp({
+        getWebhookConfig: () => ({
+          enabled: true,
+          provider: 'wecom',
+          url: 'https://example.test/webhook',
+          keywords: ['WAKE_ME'],
+          cooldownMs: 1,
+          notifyOnPendingConfirm: true,
+          notifyOnKeywordMatch: true,
+        }),
+      })
+      const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+      const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+        .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+
+      ctx.pty.emit('output', { sessionId: body.sessionId, data: 'WAKE_ME' })
+      await Promise.resolve()
+      await new Promise(resolve => setImmediate(resolve))
+      await Promise.resolve()
+
+      expect(fetchSpy).not.toHaveBeenCalled()
+      expect(ctx.ait.sessions.get(body.sessionId).status).toBe('running')
+    } finally {
+      fetchSpy.mockRestore()
+    }
   })
 
   it('user input clears pending_confirm state and broadcasts pending_cleared', async () => {
-    ctx = makeApp({
-      notifier: {
-        detectConfirmMatch: () => 'Press Enter to confirm',
-        detectKeywordMatch: () => null,
-        canNotifyPendingConfirm: () => false,
-        notify: vi.fn(),
-      },
-      getWebhookConfig: () => ({ enabled: true }),
-    })
+    ctx = makeApp()
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
     const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
       .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
@@ -919,15 +928,7 @@ describe('routes/ai-terminal', () => {
   })
 
   it('pending_confirm can re-trigger after user has cleared it', async () => {
-    ctx = makeApp({
-      notifier: {
-        detectConfirmMatch: () => 'Press Enter to confirm',
-        detectKeywordMatch: () => null,
-        canNotifyPendingConfirm: () => false,
-        notify: vi.fn(),
-      },
-      getWebhookConfig: () => ({ enabled: true }),
-    })
+    ctx = makeApp()
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
     const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
       .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
@@ -947,15 +948,7 @@ describe('routes/ai-terminal', () => {
   })
 
   it('non-decisive keystrokes do not clear pending_confirm (avoid border-width jitter on every keypress)', async () => {
-    ctx = makeApp({
-      notifier: {
-        detectConfirmMatch: () => 'Press Enter to confirm',
-        detectKeywordMatch: () => null,
-        canNotifyPendingConfirm: () => false,
-        notify: vi.fn(),
-      },
-      getWebhookConfig: () => ({ enabled: true }),
-    })
+    ctx = makeApp()
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
     const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
       .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })

@@ -441,7 +441,6 @@ export function createServer(opts = {}) {
 			process.cwd(),
 		tools: tools || resolveToolsConfig(initialConfig?.tools),
 		defaultTool: initialConfig?.defaultTool || "claude",
-		webhook: initialConfig?.webhook || null,
 	};
 	const pty =
 		injectedPty || new PtyManager({ tools: runtimeConfig.tools || {} });
@@ -455,7 +454,6 @@ export function createServer(opts = {}) {
 		pty,
 		logDir,
 		getDefaultCwd: () => runtimeConfig.defaultCwd,
-		getWebhookConfig: () => runtimeConfig.webhook,
 		onSessionSpawned: (info) => aiSessionHooks.onSessionSpawned(info),
 		onSessionEnded: (info) => aiSessionHooks.onSessionEnded(info),
 	});
@@ -554,7 +552,6 @@ export function createServer(opts = {}) {
 			runtimeConfig.defaultCwd = next.defaultCwd || runtimeConfig.defaultCwd;
 			runtimeConfig.defaultTool = next.defaultTool || runtimeConfig.defaultTool;
 			runtimeConfig.tools = resolveToolsConfig(next.tools);
-			runtimeConfig.webhook = next.webhook || runtimeConfig.webhook;
 			pty.tools = runtimeConfig.tools;
 
 			// 触发 bot stack 热重启

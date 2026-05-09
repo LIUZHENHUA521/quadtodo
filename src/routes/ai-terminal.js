@@ -3,12 +3,41 @@ import { Router } from 'express'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import pidusage from 'pidusage'
-import { createNotifier } from '../notifier.js'
 
 const MAX_OUTPUT_BUFFER = 512 * 1024
 const CLEANUP_MS = 30 * 60_000
 const MIN_RESIZE_COLS = 30
 const TERMINAL_RESIZE_STATUSES = new Set(['done', 'failed', 'stopped'])
+const DEFAULT_CONFIRM_PATTERNS = [
+  /Press Enter to confirm/i,
+  /Do you want to proceed/i,
+  /Do you want to /i,
+  /Continue\?/i,
+  /Proceed\?/i,
+  /\(y\/n\)/i,
+  /\[Y\/n\]/i,
+  /\[yes\/no\]/i,
+  /确认/i,
+  /是否继续/i,
+  /按回车确认/i,
+]
+
+function compactTerminalText(text = '') {
+  return String(text)
+    .replace(/\x1b\[[0-9;?]*[A-Za-z~]/g, '')
+    .replace(/\x1b\][^\x07]*\x07/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function detectConfirmMatch(text) {
+  const haystack = compactTerminalText(text)
+  if (!haystack) return null
+  for (const pattern of DEFAULT_CONFIRM_PATTERNS) {
+    if (pattern.test(haystack)) return pattern.source
+  }
+  return null
+}
 
 function isValidResizeSize(cols, rows) {
   return Number.isFinite(cols) && Number.isFinite(rows) && cols >= MIN_RESIZE_COLS && rows > 0
@@ -18,14 +47,13 @@ function canResizeSession(session) {
   return session && !TERMINAL_RESIZE_STATUSES.has(session.status)
 }
 
-export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, getWebhookConfig, notifier: injectedNotifier, onSessionSpawned = null, onSessionEnded = null }) {
+export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, onSessionSpawned = null, onSessionEnded = null }) {
   /** @type {Map<string, any>} */
   const sessions = new Map()
   /** @type {Map<string, string>} */
   const todoSessionMap = new Map()
   /** @type {Map<string, string>} */
   const nativeSessionMap = new Map()
-  const notifier = injectedNotifier || createNotifier({ getWebhookConfig })
 
   function resolveSessionCwd(requestedCwd) {
     const fallback = getDefaultCwd?.() || defaultCwd || process.env.HOME || process.cwd()
@@ -120,7 +148,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
     session.lastOutputAt = Date.now()
     session.outputBytesTotal = (session.outputBytesTotal || 0) + data.length
 
-    const confirmMatch = notifier.detectConfirmMatch(session.recentOutput)
+    const confirmMatch = detectConfirmMatch(session.recentOutput)
     if (confirmMatch && session.status !== 'pending_confirm') {
       session.status = 'pending_confirm'
       const todo = db.getTodo(session.todoId)
@@ -142,35 +170,6 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, g
       }
       const snippet = session.recentOutput.slice(-500)
       broadcastToSession(session, { type: 'pending_confirm', snippet, matchedKeyword: confirmMatch })
-      if (notifier.canNotifyPendingConfirm()) {
-        void notifier.notify({
-          sessionId,
-          todoTitle: todo?.title,
-          tool: session.tool,
-          cwd: session.cwd,
-          reason: 'pending_confirm',
-          matchedKeyword: confirmMatch,
-          snippet,
-        }).catch((e) => {
-          console.warn('[ai-terminal] pending_confirm webhook failed:', e.message)
-        })
-      }
-    } else {
-      const keywordMatch = notifier.detectKeywordMatch(session.recentOutput)
-      if (keywordMatch) {
-        const todo = db.getTodo(session.todoId)
-        void notifier.notify({
-          sessionId,
-          todoTitle: todo?.title,
-          tool: session.tool,
-          cwd: session.cwd,
-          reason: 'keyword_match',
-          matchedKeyword: keywordMatch,
-          snippet: session.recentOutput.slice(-500),
-        }).catch((e) => {
-          console.warn('[ai-terminal] keyword webhook failed:', e.message)
-        })
-      }
     }
     broadcastToSession(session, { type: 'output', data })
   })

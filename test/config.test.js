@@ -175,7 +175,7 @@ describe("config", () => {
 		expect(result.claude.bin).not.toBe("/tmp/claude");
 	});
 
-	it("loadConfig normalizes webhook config shape", async () => {
+	it("loadConfig preserves legacy webhook config compatibility", async () => {
 		writeFileSync(
 			join(tmpRoot, "config.json"),
 			JSON.stringify({
