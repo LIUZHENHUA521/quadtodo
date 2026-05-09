@@ -15,6 +15,8 @@ import { PRESET_LABELS, PRESET_ORDER, TerminalPresetName, TERMINAL_PRESETS } fro
 import {
   getBrowserNotificationPermission,
   shouldSendTurnDoneSystemNotification,
+  TURN_DONE_NOTIFICATION_BUTTON_LABEL,
+  TURN_DONE_NOTIFICATION_BUTTON_STYLE,
   TURN_DONE_TEXT,
   BrowserNotificationPermission,
 } from './terminalTurnNotifications'
@@ -924,11 +926,12 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         {notificationPermission === 'default' && (
           <Tooltip title="页面隐藏或窗口失焦时，用浏览器系统通知提醒 Claude 回复完成">
             <Button
+              type="text"
               size="small"
               onClick={requestBrowserNotifications}
-              style={{ height: 22, paddingInline: 8 }}
+              style={TURN_DONE_NOTIFICATION_BUTTON_STYLE}
             >
-              开启通知
+              {TURN_DONE_NOTIFICATION_BUTTON_LABEL}
             </Button>
           </Tooltip>
         )}

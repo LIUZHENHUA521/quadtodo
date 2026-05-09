@@ -9,13 +9,18 @@ import { createOpenClawHookRouter } from '../src/routes/openclaw-hook.js'
 
 function makeFakeBridge({ sendOk = true, sendReason = null, route = null, explicitRoute = route != null } = {}) {
   const sent = []
+  const routes = new Map()
   return {
     sent,
+    routes,
     isEnabled: () => true,
-    hasExplicitRoute: vi.fn(() => explicitRoute),
-    resolveRoute: vi.fn(() => route),
+    hasExplicitRoute: vi.fn((sessionId) => Boolean(sessionId && routes.has(sessionId)) || explicitRoute),
+    resolveRoute: vi.fn((sessionId) => routes.get(sessionId) || route),
+    registerSessionRoute: vi.fn((sessionId, routeInfo) => {
+      routes.set(sessionId, routeInfo)
+    }),
     postText: vi.fn(async ({ sessionId, message, replyMarkup }) => {
-      sent.push({ sessionId, message, replyMarkup })
+      sent.push({ sessionId, message, replyMarkup, route: routes.get(sessionId) || route })
       if (sendOk) return { ok: true }
       return { ok: false, reason: sendReason || 'cli_failed' }
     }),
@@ -584,6 +589,114 @@ describe('openclaw-hook handler', () => {
     await handler.handle({ event: 'session-end', sessionId: 's1', todoId: 't1' })
     const r = await handler.handle({ event: 'session-end', sessionId: 's1', todoId: 't1' })
     expect(r.action).toBe('sent')
+  })
+
+  it('restores a persisted Telegram route before sending a Stop hook', async () => {
+    const sessionId = 'ai-1778306858264-mgad'
+    const telegramRoute = {
+      targetUserId: '-1003908174749',
+      threadId: 526,
+      topicName: '#td13 你好',
+      channel: 'telegram',
+    }
+    const todo = db.createTodo({
+      title: '你好',
+      quadrant: 2,
+      status: 'ai_running',
+      aiSessions: [{
+        sessionId,
+        tool: 'claude',
+        status: 'running',
+        telegramRoute,
+      }],
+    })
+    bridge = makeFakeBridge({ explicitRoute: false })
+    handler = createOpenClawHookHandler({ db, openclaw: bridge })
+
+    const r = await handler.handle({
+      event: 'stop',
+      sessionId,
+      todoId: todo.id,
+      todoTitle: todo.title,
+    })
+
+    expect(r.ok).toBe(true)
+    expect(r.action).toBe('sent')
+    expect(bridge.registerSessionRoute).toHaveBeenCalledWith(sessionId, telegramRoute)
+    expect(bridge.sent).toHaveLength(1)
+    expect(bridge.sent[0].route).toEqual(telegramRoute)
+  })
+
+  it('rejects a persisted Telegram route with an empty thread id', async () => {
+    const sessionId = 'ai-1778306858264-bad-thread'
+    const todo = db.createTodo({
+      title: 'bad thread route',
+      quadrant: 2,
+      status: 'ai_running',
+      aiSessions: [{
+        sessionId,
+        tool: 'claude',
+        status: 'running',
+        telegramRoute: {
+          targetUserId: '-1003908174749',
+          threadId: '',
+          topicName: '#bad',
+          channel: 'telegram',
+        },
+      }],
+    })
+    bridge = makeFakeBridge({ sendOk: false, sendReason: 'no_thread_id_route_missing', explicitRoute: false })
+    handler = createOpenClawHookHandler({ db, openclaw: bridge })
+
+    const r = await handler.handle({
+      event: 'stop',
+      sessionId,
+      todoId: todo.id,
+      todoTitle: todo.title,
+    })
+
+    expect(bridge.registerSessionRoute).not.toHaveBeenCalled()
+    expect(r.ok).toBe(false)
+    expect(r.action).toBe('failed')
+    expect(r.reason).toBe('no_thread_id_route_missing')
+    expect(bridge.sent).toHaveLength(1)
+    expect(bridge.sent[0].route).toBeNull()
+  })
+
+  it('rejects a persisted Telegram route with a conflicting channel', async () => {
+    const sessionId = 'ai-1778306858264-bad-channel'
+    const todo = db.createTodo({
+      title: 'bad channel route',
+      quadrant: 2,
+      status: 'ai_running',
+      aiSessions: [{
+        sessionId,
+        tool: 'claude',
+        status: 'running',
+        telegramRoute: {
+          targetUserId: '-1003908174749',
+          threadId: 526,
+          topicName: '#bad',
+          channel: 'openclaw-weixin',
+        },
+      }],
+    })
+    bridge = makeFakeBridge({ sendOk: false, sendReason: 'no_thread_id_route_missing', explicitRoute: false })
+    handler = createOpenClawHookHandler({ db, openclaw: bridge })
+
+    const r = await handler.handle({
+      event: 'stop',
+      sessionId,
+      todoId: todo.id,
+      todoTitle: todo.title,
+    })
+
+    expect(bridge.registerSessionRoute).not.toHaveBeenCalled()
+    expect(r.ok).toBe(false)
+    expect(r.action).toBe('failed')
+    expect(r.reason).toBe('no_thread_id_route_missing')
+    expect(bridge.sent).toHaveLength(1)
+    expect(bridge.sent[0].route).toBeNull()
   })
 
   it('returns failed when bridge returns not ok', async () => {

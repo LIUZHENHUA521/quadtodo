@@ -75,22 +75,53 @@ describe('POST /api/config/telegram/test', () => {
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
-  it('calls getMe via getTelegramBot when bot exists', async () => {
-    const fakeBot = { getMe: async () => ({ id: 12345, username: 'lzhTodoBot', first_name: 'lzh todo' }) }
+  it('tests saved token even when the long-poll bot is not running', async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true, result: { id: 24680, username: 'savedBot', first_name: 'Saved' } }),
+    }))
+    const app = makeApp({
+      getConfig: () => ({ telegram: { botToken: 'SAVED_TOKEN' } }),
+      getTelegramBot: () => null,
+      fetchFn,
+    })
+
+    const r = await request(app).post('/api/config/telegram/test').send({})
+
+    expect(r.status).toBe(200)
+    expect(r.body).toMatchObject({ ok: true, botId: 24680, botUsername: 'savedBot', source: 'quadtodo' })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    const [url] = fetchFn.mock.calls[0]
+    expect(String(url)).toContain('/botSAVED_TOKEN/getMe')
+  })
+
+  it('tests saved token directly when bot exists', async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true, result: { id: 12345, username: 'lzhTodoBot', first_name: 'lzh todo' } }),
+    }))
+    const fakeBot = { getMe: vi.fn() }
     const app = makeApp({
       getConfig: () => ({ telegram: { botToken: 'XXX' } }),
       getTelegramBot: () => fakeBot,
+      fetchFn,
     })
     const r = await request(app).post('/api/config/telegram/test').send({})
     expect(r.status).toBe(200)
     expect(r.body).toMatchObject({ ok: true, botId: 12345, botUsername: 'lzhTodoBot' })
+    expect(fakeBot.getMe).not.toHaveBeenCalled()
   })
 
-  it('returns errorReason when getMe throws', async () => {
-    const fakeBot = { getMe: async () => { throw new Error('401 Unauthorized') } }
+  it('returns errorReason when saved token getMe fails', async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({ ok: false, description: '401 Unauthorized' }),
+    }))
     const app = makeApp({
       getConfig: () => ({ telegram: { botToken: 'BAD' } }),
-      getTelegramBot: () => fakeBot,
+      getTelegramBot: () => null,
+      fetchFn,
     })
     const r = await request(app).post('/api/config/telegram/test').send({})
     expect(r.body).toMatchObject({ ok: false, errorReason: '401 Unauthorized' })

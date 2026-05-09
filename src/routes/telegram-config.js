@@ -54,12 +54,8 @@ export function createTelegramConfigRouter({ getConfig, getTelegramBot, probeReg
     if (!token) {
       return res.json({ ok: false, errorReason: 'token_missing', source })
     }
-    const bot = getTelegramBot()
-    if (!bot || typeof bot.getMe !== 'function') {
-      return res.json({ ok: false, errorReason: 'bot_not_running', source })
-    }
     try {
-      const me = await bot.getMe()
+      const me = await getMeWithToken(token, fetchFn)
       res.json({
         ok: true,
         botId: me.id,

@@ -3,6 +3,8 @@ import * as turnNotifications from '../web/src/terminalTurnNotifications.ts'
 
 const {
   TURN_DONE_TEXT,
+  TURN_DONE_NOTIFICATION_BUTTON_LABEL,
+  TURN_DONE_NOTIFICATION_BUTTON_STYLE,
   getBrowserNotificationPermission,
   shouldSendTurnDoneSystemNotification,
 } = turnNotifications
@@ -11,6 +13,17 @@ describe('terminal turn notification helpers', () => {
   it('does not expose an xterm output banner for turn completion reminders', () => {
     expect(TURN_DONE_TEXT).toBe('AI 回复完成，请验收')
     expect(turnNotifications).not.toHaveProperty('TURN_DONE_BANNER')
+  })
+
+  it('keeps the notification permission affordance compact and readable for the toolbar', () => {
+    expect(TURN_DONE_NOTIFICATION_BUTTON_LABEL).toBe('通知')
+    expect(TURN_DONE_NOTIFICATION_BUTTON_STYLE).toEqual({
+      height: 20,
+      minWidth: 34,
+      paddingInline: 6,
+      fontSize: 11,
+      lineHeight: '18px',
+    })
   })
 
   it('reports browser notification support as unsupported without the browser Notification API', () => {

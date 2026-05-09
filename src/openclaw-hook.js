@@ -376,6 +376,39 @@ export function createOpenClawHookHandler({
     }
   }
 
+  function normalizePersistedTelegramRoute(route) {
+    const targetUserId = String(route?.targetUserId ?? '').trim()
+    if (!targetUserId) return null
+    if (route.channel && route.channel !== 'telegram') return null
+
+    const threadId = Number(route.threadId)
+    if (!Number.isInteger(threadId) || threadId <= 0) return null
+
+    return {
+      ...route,
+      targetUserId,
+      threadId,
+      channel: 'telegram',
+    }
+  }
+
+  function restorePersistedRoute(sessionId, todoId) {
+    if (!sessionId || !todoId || !openclaw?.registerSessionRoute || !db?.getTodo) return false
+    if (openclaw.hasExplicitRoute?.(sessionId)) return false
+    try {
+      const todo = db.getTodo(todoId)
+      const aiSession = (todo?.aiSessions || []).find((item) => item?.sessionId === sessionId)
+      const route = normalizePersistedTelegramRoute(aiSession?.telegramRoute)
+      if (!route) return false
+      openclaw.registerSessionRoute(sessionId, route)
+      logger.info?.(`[openclaw-hook] restored telegram route for sid=${sessionId} threadId=${route.threadId}`)
+      return true
+    } catch (e) {
+      logger.warn?.(`[openclaw-hook] restore telegram route failed: ${e.message}`)
+      return false
+    }
+  }
+
   /**
    * 处理一条 hook 事件。
    * 返回 { ok, action: 'sent'|'skipped'|'failed', reason? }
@@ -384,8 +417,11 @@ export function createOpenClawHookHandler({
     if (!event) return { ok: false, action: 'failed', reason: 'event_required' }
     const evt = String(event).toLowerCase()
 
-    // 诊断：sessionId 给了但 bridge 没注册过 route → 99% 会触发 telegram fallback / General 泄漏
-    // 用 warn 让 race 复现时直接在日志里抓到（A=spawn 抢跑 / B=clear 后尾巴 / D=close handler race）
+    // 诊断：sessionId 给了但 bridge 没注册过 route → 先尝试从 DB 持久化 route 恢复。
+    // 恢复失败才 warn；postText 仍会拒绝 route-less Telegram session，避免泄漏到 General。
+    if (sessionId && openclaw?.hasExplicitRoute && !openclaw.hasExplicitRoute(sessionId)) {
+      restorePersistedRoute(sessionId, todoId)
+    }
     if (sessionId && openclaw?.hasExplicitRoute && !openclaw.hasExplicitRoute(sessionId)) {
       logger.warn?.(`[openclaw-hook] hook fired with no registered route: event=${evt} sid=${sessionId} todoId=${todoId || 'null'}`)
     }
