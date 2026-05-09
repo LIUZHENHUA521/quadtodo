@@ -6,6 +6,8 @@ import KpiStrip from './KpiStrip'
 import LiveSessionCard from './LiveSessionCard'
 import HistoryStatsTab from './HistoryStatsTab'
 import ResourceTab from './ResourceTab'
+import AttentionHub from './AttentionHub'
+import type { AttentionItem } from '../replyHub'
 import './dashboard.css'
 
 const { useBreakpoint } = Grid
@@ -56,8 +58,12 @@ function LiveList({ onOpenTerminal, onStop }: {
   )
 }
 
-function DashboardBody({ open, onOpenTerminal, onStop }: {
+function DashboardBody({ open, attentionItems, onOpenAttentionItem, onMarkAttentionSeen, onClearReviewAttention, onOpenTerminal, onStop }: {
   open: boolean
+  attentionItems: AttentionItem[]
+  onOpenAttentionItem?: (item: AttentionItem) => void
+  onMarkAttentionSeen?: (sessionId: string) => void
+  onClearReviewAttention?: (sessionIds: string[]) => void
   onOpenTerminal?: (sessionId: string, todoId: string) => void
   onStop?: (sessionId: string) => void
 }) {
@@ -65,6 +71,13 @@ function DashboardBody({ open, onOpenTerminal, onStop }: {
   return (
     <div className="dash-root">
       <KpiStrip />
+
+      <AttentionHub
+        items={attentionItems}
+        onOpen={onOpenAttentionItem}
+        onMarkSeen={onMarkAttentionSeen}
+        onClearReview={onClearReviewAttention}
+      />
 
       <div>
         <div className="dash-section-head">
@@ -113,11 +126,19 @@ function DashboardBody({ open, onOpenTerminal, onStop }: {
 export default function DashboardDrawer({
   open,
   onClose,
+  attentionItems = [],
+  onOpenAttentionItem,
+  onMarkAttentionSeen,
+  onClearReviewAttention,
   onOpenTerminal,
   onStop,
 }: {
   open: boolean
   onClose: () => void
+  attentionItems?: AttentionItem[]
+  onOpenAttentionItem?: (item: AttentionItem) => void
+  onMarkAttentionSeen?: (sessionId: string) => void
+  onClearReviewAttention?: (sessionIds: string[]) => void
   onOpenTerminal?: (sessionId: string, todoId: string) => void
   onStop?: (sessionId: string) => void
 }) {
@@ -132,7 +153,15 @@ export default function DashboardDrawer({
   )
 
   const body = (
-    <DashboardBody open={open} onOpenTerminal={onOpenTerminal} onStop={onStop} />
+    <DashboardBody
+      open={open}
+      attentionItems={attentionItems}
+      onOpenAttentionItem={onOpenAttentionItem}
+      onMarkAttentionSeen={onMarkAttentionSeen}
+      onClearReviewAttention={onClearReviewAttention}
+      onOpenTerminal={onOpenTerminal}
+      onStop={onStop}
+    />
   )
 
   if (isMobile) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Button, Space, Tag, Drawer, Form, Input, DatePicker,
   Radio, message, Popconfirm, Spin, Tooltip, Dropdown, Select, Switch, Segmented, Modal,
@@ -12,7 +12,7 @@ import {
   DownOutlined, UpOutlined, CloseOutlined, RightOutlined,
   DashboardOutlined, FileTextOutlined, ExportOutlined,
   BookOutlined, LineChartOutlined, TrophyOutlined, BranchesOutlined,
-  MenuOutlined,
+  MenuOutlined, BellOutlined,
 } from '@ant-design/icons'
 import { useIsMobile } from './hooks/useIsMobile'
 import CmdPalette from './CmdPalette'
@@ -52,6 +52,14 @@ import ReportDrawer from './ReportDrawer'
 import PetView from './pet/PetView'
 import TranscriptSearchDrawer from './transcripts/TranscriptSearchDrawer'
 import { useAiSessionStore } from './store/aiSessionStore'
+import {
+  AttentionItem,
+  buildAttentionItems,
+  countAttentionItems,
+  parseSeenReplySessionIds,
+  SEEN_REPLY_STORAGE_KEY,
+  serializeSeenReplySessionIds,
+} from './replyHub'
 import { getTranscriptStats, listPipelineTemplates, listPipelineRunsForTodo, startPipelineRun, PipelineTemplate, PipelineRun } from './api'
 import PipelineRunDrawer from './pipeline/PipelineRunDrawer'
 import './TodoManage.css'
@@ -165,9 +173,10 @@ interface SortableTodoCardProps {
   isNarrow: boolean
   onRequestFork: (todo: Todo, sessionId: string) => void
   onRefresh: () => void
+  highlightTodoId?: string | null
 }
 
-function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false, onCreateSubtodo, onClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionId, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, terminalCollapsed, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideSessionId, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: SortableTodoCardProps) {
+function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false, onCreateSubtodo, onClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionId, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, terminalCollapsed, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideSessionId, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh, highlightTodoId }: SortableTodoCardProps) {
   const [editingLabelSessionId, setEditingLabelSessionId] = useState<string | null>(null)
   const [editingLabelText, setEditingLabelText] = useState('')
   const [childrenExpanded, setChildrenExpanded] = useState(true)
@@ -180,7 +189,7 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
   const terminalOpen = expandedTerminal?.todoId === todo.id
   const hasChildren = children.length > 0
   const showChildren = hasChildren && (childrenExpanded || (!!childHitIds && childHitIds.size > 0))
-  const cardClassName = `todo-card quadrant-${todo.quadrant} ${isDragging ? 'dragging' : ''} ${todo.status === 'done' ? 'done' : ''} ${isSubtodo ? 'subtodo-card' : ''}`
+  const cardClassName = `todo-card quadrant-${todo.quadrant} ${isDragging ? 'dragging' : ''} ${todo.status === 'done' ? 'done' : ''} ${isSubtodo ? 'subtodo-card' : ''} ${highlightTodoId === todo.id ? 'attention-target-highlight' : ''}`
   const sessionId = terminalOpen ? expandedTerminal!.sessionId : todo.aiSession?.sessionId
   const historySessions = todo.aiSessions || []
   const hasHistory = historySessions.length > 0
@@ -208,6 +217,7 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
       {...finalAttributes}
       tabIndex={terminalOpen ? -1 : undefined}
       className={cardClassName}
+      id={`todo-card-${todo.id}`}
     >
       <div className="todo-card-shell">
         <div
@@ -535,6 +545,7 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                       onSetSideBySide={onSetSideBySide}
                       isNarrow={isNarrow}
                       onRefresh={onRefresh}
+                      highlightTodoId={highlightTodoId}
                     />
                   ))}
                 </div>
@@ -687,9 +698,10 @@ interface QuadrantZoneProps {
   onShowTerminal: (todoId: string) => void
   onRequestFork: (todo: Todo, sessionId: string) => void
   onRefresh: () => void
+  highlightTodoId?: string | null
 }
 
-function QuadrantZone({ config, todos, childrenByParentId, childHitIdsByParentId, onCreateSubtodo, onCardClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, style, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh }: QuadrantZoneProps) {
+function QuadrantZone({ config, todos, childrenByParentId, childHitIdsByParentId, onCreateSubtodo, onCardClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, style, expandedTerminal, setExpandedTerminal, hiddenTerminalSessionIdByTodo, onHideTerminal, onShowTerminal, collapsedTerminalByTodo, onToggleTerminalCollapsed, sideBySideByTodo, onSetSideBySide, isNarrow, onRequestFork, onRefresh, highlightTodoId }: QuadrantZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `quadrant-${config.q}` })
 
   const header = (
@@ -734,6 +746,7 @@ function QuadrantZone({ config, todos, childrenByParentId, childHitIdsByParentId
             onSetSideBySide={onSetSideBySide}
             isNarrow={isNarrow}
             onRefresh={onRefresh}
+            highlightTodoId={highlightTodoId}
           />
         ))}
         {todos.length === 0 && (
@@ -916,6 +929,12 @@ export default function TodoManage() {
   const [hiddenTerminalSessionIdByTodo, setHiddenTerminalSessionIdByTodo] = useState<Record<string, string | null>>({})
   const [collapsedTerminalByTodo, setCollapsedTerminalByTodo] = useState<Record<string, boolean>>({})
   const [sideBySideByTodo, setSideBySideByTodo] = useState<Record<string, string | null>>({})
+  const [seenReplySessionIds, setSeenReplySessionIds] = useState<Set<string>>(() => {
+    try { return parseSeenReplySessionIds(localStorage.getItem(SEEN_REPLY_STORAGE_KEY)) }
+    catch { return new Set() }
+  })
+  const [highlightTodoId, setHighlightTodoId] = useState<string | null>(null)
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [forkTarget, setForkTarget] = useState<{ todo: Todo; sessionId: string } | null>(null)
   const [isNarrow, setIsNarrow] = useState<boolean>(() => typeof window !== 'undefined' ? window.innerWidth < 900 : false)
   useEffect(() => {
@@ -936,6 +955,14 @@ export default function TodoManage() {
     const t = setInterval(poll, 3000)
     return () => { cancelled = true; clearInterval(t) }
   }, [setLiveSessions])
+
+  const liveSessionsMap = useAiSessionStore(s => s.sessions)
+  const attentionItems = useMemo(() => buildAttentionItems({
+    todos,
+    liveSessions: [...liveSessionsMap.values()],
+    seenSessionIds: seenReplySessionIds,
+  }), [todos, liveSessionsMap, seenReplySessionIds])
+  const attentionCounts = useMemo(() => countAttentionItems(attentionItems), [attentionItems])
 
   useEffect(() => {
     let cancelled = false
@@ -963,6 +990,48 @@ export default function TodoManage() {
       message.success('已发送停止')
     } catch (e) {
       message.error((e as Error).message)
+    }
+  }, [])
+
+  const persistSeenReplySessionIds = useCallback((next: Set<string>) => {
+    setSeenReplySessionIds(next)
+    try { localStorage.setItem(SEEN_REPLY_STORAGE_KEY, serializeSeenReplySessionIds(next)) }
+    catch { /* localStorage may be unavailable in private contexts */ }
+  }, [])
+
+  const handleMarkAttentionSeen = useCallback((sessionId: string) => {
+    persistSeenReplySessionIds(new Set([...seenReplySessionIds, sessionId]))
+  }, [persistSeenReplySessionIds, seenReplySessionIds])
+
+  const handleClearReviewAttention = useCallback((sessionIds: string[]) => {
+    persistSeenReplySessionIds(new Set([...seenReplySessionIds, ...sessionIds]))
+  }, [persistSeenReplySessionIds, seenReplySessionIds])
+
+  const handleOpenAttentionItem = useCallback((item: AttentionItem) => {
+    setDashboardOpen(false)
+    setViewMode('list')
+    setFilterStatus('')
+    setKeyword('')
+    setHiddenTerminalSessionIdByTodo(prev => ({ ...prev, [item.todoId]: null }))
+    setCollapsedTerminalByTodo(prev => ({ ...prev, [item.todoId]: false }))
+    setExpandedTerminal({ todoId: item.todoId, sessionId: item.sessionId })
+    setOverlayTerminal(null)
+    setHighlightTodoId(item.todoId)
+
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightTodoId(null)
+      highlightTimerRef.current = null
+    }, 3000)
+
+    window.setTimeout(() => {
+      document.getElementById(`todo-card-${item.todoId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 120)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
     }
   }, [])
 
@@ -1821,6 +1890,7 @@ export default function TodoManage() {
                       onSetSideBySide={handleSetSideBySide}
                       isNarrow={isNarrow}
                       onRefresh={fetchTodos}
+                      highlightTodoId={highlightTodoId}
                     />
                   ))}
                   {priorityList.length === 0 && (
@@ -1870,6 +1940,7 @@ export default function TodoManage() {
                 onHideTerminal={handleHideTerminal}
                 onShowTerminal={handleShowTerminal}
                 onRefresh={fetchTodos}
+                highlightTodoId={highlightTodoId}
               />
               <div
                 className="todo-divider-v"
@@ -1912,6 +1983,7 @@ export default function TodoManage() {
                 onHideTerminal={handleHideTerminal}
                 onShowTerminal={handleShowTerminal}
                 onRefresh={fetchTodos}
+                highlightTodoId={highlightTodoId}
               />
             </div>
 
@@ -1960,6 +2032,7 @@ export default function TodoManage() {
                 onHideTerminal={handleHideTerminal}
                 onShowTerminal={handleShowTerminal}
                 onRefresh={fetchTodos}
+                highlightTodoId={highlightTodoId}
               />
               <div
                 className="todo-divider-v"
@@ -2002,6 +2075,7 @@ export default function TodoManage() {
                 onHideTerminal={handleHideTerminal}
                 onShowTerminal={handleShowTerminal}
                 onRefresh={fetchTodos}
+                highlightTodoId={highlightTodoId}
               />
             </div>
           </div>
@@ -2416,9 +2490,28 @@ export default function TodoManage() {
         onClose={() => setTemplateDrawerOpen(false)}
         onChanged={refreshTemplates}
       />
+      {attentionCounts.total > 0 && (
+        <button
+          type="button"
+          className="todo-attention-fab"
+          onClick={() => setDashboardOpen(true)}
+          title="打开待处理 AI 会话"
+        >
+          <span className="todo-attention-fab-icon"><BellOutlined /></span>
+          <span className="todo-attention-fab-text">
+            <strong>待处理回复</strong>
+            <small>{attentionCounts.review} 待验收 · {attentionCounts.interaction} 待交互</small>
+          </span>
+          <span className="todo-attention-fab-badge">{attentionCounts.total}</span>
+        </button>
+      )}
       <DashboardDrawer
         open={dashboardOpen}
         onClose={() => setDashboardOpen(false)}
+        attentionItems={attentionItems}
+        onOpenAttentionItem={handleOpenAttentionItem}
+        onMarkAttentionSeen={handleMarkAttentionSeen}
+        onClearReviewAttention={handleClearReviewAttention}
         onOpenTerminal={handleDashboardOpenTerminal}
         onStop={handleDashboardStop}
       />

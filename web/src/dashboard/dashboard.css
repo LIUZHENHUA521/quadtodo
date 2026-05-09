@@ -273,3 +273,126 @@
 .dash-collapse > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
   padding: 12px !important;
 }
+
+/* ─── Attention Hub ─── */
+.dash-attention-section {
+  border: 1px solid #fed7aa;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 76%);
+  padding: 12px;
+}
+
+.dash-attention-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dash-attention-summary-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.dash-attention-summary-card:hover,
+.dash-attention-summary-card.active {
+  border-color: #fb923c;
+  box-shadow: 0 6px 16px rgba(249, 115, 22, 0.12);
+  transform: translateY(-1px);
+}
+
+.dash-attention-summary-card strong {
+  display: block;
+  color: #0f172a;
+  font-size: 22px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-attention-summary-card span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.dash-attention-summary-card.review.active { border-color: #fb923c; }
+.dash-attention-summary-card.interaction.active { border-color: #f59e0b; }
+
+.dash-attention-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dash-attention-card {
+  display: grid;
+  grid-template-columns: 4px 1fr;
+  gap: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.dash-attention-card.review {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.dash-attention-card.interaction {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.dash-attention-accent {
+  grid-row: 1 / -1;
+  width: 4px;
+}
+
+.dash-attention-main {
+  min-width: 0;
+  padding: 10px 10px 10px 0;
+}
+
+.dash-attention-title-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dash-attention-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dash-attention-meta {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.dash-attention-actions {
+  margin-top: 9px;
+}
+
+@media (max-width: 640px) {
+  .dash-attention-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-attention-title-row {
+    flex-wrap: wrap;
+  }
+}
