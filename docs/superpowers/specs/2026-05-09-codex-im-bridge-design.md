@@ -412,3 +412,104 @@ reviewer 指出原顺序中 Phase B（turn-end 推送）会调到 footer 的 `ex
 6. **Phase F — 测试 + Claude 回归**：vitest 全绿 + 手测两侧 IM + 多 PTY 并发 + danger-full-access 默认模式静默验证
 
 每个 Phase 单独 PR，前一个不接死后一个，便于独立 revert。Phase B 在 Phase C 前合并，避免 reviewer 担心的"footer 显示 $0"中间态。
+
+---
+
+## 12. IM 派活配置（用户后续提案，本稿一并落地）
+
+### 12.1 现状
+
+今天 quadtodo 只有一个**全局** `defaultTool`（`config.json` → 顶层 `defaultTool`），消费点：
+
+- `src/server.js:454` — runtimeConfig 兜底
+- `src/openclaw-wizard.js:629` — wizard 创建 todo 时 `const tool = cfg.defaultTool || 'claude'`
+- `src/mcp/tools/openclaw/index.js:195` — `start_ai_session` 入参 `args.tool || cfg.defaultTool || 'claude'`
+
+→ 同一台机器上**所有 IM 渠道共用一个默认值**：飞书一个用户、Telegram 一个 chat、本地 web 都只能用同一个 default。
+→ 想"飞书走 Codex、Telegram 走 Claude"或"用户 A 默认 codex、用户 B 默认 claude"必须每次手动指定，不合理。
+
+### 12.2 目标
+
+**配置驱动**派活：在 `config.json` 加一段 `dispatch`，按 IM channel + user 维度精细化默认 tool。
+**不引入按钮选择器**——用户明确表示"放配置更合理"，不做 IM 端 inline picker（避免每次创建 todo 多敲一次确认）。
+
+### 12.3 配置 schema
+
+```json
+{
+  "defaultTool": "claude",
+  "dispatch": {
+    "lark": {
+      "default": "claude",
+      "perUser": {
+        "<lark_open_id_a>": "codex",
+        "<lark_open_id_b>": "claude"
+      }
+    },
+    "telegram": {
+      "default": "claude",
+      "perChat": {
+        "<chat_id_a>": "codex"
+      }
+    },
+    "web": {
+      "default": "claude"
+    }
+  }
+}
+```
+
+### 12.4 解析顺序（resolveTool）
+
+新增 `src/dispatch.js`，导出 `resolveTool({ channel, userId, chatId, override }) → 'claude' | 'codex'`：
+
+1. **override**（call-site 显式传入，e.g. MCP 调用方在 `start_ai_session` 里指定 tool）→ 直接用
+2. **perUser / perChat 命中**（`dispatch[channel].perUser[userId]` 或 `dispatch[channel].perChat[chatId]`）
+3. **channel default**（`dispatch[channel].default`）
+4. **global defaultTool**
+5. 兜底 `'claude'`
+
+`channel` 取值：`'lark' | 'telegram' | 'web' | 'openclaw'`（OpenClaw 微信渠道虽不在本稿主体范围，dispatch 表给它留个槽位以后扩展，本稿不消费）。
+
+### 12.5 消费点改造
+
+| 文件 | 现状 | 改成 |
+|---|---|---|
+| `src/openclaw-wizard.js:629` | `cfg.defaultTool \|\| 'claude'` | `resolveTool({ channel: ev.channel, userId: ev.userId, chatId: ev.chatId, override: explicitTool })` |
+| `src/mcp/tools/openclaw/index.js:195` | `args.tool \|\| cfg.defaultTool \|\| 'claude'` | `resolveTool({ channel: 'openclaw' \|\| caller-supplied, userId: args.targetUserId, override: args.tool })` |
+| `src/server.js` web UI 创建 todo 路径 | 直接读 `runtimeConfig.defaultTool` | `resolveTool({ channel: 'web', override: req.body.tool })` |
+| `web/src/SettingsDrawer.tsx` | 已有 `defaultTool` 单选 | 加一段 "Dispatch" 子节，可视化编辑 `dispatch.lark.default` / `dispatch.telegram.default` + perUser/perChat 表（add / delete 行） |
+| `web/src/TelegramSyncButton.tsx` | （工作区已有本地修改，可能在做相关工作） | 不冲突，dispatch 配置独立 |
+| `src/config.js` | `loadConfig` / `mergeDefaults` | 给 `dispatch` 加默认空对象，缺失时 `resolveTool` 走 `defaultTool` 兜底 |
+
+### 12.6 与 IM event 上游字段的衔接
+
+`lark-bot.js` `normalizeEvent` 输出已经带 `chatId` / `userOpenId` / `threadId`（已有）；
+`telegram-bot.js` event 已带 `chatId` / `from.id`（已有）。
+两边都把这些字段沿事件链透传给 wizard，**不需要新接口**——只是 wizard 的 `dispatchToWizard` 入口要把这些字段带给 `resolveTool`。
+
+### 12.7 新增组件清单
+
+| 组件 | 类型 | 改动 |
+|---|---|---|
+| `src/dispatch.js` | 新文件 | `resolveTool({ channel, userId, chatId, override })` 单纯函数 |
+| `src/openclaw-wizard.js` | 改 | 第 629 行调用替换 |
+| `src/mcp/tools/openclaw/index.js` | 改 | 第 195 行调用替换 |
+| `src/server.js` | 改 | `/api/todos` 创建路径 + `runtimeConfig.dispatch` 暴露给 `/api/config` |
+| `src/config.js` | 改 | 加默认 dispatch 段 |
+| `web/src/SettingsDrawer.tsx` | 改 | Dispatch 编辑 UI |
+| `test/dispatch.test.js` | 新测试 | 5 路解析顺序 + 兜底 + perUser/perChat 优先级 |
+| `test/openclaw-wizard.dispatch.test.js` | 改 | wizard 集成测试，验证 channel + userId 正确路由 |
+
+### 12.8 验收（追加到 §10）
+
+- [ ] 配置 `dispatch.lark.perUser['<my_open_id>'] = 'codex'` → 用我的 lark 账号发起任务，wizard 创建的 todo `tool === 'codex'`
+- [ ] 配置 `dispatch.telegram.default = 'codex'`，未配 perChat → 任意 telegram chat 发起任务都默认 codex
+- [ ] 配置中未声明 dispatch 段 → 行为完全等于今天的 `defaultTool` 单字段（向后兼容）
+- [ ] Web 创建 todo 时 `req.body.tool` 显式 override 优先于 `dispatch.web.default`
+- [ ] SettingsDrawer 编辑 perUser 表 → 保存后立即对下一条 IM 进来的任务生效（不需重启）
+
+### 12.9 实施顺序（追加到 §11）
+
+7. **Phase G — 派活配置**：本节 §12.7 列的组件全套，独立 PR；与 Phase C/D/E 解耦，可在任意时机插入（推荐 Phase F 之后）。无 Codex 推送依赖，但 Codex 推送链路落地后这个 feature 才真正有用——不然飞书用 codex 也看不到推送。
+
