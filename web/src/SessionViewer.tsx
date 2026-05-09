@@ -43,7 +43,7 @@ export default function SessionViewer(props: Props) {
           onChange={(v) => setMode(v as ViewMode)}
           options={[
             { label: 'Live 终端', value: 'live' },
-            { label: 'Chat 续聊', value: 'transcript' },
+            { label: 'Log 日志', value: 'transcript' },
           ]}
         />
       </div>
