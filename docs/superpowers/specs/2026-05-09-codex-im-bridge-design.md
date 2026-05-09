@@ -63,6 +63,12 @@ quadtodo 的 PTY 已经支持 spawn / resume Codex（`pty.js` 内 `tool === 'cod
 
 → ask-user 等价信号必须从 PTY stdout 嗅探，jsonl 路径不可用。
 
+### 2.3.0 最低 Codex CLI 版本（reviewer iter-2 #5）
+
+- **最低支持**：Codex CLI **0.125**（实测样本来源版本，含 `event_msg/task_complete` / `event_msg/token_count` 结构）
+- **检测方式**：emitter 启动时从 jsonl 头部 `session_meta.payload.cli_version` 读出版本
+- **降级策略**：低于 0.125 时本稿能力不可用——emitter 标记 sessionId 为 "unsupported_cli" 模式，仅靠 PTY exit 推 SessionEnd（无 turn-end / footer / 附件、no detector 推送）。CLI doctor 命令报 warning，建议升级
+
 ### 2.3 复用现成模块（已校对）
 
 | 模块 | 状态 | 本稿如何用 |
@@ -162,6 +168,20 @@ PTY 启动 Codex 时把 quadtodo 自己的 sessionId / todoId 写入 `~/.quadtod
 | Codex `error` | jsonl 出现 `event_msg/error` | ✅ 开 | `❌ [#tNN] 任务「X」Codex 报错：<message>` |
 | Codex SessionEnd | PTY 进程退出 + emitter 关 fs.watch | ✅ 开 | `✅ [#tNN] 任务「X」AI 跑完了` + 完整 transcript .md |
 
+### 5.0 两条事件链路的反查方向（reviewer iter-2 #2 澄清）
+
+两条链路看到的 sessionId 入口不同，反查方向也不同——本稿明确分开：
+
+| 路径 | 起点见到的 ID | 是否需要反查 sidecar |
+|---|---|---|
+| (a) jsonl-tail 路径（emitter） | Codex `session_meta.payload.id`（nativeId） | **需要**：nativeId → quadtodo sessionId / todoId（先内存表，再 sidecar 文件，再 `aiTerminal.sessions.values()` 线性兜底） |
+| (b) PTY stdout 嗅探路径（detector） | quadtodo sessionId（detector 是 PTY 的 listener，PTY 自己持有 quadtodo sessionId） | **不需要**：detector POST 时直接写 quadtodo sessionId，跟 Claude 那侧 ask_user 走的路一样 |
+
+由此推论：
+- detector POST body 直接给 `sessionId: <quadtodo sessionId>` + `nativeId: <可选>`，不依赖 sidecar
+- 卡片 callback 走 `openclaw.findSessionByShortId(quadtodo sessionId.slice(-4))`，与 Claude 现有 wizard `openclaw-wizard.js:1776` 一致；不引入新的 nativeId 反查路径
+- sidecar 反查只服务于 emitter (jsonl-tail) 这一条线
+
 ### 5.1 ask-user 卡片回写（修正版 —— 经实测核对）
 
 **核心限制（实测）**：Codex 0.125 在 `--ask-for-approval=never`（即 `danger-full-access`，**默认模式**）下完全不会出权限 prompt——session_meta 头部即写明 "Approval policy is currently never"。
@@ -250,13 +270,14 @@ class CodexPromptDetector {
 
 | 组件 | 类型 | 改动 |
 |---|---|---|
-| `src/codex-event-emitter.js` | 新文件 | jsonl tail（fs.watch + 增量解析）→ POST `/api/openclaw/hook`；持有 native↔quadtodo 反查；暴露 `getLatestAssistantContent()` 给 detector 做误检兜底 |
-| `src/codex-prompt-detector.js` | 新文件 | PTY stdout 嗅探 → POST `/api/openclaw/hook`（event=Notification, source=codex）；命中后先调 emitter.getLatestAssistantContent 做"是否就是 AI 写的字"检查 |
-| `src/pty.js` | 改 | (a) **新增 export `findCodexSession(nativeSessionId)`**（参考 `findClaudeSession` line 238 风格）；(b) Codex spawn 后启动 emitter + detector；(c) exit 时停掉它们；(d) 写 sidecar `~/.quadtodo/codex-sessions/<nativeId>.json`（含 quadtodo session/todoId / cwd）；(e) **同步更新内存反查表 `nativeIdToQuadtodoSession: Map<string, string>`**（处理 sidecar fsync 慢于 jsonl 写入的竞态） |
+| `src/codex-event-emitter.js` | 新文件 | jsonl tail（fs.watch + 增量解析）→ POST `/api/openclaw/hook` 含 `nativeId`；持有 native↔quadtodo 反查；暴露 `getLatestAssistantContent()` 给 detector 做误检兜底；emitter 启动时记录 jsonl 当前 EOF 作 watermark（重启场景见 §9） |
+| `src/codex-prompt-detector.js` | 新文件 | PTY stdout 嗅探 → POST `/api/openclaw/hook`（event=Notification, source=codex）；**直接 POST quadtodo sessionId**（detector 持有 PTY 引用，不需 sidecar 反查）；命中后先调 emitter.getLatestAssistantContent 做"是否就是 AI 写的字"检查 |
+| `src/codex-transcript.js` | **新文件（reviewer iter-2 #1）** | Codex 版的 turn / 全文 helper，签名平行 `claude-transcript.js`：`readLatestCodexTurn(filePath)`、`readLatestCodexTurnFresh(filePath)`（retry × 3 等 jsonl 写完 task_complete 之后的最新 assistant `response_item`）、`buildFullCodexTranscript(filePath)`（markdown 化）、`extractCodexTurnUsageFromLines(lines)`（从最后一条 `event_msg/token_count.payload.info.last_token_usage` 取本轮增量）。`openclaw-hook.js` codex 分支调这些，**不**直接调 `transcript.js loadTranscript`（后者返回 `{turns[]}`，shape 不同） |
+| `src/pty.js` | 改 | (a) **新增 export `findCodexSession(nativeSessionId)` —— 返回 `{filePath, cwd, nativeId}`** 平行 `findClaudeSession` (line 238) 的返回 shape，cwd 从 jsonl 头部 `session_meta.payload.cwd` 读，区别于 `transcript.js findCodexFile` 只返回 `filePath`（reviewer iter-2 #3）；(b) Codex spawn 后启动 emitter + detector；(c) exit 时停掉它们；(d) 写 sidecar `~/.quadtodo/codex-sessions/<nativeId>.json`（含 quadtodo session/todoId / cwd）；(e) **同步更新内存反查表 `nativeIdToQuadtodoSession: Map<string, string>`**（处理 sidecar fsync 慢于 jsonl 写入的竞态） |
 | `src/usage-parser.js` | **改（reviewer BLOCKER）** | `extractCodex` 重写：扫 `event_msg/token_count.payload.info.total_token_usage` 取 session 累计；扫 `event_msg/token_count.payload.info.last_token_usage` 取 turn 增量；同时保留对 `response_item.message.assistant.token_usage` 的兼容读取（万一未来 Codex 把字段加回来）。**fixture 也要换成真实 Codex 0.125 jsonl 样本**（不能再用造假 fixture） |
 | `src/usage-footer.js` | 改 | `extractSessionUsageFromLines` 增加 `tool` 参数，按 tool 调 `extractClaude` / `extractCodex`；docstring 删掉"仅 Claude"那行 |
 | `src/routes/openclaw-hook.js` | **改（reviewer MAJOR）** | router body 解构加上 `source`（默认 `'claude'` 兼容老链路），透传到 `hookHandler.handle({...})` |
-| `src/openclaw-hook.js` | 改 | `handle()` 签名加 `source`；入口 `if (source === 'codex') return handleCodex(...)` 分流；codex 分支调 `pty.findCodexSession`、`loadTranscript({tool:'codex',...})`、`extractUsage('codex', lines)` |
+| `src/openclaw-hook.js` | 改 | `handle()` 签名加 `source`；入口 `if (source === 'codex') return handleCodex(...)` 分流；codex 分支调 `pty.findCodexSession`、`codex-transcript.readLatestCodexTurnFresh`（**不**用 `loadTranscript`，shape 不同）、`extractCodexTurnUsageFromLines` 取本轮 token，`extractUsage('codex', lines)` 取 session 累计 |
 | `src/openclaw-bridge.js` | 不动 | 已 tool-agnostic |
 | `src/lark-card.js` | 改（小） | `buildPermissionCard` 把 hard-code 的 `'⚠️ Claude Code 等待授权'` (line 37) 提到参数 `headerTitle`，default 仍 Claude 文案；codex call-site 传 `'⚠️ Codex 等待授权'` |
 | `src/ask-user-buttons.js` | 改（小） | callback_data 加 `source` 标记；回写键位**用 `\r` / `\x1b`**（不是 `y\n` / `n\n`，见 §5.1） |
@@ -269,19 +290,20 @@ class CodexPromptDetector {
 | `test/openclaw-hook.codex.test.js` | 新测试 | source=codex 路径，footer 用 extractCodex，附件生成；source 缺省时仍走 Claude（回归保护） |
 | `test/usage-footer.test.js` | 改 | 加 codex 用例（assertion: 调用 extractCodex 而非 extractClaude） |
 | `test/lark-card.codex.test.js` | 新测试 | header 文案参数化；callback 路由到 PTY write `\r`/`\x1b` |
-| `test/pty.findCodexSession.test.js` | 新测试 | 多个并行 Codex session 时，按 nativeId 各自找到正确 jsonl |
+| `test/pty.findCodexSession.test.js` | 新测试 | 验证 export 已挂、返回 `{filePath, cwd, nativeId}`、多个并行 Codex session 时按 nativeId 各自找到正确 jsonl 且 cwd 从 session_meta 正确读出 |
+| `test/codex-transcript.test.js` | 新测试 | `readLatestCodexTurnFresh` retry × 3 行为；`buildFullCodexTranscript` markdown 化；`extractCodexTurnUsageFromLines` 用真实 jsonl |
 
 ---
 
 ## 8. 节流 & 去重（沿用 Claude hook 规则）
 
-复用 `openclaw-hook.js` 现有节流，**仅扩展 dedup key 加 source 维度**：
+复用 `openclaw-hook.js` 现有节流，**dedup key 不加 source 维度**（reviewer iter-2 #7 修正）：
 
 ```
-dedup_key = `${sessionId}:${eventType}:${source}`
+dedup_key = `${sessionId}:${eventType}`
 ```
 
-理由：同一 sessionId 不会同时是 Claude 和 Codex（PTY 一对一），但 dedup key 加 source 让 telemetry / 日志更清晰，且未来若引入"hybrid pipeline（Claude → Codex 接力）"时无需改 key 结构。
+理由：PTY 与 sessionId 一对一，同一 sessionId 不会同时存在 Claude 与 Codex；source 仅在 telemetry / 日志里附加输出，不参与 dedup key 计算，避免歧义。
 
 其它规则不变：
 - ask_user pending 时 Stop 静默
@@ -305,6 +327,8 @@ dedup_key = `${sessionId}:${eventType}:${source}`
 | Codex 没写 task_complete 就 crash | PTY exit 事件兜底触发 SessionEnd 推送，附件用最后能拿到的 jsonl 内容 |
 | **用户用 `--no-record` 或 config 关闭 session log** | emitter 启动 5s 内若 day dir 没出现匹配 nativeId 的 rollout-*.jsonl → 标记 sessionId 为 "no-jsonl" 模式，仅靠 PTY exit 推送 SessionEnd（无 turn-end / footer / 附件） |
 | **danger-full-access 模式下 detector 永不命中** | 这是预期行为，不是 bug。call-site 不需要特判，detector 持续监听但默默不命中 |
+| **quadtodo 重启 / 进程崩溃 mid-codex-session**（reviewer iter-2 #6） | 内存反查表 `nativeIdToQuadtodoSession` 丢失 → 启动时从 `~/.quadtodo/codex-sessions/*.json` 全量恢复；emitter 启动时跳到当前 jsonl EOF（不重放 downtime 内事件，避免补推过期消息）；该 nativeId 对应的 PTY 若 quadtodo 重启时已死 → emitter 检测到 PTY 不在内存 sessions → 静默退出（最终态 SessionEnd 已无人 fire，可接受） |
+| **Codex schema 字段未来迁移**（reviewer iter-2 #4） | parser 测试**不**仅 assert "非 0"，而是用独立路径计算 ground truth：直接从 jsonl 行 grep 出所有 `event_msg/token_count` 行求和 `last_token_usage.total_tokens`，与 `extractCodex` 输出对账。字段被改名 / 移位时，独立 ground truth 也读不到 → 测试同时失败 → 显式报警；fixture 在每次 Codex 升版后通过 `npm run fixtures:refresh-codex` 脚本回放真实 session 重新捕获 |
 
 ---
 
