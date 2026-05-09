@@ -1,6 +1,5 @@
-import { spawn } from 'node:child_process'
-
-const DEFAULT_TIMEOUT_MS = 60_000
+import { createLarkApiClient } from './lark-api-client.js'
+import { createLarkEventClient } from './lark-event-client.js'
 
 function isBlank(value) {
   return value == null || String(value) === ''
@@ -56,57 +55,11 @@ export function normalizeEvent(raw = {}) {
   }
 }
 
-function runCli({ cliBin, args, spawnFn, logger }) {
-  return new Promise((resolve) => {
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-
-    const finish = (result) => {
-      if (settled) return
-      settled = true
-      resolve(result)
-    }
-
-    let proc
-    try {
-      proc = spawnFn(cliBin, args, { env: process.env })
-    } catch (e) {
-      finish({ ok: false, reason: 'cli_spawn_failed', detail: e.message })
-      return
-    }
-
-    const timer = setTimeout(() => {
-      try { proc.kill('SIGTERM') } catch {}
-      finish({ ok: false, reason: 'timeout', stderr })
-    }, DEFAULT_TIMEOUT_MS)
-    timer.unref?.()
-
-    proc.stdout?.on('data', (d) => { stdout += d.toString() })
-    proc.stderr?.on('data', (d) => { stderr += d.toString() })
-    proc.on('error', (e) => {
-      clearTimeout(timer)
-      finish({ ok: false, reason: 'cli_error', detail: e.message })
-    })
-    proc.on('close', (code) => {
-      clearTimeout(timer)
-      if (code !== 0) {
-        logger.warn?.(`[lark-bot] cli exit ${code}: ${stderr.trim().slice(0, 240)}`)
-        finish({ ok: false, reason: 'cli_failed', exitCode: code, stderr })
-        return
-      }
-      let payload = null
-      try { payload = JSON.parse(stdout) } catch {}
-      finish({ ok: true, payload, stdout })
-    })
-  })
-}
-
 export function createLarkBot({
   getConfig,
   wizard,
-  cliBin = 'lark-cli',
-  spawnFn = spawn,
+  apiClientFactory = createLarkApiClient,
+  eventClientFactory = createLarkEventClient,
   logger = console,
 } = {}) {
   if (typeof getConfig !== 'function') throw new Error('getConfig_required')
@@ -115,41 +68,44 @@ export function createLarkBot({
   const seenEvents = new Map()
   const pendingReplyRetries = new Map()
   let running = false
-  let proc = null
-  let buffer = ''
-  let restartTimer = null
+  let apiClient = null
+  let eventClient = null
+
+  function credentialsFromConfig() {
+    const lark = getConfig()?.lark || {}
+    return {
+      appId: lark.appId || '',
+      appSecret: lark.appSecret || '',
+    }
+  }
+
+  function hasCredentials() {
+    const { appId, appSecret } = credentialsFromConfig()
+    return !isBlank(appId) && !isBlank(appSecret)
+  }
+
+  function getApiClient() {
+    if (!apiClient) {
+      apiClient = apiClientFactory({
+        ...credentialsFromConfig(),
+        logger,
+      })
+    }
+    return apiClient
+  }
 
   async function sendMessage({ chatId, text } = {}) {
     if (isBlank(chatId)) return { ok: false, reason: 'chatId_required' }
     if (isBlank(text)) return { ok: false, reason: 'text_required' }
-    return runCli({
-      cliBin,
-      spawnFn,
-      logger,
-      args: [
-        'im', '+messages-send',
-        '--chat-id', String(chatId),
-        '--text', String(text),
-        '--as', 'bot',
-      ],
-    })
+    if (!hasCredentials()) return { ok: false, reason: 'lark_credentials_missing' }
+    return getApiClient().sendMessage({ chatId, text })
   }
 
   async function replyInThread({ rootMessageId, text } = {}) {
     if (isBlank(rootMessageId)) return { ok: false, reason: 'rootMessageId_required' }
     if (isBlank(text)) return { ok: false, reason: 'text_required' }
-    return runCli({
-      cliBin,
-      spawnFn,
-      logger,
-      args: [
-        'im', '+messages-reply',
-        '--message-id', String(rootMessageId),
-        '--text', String(text),
-        '--reply-in-thread',
-        '--as', 'bot',
-      ],
-    })
+    if (!hasCredentials()) return { ok: false, reason: 'lark_credentials_missing' }
+    return getApiClient().replyInThread({ rootMessageId, text })
   }
 
   async function deliverReply({ chatId, rootMessageId, text } = {}) {
@@ -171,7 +127,7 @@ export function createLarkBot({
     return {
       ok: false,
       reason: reason || replyResult?.reason || 'reply_failed',
-      detail: replyResult?.detail || replyResult?.stderr,
+      detail: replyResult?.detail,
     }
   }
 
@@ -242,88 +198,41 @@ export function createLarkBot({
     return { ok: true, action }
   }
 
-  function scheduleRestart() {
-    if (!running || restartTimer) return
-    restartTimer = setTimeout(() => {
-      restartTimer = null
-      if (running) start()
-    }, 5000)
-    restartTimer.unref?.()
-  }
-
-  function attachSubscriber(subscriber) {
-    subscriber.stdout?.on('data', (chunk) => {
-      buffer += chunk.toString()
-      let newlineIndex = buffer.indexOf('\n')
-      while (newlineIndex >= 0) {
-        const line = buffer.slice(0, newlineIndex).trim()
-        buffer = buffer.slice(newlineIndex + 1)
-        if (line) {
-          try {
-            handleEvent(JSON.parse(line)).catch((e) => logger.warn?.(`[lark-bot] event handler failed: ${e.message}`))
-          } catch (e) {
-            logger.warn?.(`[lark-bot] non-json event: ${line.slice(0, 240)}`)
-          }
-        }
-        newlineIndex = buffer.indexOf('\n')
-      }
-    })
-    subscriber.stderr?.on('data', (chunk) => {
-      const text = chunk.toString().trim()
-      if (text) logger.warn?.(`[lark-bot] subscriber stderr: ${text.slice(0, 240)}`)
-    })
-    subscriber.on('error', (e) => {
-      logger.warn?.(`[lark-bot] subscriber error: ${e.message}`)
-      proc = null
-      scheduleRestart()
-    })
-    subscriber.on('close', (code) => {
-      logger.warn?.(`[lark-bot] subscriber closed: ${code}`)
-      proc = null
-      scheduleRestart()
-    })
-  }
-
   async function start() {
     const cfg = getConfig()?.lark || {}
     if (!cfg.enabled || cfg.eventSubscribeEnabled === false) return { ok: false, reason: 'disabled' }
     if (isBlank(cfg.chatId)) return { ok: false, reason: 'chatId_missing' }
-    if (proc) return { ok: true, action: 'already_running' }
+    if (!hasCredentials()) return { ok: false, reason: 'lark_credentials_missing' }
+    if (running) return { ok: true, action: 'already_running' }
 
+    eventClient = eventClientFactory({
+      ...credentialsFromConfig(),
+      onEvent: handleEvent,
+      logger,
+    })
+    const result = await eventClient.start()
+    if (!result?.ok) return result
     running = true
-    buffer = ''
-    try {
-      proc = spawnFn(cliBin, ['event', '+subscribe', '--event-types', 'im.message.receive_v1', '--compact', '--as', 'bot'], { env: process.env })
-    } catch (e) {
-      proc = null
-      logger.warn?.(`[lark-bot] subscriber spawn failed: ${e.message}`)
-      scheduleRestart()
-      return { ok: false, reason: 'cli_spawn_failed', detail: e.message }
-    }
-    attachSubscriber(proc)
     return { ok: true, action: 'started' }
   }
 
   async function stop() {
     running = false
-    if (restartTimer) {
-      clearTimeout(restartTimer)
-      restartTimer = null
-    }
-    if (proc) {
-      try { proc.kill('SIGTERM') } catch {}
-      proc = null
-    }
+    const current = eventClient
+    eventClient = null
+    if (current?.stop) await current.stop()
     return { ok: true }
   }
 
   function describe() {
     const cfg = getConfig()?.lark || {}
+    const eventStatus = eventClient?.describe?.() || null
     return {
       enabled: !!cfg.enabled,
       chatId: cfg.chatId || '',
       eventSubscribeEnabled: cfg.eventSubscribeEnabled !== false,
       running,
+      eventStatus,
     }
   }
 
