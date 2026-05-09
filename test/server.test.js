@@ -26,6 +26,31 @@ vi.mock("../src/lark-bot.js", () => ({
 	}),
 }));
 
+const telegramBotMockState = vi.hoisted(() => ({
+	instances: [],
+	nextBot: null,
+}));
+
+vi.mock("../src/telegram-bot.js", async (importOriginal) => {
+	const actual = await importOriginal();
+	return {
+		...actual,
+		createTelegramBot: vi.fn(() => {
+			const bot = telegramBotMockState.nextBot || {
+				start: vi.fn(() => {}),
+				stop: vi.fn(async () => ({ ok: true })),
+				createForumTopic: vi.fn(async ({ name }) => ({ message_thread_id: 909, name })),
+				sendMessage: vi.fn(async () => ({ message_id: 1 })),
+				setMyCommands: vi.fn(async () => true),
+				setProbeListener: vi.fn(() => {}),
+			};
+			telegramBotMockState.nextBot = null;
+			telegramBotMockState.instances.push(bot);
+			return bot;
+		}),
+	};
+});
+
 import {
 	buildNativeResumeLaunch,
 	buildNativeResumeMarker,
@@ -85,6 +110,8 @@ describe("server", () => {
 		loadConfig({ rootDir: configRootDir });
 		larkBotMockState.instances = [];
 		larkBotMockState.nextBot = null;
+		telegramBotMockState.instances = [];
+		telegramBotMockState.nextBot = null;
 		srv = createServer({
 			dbFile: ":memory:",
 			logDir,
@@ -208,6 +235,81 @@ describe("server", () => {
 		});
 		expect(update.body.runtimeApplied.larkRestart).toEqual({ applied: true });
 		expect(loadConfig({ rootDir: configRootDir }).lark.chatId).toBe("oc_test_chat");
+	});
+
+	it("creates a Telegram topic for Web-started AI after Telegram is enabled via config update", async () => {
+		const update = await request(srv.app)
+			.put("/api/config")
+			.send({
+				telegram: {
+					enabled: true,
+					supergroupId: "-100-web-ai",
+					allowedChatIds: ["-100-web-ai"],
+					autoCreateTopic: true,
+				},
+			});
+
+		expect(update.status).toBe(200);
+		expect(update.body.telegramRestart).toMatchObject({ applied: true });
+		const bot = telegramBotMockState.instances.at(-1);
+		expect(bot).toBeTruthy();
+
+		const todo = srv.db.createTodo({ title: "Web AI topic", quadrant: 1, workDir: workRootDir });
+		const exec = await request(srv.app)
+			.post("/api/ai-terminal/exec")
+			.send({ todoId: todo.id, prompt: "hi", tool: "claude" });
+
+		expect(exec.status).toBe(200);
+		await vi.waitFor(() => expect(bot.createForumTopic).toHaveBeenCalledTimes(1));
+		expect(bot.createForumTopic).toHaveBeenCalledWith(expect.objectContaining({
+			chatId: "-100-web-ai",
+			name: expect.stringContaining("Web AI topic"),
+		}));
+
+		const route = srv.openclawBridge.resolveRoute(exec.body.sessionId);
+		expect(route).toMatchObject({
+			targetUserId: "-100-web-ai",
+			threadId: 909,
+			channel: "telegram",
+		});
+		const updatedTodo = srv.db.getTodo(todo.id);
+		expect(updatedTodo.aiSessions[0].telegramRoute).toMatchObject({
+			targetUserId: "-100-web-ai",
+			threadId: 909,
+			channel: "telegram",
+		});
+		expect(bot.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+			chatId: "-100-web-ai",
+			threadId: 909,
+			text: expect.stringContaining("自动镜像 from web/CLI"),
+		}));
+	});
+
+	it("does not create a Telegram topic for Web-started AI when autoCreateTopic is false", async () => {
+		await request(srv.app)
+			.put("/api/config")
+			.send({
+				telegram: {
+					enabled: true,
+					supergroupId: "-100-web-ai",
+					allowedChatIds: ["-100-web-ai"],
+					autoCreateTopic: false,
+				},
+			});
+
+		const bot = telegramBotMockState.instances.at(-1);
+		expect(bot).toBeTruthy();
+
+		const todo = srv.db.createTodo({ title: "No topic", quadrant: 1, workDir: workRootDir });
+		const exec = await request(srv.app)
+			.post("/api/ai-terminal/exec")
+			.send({ todoId: todo.id, prompt: "hi", tool: "claude" });
+
+		expect(exec.status).toBe(200);
+		expect(bot.createForumTopic).not.toHaveBeenCalled();
+		expect(srv.openclawBridge.resolveRoute(exec.body.sessionId)).toBeNull();
+		const updatedTodo = srv.db.getTodo(todo.id);
+		expect(updatedTodo.aiSessions[0]).not.toHaveProperty("telegramRoute");
 	});
 
 	it("rehydrates persisted lark session routes on startup", async () => {

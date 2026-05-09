@@ -846,6 +846,44 @@ describe('openclaw-wizard state machine', () => {
     expect(persisted.telegramRoute.threadId).toBe(555)
   })
 
+  it('ensureTopicForSession: uses telegram.supergroupId before legacy defaultSupergroupId and allowedChatIds', async () => {
+    const todo = db.createTodo({ title: 'supergroup-primary', quadrant: 2, workDir: '/tmp' })
+    db.updateTodo(todo.id, {
+      aiSessions: [{ sessionId: 'sid-supergroup', tool: 'claude', status: 'running', startedAt: Date.now() }],
+    })
+    const fakeTelegramBot = {
+      createForumTopic: vi.fn(async ({ chatId, name }) => ({ message_thread_id: 444, name, chatId })),
+      sendMessage: vi.fn(async () => ({ message_id: 1 })),
+    }
+    bridge.resolveRoute = (sid) => bridge.routes.get(sid) || null
+
+    const w2 = createOpenClawWizard({
+      db, aiTerminal: ai, openclaw: bridge, pending,
+      telegramBot: fakeTelegramBot,
+      getConfig: () => ({
+        telegram: {
+          supergroupId: '-100-primary',
+          defaultSupergroupId: '-100-legacy',
+          allowedChatIds: ['-100-allowed'],
+        },
+      }),
+    })
+
+    const r = await w2.ensureTopicForSession({ sessionId: 'sid-supergroup', todoId: todo.id })
+
+    expect(r.ok).toBe(true)
+    expect(fakeTelegramBot.createForumTopic).toHaveBeenCalledWith(expect.objectContaining({
+      chatId: '-100-primary',
+    }))
+    expect(bridge.routes.get('sid-supergroup')).toMatchObject({
+      targetUserId: '-100-primary',
+      threadId: 444,
+      channel: 'telegram',
+    })
+    const persisted = db.getTodo(todo.id).aiSessions.find((s) => s.sessionId === 'sid-supergroup')
+    expect(persisted.telegramRoute).toMatchObject({ targetUserId: '-100-primary', threadId: 444 })
+  })
+
   it('ensureTopicForSession: idempotent — already-bound returns no-op', async () => {
     const todo = db.createTodo({ title: 'auto-idem', quadrant: 2, workDir: '/tmp' })
     db.updateTodo(todo.id, {

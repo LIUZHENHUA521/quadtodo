@@ -46,6 +46,7 @@ function makeApp(opts = {}) {
     getWebhookConfig: opts.getWebhookConfig,
     notifier: opts.notifier,
     onSessionEnded: opts.onSessionEnded,
+    onSessionSpawned: opts.onSessionSpawned,
   })
   const app = express()
   app.use(express.json())
@@ -85,6 +86,42 @@ describe('routes/ai-terminal', () => {
     expect(updated.aiSession.tool).toBe('claude')
     expect(updated.aiSession.status).toBe('running')
     expect(updated.aiSessions).toHaveLength(1)
+  })
+
+  it('POST /exec invokes onSessionSpawned after starting a new session', async () => {
+    const spawned = []
+    ctx = makeApp({
+      onSessionSpawned: vi.fn((info) => {
+        spawned.push(info)
+        return null
+      }),
+    })
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+
+    const r = await request(ctx.app)
+      .post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hello', tool: 'claude' })
+
+    expect(r.status).toBe(200)
+    expect(spawned).toEqual([{ sessionId: r.body.sessionId, todoId: todo.id, tool: 'claude' }])
+  })
+
+  it('POST /exec does not invoke onSessionSpawned when reusing an existing native session', async () => {
+    const onSessionSpawned = vi.fn(() => null)
+    ctx = makeApp({ onSessionSpawned })
+    const nativeId = 'abcdef12-3456-7890-abcd-ef1234567890'
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+
+    const first = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'first', tool: 'claude', resumeNativeId: nativeId })
+    const second = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'second', tool: 'claude', resumeNativeId: nativeId })
+
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+    expect(second.body.reused).toBe(true)
+    expect(onSessionSpawned).toHaveBeenCalledTimes(1)
+    expect(onSessionSpawned).toHaveBeenCalledWith({ sessionId: first.body.sessionId, todoId: todo.id, tool: 'claude' })
   })
 
   it('POST /exec falls back to defaultCwd when request cwd is missing', async () => {

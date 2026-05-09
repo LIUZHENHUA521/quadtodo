@@ -1204,10 +1204,11 @@ export function createServer(opts = {}) {
 	})
 
 	// ─── Telegram 自动 topic 镜像（B 方案）─────────────────────────
-	// 默认开；config.telegram.autoCreateTopic = false 可关
-	const telegramConfig = (initialConfig?.telegram) || {}
-	const autoCreateEnabled = telegramConfig.enabled && telegramConfig.autoCreateTopic !== false
+	// 默认开；config.telegram.autoCreateTopic = false 可关。这里必须读实时配置，
+	// 因为设置页会热启用 Telegram，不应要求重启 quadtodo 才生效。
 	aiSessionHooks.onSessionSpawned = ({ sessionId, todoId }) => {
+		const telegramConfig = loadConfig({ rootDir: configRootDir }).telegram || {}
+		const autoCreateEnabled = telegramConfig.enabled && telegramConfig.autoCreateTopic !== false
 		if (!autoCreateEnabled) return null
 		return openclawWizard.ensureTopicForSession({ sessionId, todoId })
 			.catch((e) => console.warn(`[server] ensureTopicForSession failed: ${e.message}`))
@@ -1231,7 +1232,9 @@ export function createServer(opts = {}) {
 	}
 
 	// 启动期 sweep：恢复后的 running PTY session 若没绑 topic（手动 web/CLI 起的）→ 补建
-	if (autoCreateEnabled) {
+	const sweepTelegramConfig = loadConfig({ rootDir: configRootDir }).telegram || {}
+	const sweepAutoCreateEnabled = sweepTelegramConfig.enabled && sweepTelegramConfig.autoCreateTopic !== false
+	if (sweepAutoCreateEnabled) {
 		let swept = 0
 		for (const [sid, sess] of ait.sessions) {
 			if (sess.status !== 'running' && sess.status !== 'pending_confirm') continue

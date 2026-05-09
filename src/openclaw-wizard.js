@@ -754,10 +754,10 @@ export function createOpenClawWizard({
       return { ok: true, action: 're-registered', threadId: aiSess.telegramRoute.threadId }
     }
 
-    // 决定 chatId：优先 telegram.defaultSupergroupId，回退 allowedChatIds[0]
+    // 决定 chatId：优先当前配置字段，兼容 legacy defaultSupergroupId，最后回退 allowedChatIds[0]
     const cfg = getConfig?.() || {}
     const tg = cfg.telegram || {}
-    const chatId = tg.defaultSupergroupId || (Array.isArray(tg.allowedChatIds) ? tg.allowedChatIds[0] : null)
+    const chatId = tg.supergroupId || tg.defaultSupergroupId || (Array.isArray(tg.allowedChatIds) ? tg.allowedChatIds[0] : null)
     if (!chatId) return { ok: false, reason: 'no_default_chat_id' }
 
     // 拼名字：#tXXX <title>
