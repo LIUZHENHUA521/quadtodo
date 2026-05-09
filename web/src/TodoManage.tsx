@@ -2518,7 +2518,7 @@ export default function TodoManage() {
           <span className="todo-attention-fab-icon"><BellOutlined /></span>
           <span className="todo-attention-fab-text">
             <strong>待处理回复</strong>
-            <small>{attentionCounts.review} 待验收 · {attentionCounts.interaction} 待交互</small>
+            <small>{attentionCounts.interaction} 待交互 · {attentionCounts.awaitingReply} 待回复 · {attentionCounts.review} 待验收</small>
           </span>
           <span className="todo-attention-fab-badge">{attentionCounts.total}</span>
         </button>

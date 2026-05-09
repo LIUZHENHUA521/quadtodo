@@ -216,6 +216,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
 
     session.status = aiStatus
     session.completedAt = Date.now()
+    session.awaitingReply = false
 
     const superseded = Boolean(session.replacedBySessionId) || todoSessionMap.get(session.todoId) !== sessionId
     const todo = db.getTodo(session.todoId)
@@ -332,6 +333,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       autoMode: effectivePermissionMode !== 'default' ? effectivePermissionMode : null,
       lastOutputAt: null,
       outputBytesTotal: 0,
+      awaitingReply: false,
     }
     sessions.set(sessionId, session)
     todoSessionMap.set(todoId, sessionId)
@@ -437,6 +439,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
           completedAt: s.completedAt || null,
           lastOutputAt: s.lastOutputAt || null,
           outputBytesTotal: s.outputBytesTotal || 0,
+          awaitingReply: !!s.awaitingReply,
         })
       }
       res.json({ ok: true, sessions: out })
@@ -535,6 +538,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
         return
       }
       clearPendingConfirm(session)
+      session.awaitingReply = false
       pty.write(sessionId, data)
       res.json({ ok: true })
     } catch (e) {
@@ -698,6 +702,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       // 浏览器侧每次按键都收到 pending_cleared → pending_confirm 一对消息，导致前端 border
       // 在 1px ↔ 2px 之间反复，肉眼上就是"打字时终端布局抖动"。
       if (isPendingClearingInput(msg.data)) clearPendingConfirm(session)
+      if (session) session.awaitingReply = false
       pty.write(sessionId, msg.data)
     } else if (msg.type === 'resize') {
       const cols = Number(msg.cols)
@@ -799,6 +804,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
         lastOutputAt: null,
         outputBytesTotal: 0,
         completedAt: null,
+        awaitingReply: false,
       }
       sessions.set(sessionId, session)
       todoSessionMap.set(todo.id, sessionId)
@@ -855,6 +861,17 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
     broadcastToSession,
     notifyTurnDone,
     spawnSession,
+    markSessionAwaitingReply,
     close,
+  }
+
+  function markSessionAwaitingReply(sessionId, value) {
+    const session = sessions.get(sessionId)
+    if (!session) return false
+    if (session.status !== 'running' && session.status !== 'pending_confirm') return false
+    const next = !!value
+    if (session.awaitingReply === next) return false
+    session.awaitingReply = next
+    return true
   }
 }

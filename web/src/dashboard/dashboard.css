@@ -284,7 +284,7 @@
 
 .dash-attention-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-top: 10px;
 }
@@ -321,6 +321,7 @@
 
 .dash-attention-summary-card.review.active { border-color: #fb923c; }
 .dash-attention-summary-card.interaction.active { border-color: #f59e0b; }
+.dash-attention-summary-card.awaiting.active { border-color: #1677ff; }
 
 .dash-attention-list {
   display: flex;
@@ -347,6 +348,11 @@
 .dash-attention-card.interaction {
   border-color: #fde68a;
   background: #fffbeb;
+}
+
+.dash-attention-card.awaiting_reply {
+  border-color: #bae0ff;
+  background: #f0f9ff;
 }
 
 .dash-attention-accent {

@@ -60,6 +60,7 @@ function live(input: Partial<SessionMeta> & { sessionId: string; todoId: string 
     completedAt: input.completedAt ?? null,
     lastOutputAt: input.lastOutputAt ?? null,
     outputBytesTotal: input.outputBytesTotal ?? 0,
+    awaitingReply: input.awaitingReply ?? false,
   }
 }
 
@@ -147,14 +148,73 @@ describe('buildAttentionItems', () => {
     expect(items.map(item => item.sessionId)).toEqual(['s-pending', 's-new', 's-old'])
   })
 
-  it('counts待交互 and待验收 separately', () => {
+  it('counts待交互, 待回复 and 待验收 separately', () => {
     const counts = countAttentionItems([
       { id: 'interaction:a', kind: 'interaction', sessionId: 'a', todoId: 'ta', todoTitle: 'A', quadrant: 1, tool: 'claude', timestamp: 1 },
+      { id: 'awaiting:d', kind: 'awaiting_reply', sessionId: 'd', todoId: 'td', todoTitle: 'D', quadrant: 4, tool: 'claude', timestamp: 4 },
       { id: 'review:b', kind: 'review', sessionId: 'b', todoId: 'tb', todoTitle: 'B', quadrant: 2, tool: 'codex', timestamp: 2 },
       { id: 'review:c', kind: 'review', sessionId: 'c', todoId: 'tc', todoTitle: 'C', quadrant: 3, tool: 'cursor', timestamp: 3 },
     ])
 
-    expect(counts).toEqual({ total: 3, interaction: 1, review: 2 })
+    expect(counts).toEqual({ total: 4, interaction: 1, awaitingReply: 1, review: 2 })
+  })
+
+  it('creates a 待回复 item for live running sessions with awaitingReply=true', () => {
+    const items = buildAttentionItems({
+      todos: [todo({ id: 'todo-3', title: 'Continue chat', quadrant: 3 })],
+      liveSessions: [live({ sessionId: 's-await', todoId: 'todo-3', status: 'running', awaitingReply: true, lastOutputAt: 5000 })],
+      seenSessionIds: new Set(),
+    })
+
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      id: 'awaiting:s-await',
+      kind: 'awaiting_reply',
+      sessionId: 's-await',
+      todoId: 'todo-3',
+      todoTitle: 'Continue chat',
+      quadrant: 3,
+      timestamp: 5000,
+    })
+  })
+
+  it('does not create a 待回复 item when session is not running', () => {
+    const items = buildAttentionItems({
+      todos: [todo({ id: 'todo-3', title: 'Done already', status: 'ai_done', aiSessions: [session({ sessionId: 's-done', completedAt: 4000 })] })],
+      liveSessions: [live({ sessionId: 's-done', todoId: 'todo-3', status: 'done', awaitingReply: true })],
+      seenSessionIds: new Set(),
+    })
+
+    // session.status='done' → 不应该出现 awaiting；只应该出现 review (来自 todo.status='ai_done')
+    expect(items.map(item => item.kind)).toEqual(['review'])
+  })
+
+  it('prefers待交互 over 待回复 when both flags are present on the same session', () => {
+    const items = buildAttentionItems({
+      todos: [todo({ id: 'todo-1', title: 'Both signals' })],
+      liveSessions: [live({ sessionId: 's1', todoId: 'todo-1', status: 'pending_confirm', awaitingReply: true })],
+      seenSessionIds: new Set(),
+    })
+
+    expect(items).toHaveLength(1)
+    expect(items[0].kind).toBe('interaction')
+  })
+
+  it('sorts待交互 before 待回复 before 待验收', () => {
+    const items = buildAttentionItems({
+      todos: [
+        todo({ id: 'todo-r', title: 'Review', status: 'ai_done', aiSessions: [session({ sessionId: 's-rev', completedAt: 9000 })] }),
+        todo({ id: 'todo-w', title: 'Waiting', quadrant: 1 }),
+        todo({ id: 'todo-i', title: 'Interaction', quadrant: 1 }),
+      ],
+      liveSessions: [
+        live({ sessionId: 's-await', todoId: 'todo-w', status: 'running', awaitingReply: true, lastOutputAt: 8000 }),
+        live({ sessionId: 's-int', todoId: 'todo-i', status: 'pending_confirm', lastOutputAt: 1000 }),
+      ],
+      seenSessionIds: new Set(),
+    })
+
+    expect(items.map(item => item.sessionId)).toEqual(['s-int', 's-await', 's-rev'])
   })
 })
 

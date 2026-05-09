@@ -1084,6 +1084,103 @@ export function createOpenClawWizard({
   }
 
   /**
+   * 通过 larkRoute.rootMessageId 反查 todo + aiSession。
+   * 优先 DB 持久化 larkRoute；缺失时用 bridge in-memory 路由 + aiTerminal.sessions 兜底。
+   */
+  function findTodoByLarkRoot(chatId, rootMessageId) {
+    if (!rootMessageId) return null
+    const rmid = String(rootMessageId)
+    const todos = db.listTodos({ status: 'all' }) || db.listTodos() || []
+    for (const t of todos) {
+      const ai = (t.aiSessions || []).find((s) => s?.larkRoute?.rootMessageId === rmid
+        && String(s.larkRoute.targetUserId) === String(chatId))
+      if (ai) return { todo: t, aiSession: ai }
+    }
+    if (openclaw?.findSessionByRoute && aiTerminal?.sessions) {
+      const sid = openclaw.findSessionByRoute({ channel: 'lark', chatId: String(chatId), rootMessageId: rmid })
+      if (sid) {
+        const sess = aiTerminal.sessions.get(sid)
+        if (sess?.todoId) {
+          const todo = db.getTodo(sess.todoId)
+          if (todo) {
+            const route = openclaw.resolveRoute?.(sid) || {}
+            const fakeAi = {
+              sessionId: sid,
+              tool: sess.tool,
+              nativeSessionId: sess.nativeSessionId,
+              larkRoute: {
+                targetUserId: route.targetUserId || String(chatId),
+                rootMessageId: rmid,
+                topicName: route.topicName || todo.title,
+                channel: 'lark',
+              },
+            }
+            return { todo, aiSession: fakeAi }
+          }
+        }
+      }
+    }
+    return null
+  }
+
+  /**
+   * Lark 版「关闭话题」语义：飞书没有 close-topic 原生事件，
+   * 这里供同步对账（/api/sync）用 —— 当 PTY 已死且 todo 还没 done 时手动收尾。
+   * 行为对齐 telegram 的 handleTopicEvent('closed')：
+   *   1) 找到绑定到 (chatId, rootMessageId) 的 PTY session（如果还活着，杀掉）
+   *   2) mark todo done，标 userClosedReason 防 PTY done 事件覆写
+   *   3) 清 bridge 路由
+   *   4) 在 thread 里回一条 "✅ 任务已完成" 收尾消息（让用户察觉到）
+   * 不重命名根消息（lark patch 文本受限，不强求与 telegram 对齐）。
+   */
+  async function handleLarkThreadClose({ chatId, rootMessageId } = {}) {
+    if (!chatId || !rootMessageId) return { ok: false, reason: 'missing_args' }
+
+    const found = findTodoByLarkRoot(String(chatId), String(rootMessageId))
+    if (!found) {
+      logger.warn?.(`[wizard] lark thread close: no todo bound to chatId=${chatId} rootMessageId=${rootMessageId}`)
+      return { ok: false, reason: 'no_todo' }
+    }
+    const { todo, aiSession } = found
+    const topicName = aiSession.larkRoute?.topicName || todo.title
+
+    // 1) 杀 PTY（如果还活着）
+    let killedSid = null
+    if (openclaw?.findSessionByRoute) {
+      const sid = openclaw.findSessionByRoute({
+        channel: 'lark', chatId: String(chatId), rootMessageId: String(rootMessageId),
+      })
+      if (sid) {
+        killedSid = sid
+        const sess = aiTerminal?.sessions?.get?.(sid)
+        if (sess) sess.userClosedReason = 'lark_thread_closed'
+        if (pty?.stop) {
+          try { pty.stop(sid) } catch (e) { logger.warn?.(`[wizard] pty.stop failed: ${e.message}`) }
+        }
+        openclaw.clearSessionRoute?.(sid, 'lark-thread-closed')
+      }
+    }
+
+    // 2) 标 todo done
+    try {
+      db.updateTodo(todo.id, { status: 'done', completedAt: Date.now() })
+    } catch (e) {
+      logger.warn?.(`[wizard] mark done failed: ${e.message}`)
+    }
+
+    // 3) 在 thread 里回收尾消息
+    if (larkBot?.replyInThread) {
+      larkBot.replyInThread({
+        rootMessageId: String(rootMessageId),
+        text: `✅ 任务「${topicName}」已完成（auto-sync）`,
+      }).catch?.((e) => logger.warn?.(`[wizard] lark reply ✅ failed: ${e.message}`))
+    }
+
+    logger.info?.(`[wizard] lark thread closed → todo ${todo.id} done; killed sid=${killedSid || '(none alive)'}`)
+    return { ok: true, action: 'closed', todoId: todo.id, killedSid }
+  }
+
+  /**
    * 给状态机喂一条用户消息。两种入参形式：
    *   旧：{ peer, text }                        ← weixin / OpenClaw skill 路径
    *   新：{ chatId, threadId, text, fromUserId } ← Telegram 直连路径
@@ -1131,6 +1228,7 @@ export function createOpenClawWizard({
       }
       try {
         loadingTracker?.markRunning?.(sid)?.catch?.(() => {})
+        try { aiTerminal?.markSessionAwaitingReply?.(sid, false) } catch { /* ignore */ }
         let payload = trimmed
         if (imagePaths.length > 0) {
           const ats = imagePaths.map((p) => `@${p}`).join(' ')
@@ -1417,6 +1515,7 @@ export function createOpenClawWizard({
         try {
           // 用户从 telegram 发新输入 → 标题切回 🔄（如果当前是 💤）
           loadingTracker?.markRunning?.(targetSid)?.catch?.(() => {})
+          try { aiTerminal?.markSessionAwaitingReply?.(targetSid, false) } catch { /* ignore */ }
           // 组装 PTY 输入：图片用 Claude Code 的 `@path` attach 语法
           //   纯文本：    "text"
           //   纯图片：    "@/path/to/file.jpg"
@@ -2174,6 +2273,7 @@ export function createOpenClawWizard({
     handleCallback,
     handleSlashCommand,
     handleTopicEvent,
+    handleLarkThreadClose,
     ensureTopicForSession,
     ensureLarkThreadForSession,
     abortWizard,

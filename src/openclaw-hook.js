@@ -631,6 +631,12 @@ export function createOpenClawHookHandler({
       if (evt === 'stop' && sessionId && loadingTracker?.markIdle) {
         loadingTracker.markIdle(sessionId).catch((e) => logger.warn?.(`[openclaw-hook] markIdle failed: ${e.message}`))
       }
+      // Stop 事件 = Claude 完成一轮回复 → 在 ai-terminal 上标记 awaiting reply,
+      // 让 web reply hub 也能感知到（独立于 telegram/lark 路由是否存在）
+      if (evt === 'stop' && sessionId && aiTerminal?.markSessionAwaitingReply) {
+        try { aiTerminal.markSessionAwaitingReply(sessionId, true) }
+        catch (e) { logger.warn?.(`[openclaw-hook] markSessionAwaitingReply failed: ${e.message}`) }
+      }
       // Stop / session-end → 清掉 lark "在思考" reaction（如果是 lark route）
       if ((evt === 'stop' || evt === 'session-end') && sessionId && larkBot?.clearReactionsForSession) {
         const route = openclaw.resolveRoute?.(sessionId)

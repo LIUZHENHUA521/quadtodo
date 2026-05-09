@@ -3,7 +3,7 @@ import type { SessionMeta } from './store/aiSessionStore'
 
 export const SEEN_REPLY_STORAGE_KEY = 'quadtodo:seenAiReplies'
 
-export type AttentionKind = 'interaction' | 'review'
+export type AttentionKind = 'interaction' | 'awaiting_reply' | 'review'
 
 export interface AttentionItem {
   id: string
@@ -20,6 +20,7 @@ export interface AttentionItem {
 export interface AttentionCounts {
   total: number
   interaction: number
+  awaitingReply: number
   review: number
 }
 
@@ -67,6 +68,25 @@ export function buildAttentionItems({ todos, liveSessions, seenSessionIds }: Bui
     usedSessionIds.add(live.sessionId)
   }
 
+  for (const live of liveSessions) {
+    if (!live.awaitingReply) continue
+    if (usedSessionIds.has(live.sessionId)) continue
+    if (live.status !== 'running') continue
+    const todo = todoById.get(live.todoId)
+    const title = todo?.title || live.todoTitle || '(无标题)'
+    items.push({
+      id: `awaiting:${live.sessionId}`,
+      kind: 'awaiting_reply',
+      sessionId: live.sessionId,
+      todoId: live.todoId,
+      todoTitle: title,
+      quadrant: todo?.quadrant || live.quadrant,
+      tool: live.tool,
+      timestamp: normalizeTimestamp(live.lastOutputAt, live.startedAt),
+    })
+    usedSessionIds.add(live.sessionId)
+  }
+
   for (const todo of todos) {
     const todoIsAwaitingReview = todo.status === 'ai_done'
     const todoIsAwaitingInteraction = todo.status === 'ai_pending'
@@ -110,7 +130,11 @@ export function buildAttentionItems({ todos, liveSessions, seenSessionIds }: Bui
   }
 
   return items.sort((a, b) => {
-    const rank = (item: AttentionItem) => item.kind === 'interaction' ? 0 : 1
+    const rank = (item: AttentionItem) => {
+      if (item.kind === 'interaction') return 0
+      if (item.kind === 'awaiting_reply') return 1
+      return 2
+    }
     const rankDiff = rank(a) - rank(b)
     if (rankDiff !== 0) return rankDiff
     return b.timestamp - a.timestamp
@@ -119,12 +143,14 @@ export function buildAttentionItems({ todos, liveSessions, seenSessionIds }: Bui
 
 export function countAttentionItems(items: AttentionItem[]): AttentionCounts {
   let interaction = 0
+  let awaitingReply = 0
   let review = 0
   for (const item of items) {
     if (item.kind === 'interaction') interaction++
+    else if (item.kind === 'awaiting_reply') awaitingReply++
     else review++
   }
-  return { total: interaction + review, interaction, review }
+  return { total: interaction + awaitingReply + review, interaction, awaitingReply, review }
 }
 
 export function parseSeenReplySessionIds(raw: string | null | undefined): Set<string> {

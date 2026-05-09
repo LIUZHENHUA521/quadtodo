@@ -19,7 +19,15 @@ function formatAttentionTime(timestamp: number): string {
 }
 
 function kindText(kind: AttentionKind): string {
-  return kind === 'interaction' ? '待交互' : '待验收'
+  if (kind === 'interaction') return '待交互'
+  if (kind === 'awaiting_reply') return '待回复'
+  return '待验收'
+}
+
+function kindTagColor(kind: AttentionKind): string {
+  if (kind === 'interaction') return 'warning'
+  if (kind === 'awaiting_reply') return 'processing'
+  return 'orange'
 }
 
 function toolText(tool: string): string {
@@ -69,13 +77,17 @@ export default function AttentionHub({
           <strong>{counts.total}</strong>
           <span>全部</span>
         </button>
-        <button type="button" className={`dash-attention-summary-card review ${filter === 'review' ? 'active' : ''}`} onClick={() => setFilter('review')}>
-          <strong>{counts.review}</strong>
-          <span>待验收</span>
-        </button>
         <button type="button" className={`dash-attention-summary-card interaction ${filter === 'interaction' ? 'active' : ''}`} onClick={() => setFilter('interaction')}>
           <strong>{counts.interaction}</strong>
           <span>待交互</span>
+        </button>
+        <button type="button" className={`dash-attention-summary-card awaiting ${filter === 'awaiting_reply' ? 'active' : ''}`} onClick={() => setFilter('awaiting_reply')}>
+          <strong>{counts.awaitingReply}</strong>
+          <span>待回复</span>
+        </button>
+        <button type="button" className={`dash-attention-summary-card review ${filter === 'review' ? 'active' : ''}`} onClick={() => setFilter('review')}>
+          <strong>{counts.review}</strong>
+          <span>待验收</span>
         </button>
       </div>
 
@@ -90,7 +102,7 @@ export default function AttentionHub({
                 <div className="dash-attention-accent" style={{ background: qColor }} />
                 <div className="dash-attention-main">
                   <div className="dash-attention-title-row">
-                    <Tag color={item.kind === 'interaction' ? 'warning' : 'orange'}>{kindText(item.kind)}</Tag>
+                    <Tag color={kindTagColor(item.kind)}>{kindText(item.kind)}</Tag>
                     <Tag style={{ color: qColor, borderColor: `${qColor}55`, background: `${qColor}12` }}>{QUADRANT_LABEL[item.quadrant]}</Tag>
                     <span className="dash-attention-title" title={item.todoTitle}>{item.todoTitle}</span>
                   </div>

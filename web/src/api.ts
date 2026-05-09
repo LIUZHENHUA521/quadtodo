@@ -463,35 +463,45 @@ export async function getStatus(): Promise<{ version: string; activeSessions: nu
   return jsonFetch('/api/status')
 }
 
-export interface TelegramSyncAction {
-  type: 'open_topic' | 'close_topic' | 'clear_route'
+export type SyncActionType = 'open_topic' | 'close_topic' | 'open_thread' | 'close_thread' | 'clear_route'
+export interface SyncAction {
+  type: SyncActionType
+  channel?: 'telegram' | 'lark' | null
   todoId?: string
   todoTitle?: string
   sessionId?: string
   chatId?: string
-  threadId?: number
+  threadId?: number | null
+  rootMessageId?: string | null
   reason: string
   result?: { ok: boolean; action?: string; reason?: string; error?: string }
 }
-export interface TelegramSyncResponse {
+export interface SyncResponse {
   ok: boolean
   dryRun: boolean
   summary: {
     total: number
     open_topic: number
     close_topic: number
+    open_thread: number
+    close_thread: number
     clear_route: number
     succeeded?: number
     failed?: number
   }
-  actions: TelegramSyncAction[]
+  actions: SyncAction[]
 }
-export async function telegramSync(dryRun: boolean): Promise<TelegramSyncResponse> {
-  return jsonFetch('/api/telegram-sync', {
+// 旧名字保留为 type alias，避免外部 import 断
+export type TelegramSyncAction = SyncAction
+export type TelegramSyncResponse = SyncResponse
+export async function syncChannels(dryRun: boolean): Promise<SyncResponse> {
+  return jsonFetch('/api/sync', {
     method: 'POST',
     body: JSON.stringify({ dryRun }),
   })
 }
+// 兼容老导出
+export const telegramSync = syncChannels
 
 export async function getConfig(): Promise<{ config: AppConfig; toolDiagnostics: Record<AiTool, ToolDiagnostic> }> {
   const body = await jsonFetch<{ ok: true; config: AppConfig; toolDiagnostics: Record<AiTool, ToolDiagnostic> }>('/api/config')
@@ -577,6 +587,7 @@ export interface LiveSession {
   completedAt: number | null
   lastOutputAt: number | null
   outputBytesTotal: number
+  awaitingReply?: boolean
 }
 
 export interface SessionStats {
