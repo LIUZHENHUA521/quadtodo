@@ -548,15 +548,22 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         </Form.Item>
 
         <Paragraph style={{ marginTop: 24, marginBottom: 12 }}>
-          <Text strong>Telegram</Text>
+          <Text strong>通知渠道</Text>
           <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-            话题群同步、bot 配置、通知与白名单。改完保存后会自动重启长轮询。
+            Telegram 和 Lark / 飞书的双向通知配置。
           </Text>
         </Paragraph>
 
         <Collapse
-          defaultActiveKey={['basic', 'topic', 'notify', 'security']}
+          defaultActiveKey={['telegram', 'lark']}
           items={[
+            {
+              key: 'telegram',
+              label: 'Telegram · 话题群同步、bot 配置、通知与白名单',
+              children: (
+                <Collapse
+                  defaultActiveKey={['basic', 'topic', 'notify', 'security']}
+                  items={[
             {
               key: 'basic',
               label: 'Telegram · 基础',
@@ -705,6 +712,63 @@ export default function SettingsDrawer({ open, onClose }: Props) {
                   </Form.Item>
                   <Form.Item name="telegramMinRenameIntervalMs" label="Topic 重命名最小间隔 (ms)">
                     <InputNumber min={1000} step={1000} style={{ width: '100%' }} />
+                  </Form.Item>
+                </>
+              ),
+            },
+                  ]}
+                />
+              ),
+            },
+            {
+              key: 'lark',
+              label: 'Lark / 飞书 · 话题群双向通知',
+              children: (
+                <>
+                  <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    message="Lark 话题群适配说明"
+                    description="Lark 的话题由话题群中的主消息/thread 承载，不是 Telegram Forum Topic 那种原生 topic 对象。"
+                  />
+
+                  <Form.Item name="larkEnabled" label="启用 Lark / 飞书通知" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="larkChatId"
+                    label="话题群 Chat ID"
+                    extra="目标群需要是话题群/thread group；机器人需要在群内并具备发消息权限。"
+                  >
+                    <Input placeholder="oc_xxxxxxxxxxxxxxxxx" />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="larkRequireThreadGroup"
+                    label="要求目标群为话题群 / thread group"
+                    valuePropName="checked"
+                    extra="保持开启可避免误把普通群当作话题群使用。"
+                  >
+                    <Switch />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="larkEventSubscribeEnabled"
+                    label="启用事件订阅，用于双向消息"
+                    valuePropName="checked"
+                    extra="关闭后只能从 quadtodo 推送到 Lark，Lark 里的回复不会回到本地会话。"
+                  >
+                    <Switch />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="larkNotificationCooldownMs"
+                    label="同 session idle 提醒最小间隔 (ms)"
+                    extra="0 = 关闭去重，每次都推。默认 600000（10 分钟）。"
+                  >
+                    <InputNumber min={0} step={60_000} style={{ width: '100%' }} />
                   </Form.Item>
                 </>
               ),
