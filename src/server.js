@@ -43,6 +43,8 @@ import { createLarkBot } from "./lark-bot.js";
 import { createLoadingTracker } from "./telegram-loading-status.js";
 import { buildTelegramCommands } from "./telegram-commands.js";
 import { createProbeRegistry, isMaskedToken, maskBotToken } from "./telegram-config-service.js";
+import { isMaskedLarkAppSecret, larkAppSecretSource, maskLarkAppSecret } from "./lark-config-service.js";
+import { createLarkApiClient } from "./lark-api-client.js";
 import { inspectHooks as inspectClaudeHooks } from "./openclaw-hook-installer.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -408,6 +410,15 @@ export function resolveEditorTargetPath(baseDirs, rawPath) {
 	return resolveEditorTargetInfo(baseDirs, rawPath)?.resolvedPath || null;
 }
 
+function buildSafeLarkConfig(cfg) {
+	const { appSecret: _appSecret, ...larkSafe } = cfg.lark || {};
+	return {
+		...larkSafe,
+		appSecretMasked: maskLarkAppSecret(cfg.lark?.appSecret),
+		appSecretSource: larkAppSecretSource(cfg),
+	};
+}
+
 /**
  * @param opts.dbFile   SQLite file path (or ':memory:')
  * @param opts.logDir   directory for ai session logs
@@ -484,6 +495,7 @@ export function createServer(opts = {}) {
 						botTokenMasked: maskBotToken(token),
 						botTokenSource: source,
 					},
+					lark: buildSafeLarkConfig(cfg),
 				},
 				toolDiagnostics: inspectToolsConfig(cfg.tools),
 			});
@@ -518,6 +530,14 @@ export function createServer(opts = {}) {
 			// 合并 telegram / lark 段
 			const mergedTelegram = { ...current.telegram, ...telegramPatch };
 			const larkPatch = { ...(req.body?.lark || {}) };
+			if ('appSecret' in larkPatch) {
+				const secret = larkPatch.appSecret;
+				if (isMaskedLarkAppSecret(secret) || secret === '') {
+					delete larkPatch.appSecret;
+				}
+			}
+			delete larkPatch.appSecretMasked;
+			delete larkPatch.appSecretSource;
 			const mergedLark = { ...current.lark, ...larkPatch };
 
 			// 检测 bot 段是否变化（用于触发热重启）
@@ -589,6 +609,7 @@ export function createServer(opts = {}) {
 						botTokenMasked: maskBotToken(token),
 						botTokenSource: source,
 					},
+					lark: buildSafeLarkConfig(reloadedCfg),
 				},
 				toolDiagnostics: inspectToolsConfig(next.tools),
 				runtimeApplied: {
@@ -600,6 +621,28 @@ export function createServer(opts = {}) {
 			});
 		} catch (e) {
 			res.status(500).json({ ok: false, error: e.message });
+		}
+	});
+
+	app.post("/api/config/lark/test", async (req, res) => {
+		try {
+			const current = loadConfig({ rootDir: configRootDir });
+			const inputAppId = typeof req.body?.appId === "string" ? req.body.appId.trim() : "";
+			const inputSecret = typeof req.body?.appSecret === "string" ? req.body.appSecret.trim() : "";
+			const appId = inputAppId || current.lark?.appId || "";
+			const appSecret = inputSecret && !isMaskedLarkAppSecret(inputSecret)
+				? inputSecret
+				: current.lark?.appSecret || "";
+			const source = inputAppId || inputSecret ? "input" : larkAppSecretSource(current);
+			const client = createLarkApiClient({ appId, appSecret });
+			const result = await client.testConnection();
+			if (result.ok) {
+				res.json({ ok: true, source });
+				return;
+			}
+			res.json({ ok: false, source, errorReason: result.reason, detail: result.detail });
+		} catch (e) {
+			res.json({ ok: false, source: "input", errorReason: e.message || "unknown" });
 		}
 	});
 
@@ -1066,6 +1109,12 @@ export function createServer(opts = {}) {
 			larkBotHolder.current = null
 			try { openclawBridge.setLarkBot?.(null) } catch { /* ignore */ }
 			console.log('[lark] disabled, skipping bot start')
+			return
+		}
+		if (!lark.appId || !lark.appSecret) {
+			larkBotHolder.current = null
+			try { openclawBridge.setLarkBot?.(null) } catch { /* ignore */ }
+			console.warn('[lark] enabled but appId/appSecret missing; skipping bot start')
 			return
 		}
 		const bot = createLarkBot({

@@ -162,10 +162,14 @@ describe("server", () => {
 		expect(r.body.config.defaultTool).toBe("claude");
 		expect(r.body.config.lark).toMatchObject({
 			enabled: false,
+			appId: "",
 			chatId: "",
 			requireThreadGroup: true,
 			eventSubscribeEnabled: true,
+			appSecretMasked: null,
+			appSecretSource: "missing",
 		});
+		expect(r.body.config.lark).not.toHaveProperty("appSecret");
 		expect(r.body.toolDiagnostics.claude.installHint).toContain(
 			"@anthropic-ai/claude-code",
 		);
@@ -235,6 +239,68 @@ describe("server", () => {
 		});
 		expect(update.body.runtimeApplied.larkRestart).toEqual({ applied: true });
 		expect(loadConfig({ rootDir: configRootDir }).lark.chatId).toBe("oc_test_chat");
+	});
+
+	it("PUT /api/config masks lark appSecret and preserves it when masked or empty", async () => {
+		const first = await request(srv.app)
+			.put("/api/config")
+			.send({
+				lark: {
+					enabled: true,
+					appId: "cli_a123",
+					appSecret: "secret_abc1234",
+					chatId: "oc_test_chat",
+				},
+			});
+
+		expect(first.status).toBe(200);
+		expect(first.body.config.lark).toMatchObject({
+			enabled: true,
+			appId: "cli_a123",
+			chatId: "oc_test_chat",
+			appSecretMasked: "lark_***1234",
+			appSecretSource: "quadtodo",
+		});
+		expect(first.body.config.lark).not.toHaveProperty("appSecret");
+		expect(loadConfig({ rootDir: configRootDir }).lark.appSecret).toBe("secret_abc1234");
+
+		const masked = await request(srv.app)
+			.put("/api/config")
+			.send({
+				lark: {
+					appId: "cli_b456",
+					appSecret: "lark_***1234",
+				},
+			});
+
+		expect(masked.status).toBe(200);
+		expect(loadConfig({ rootDir: configRootDir }).lark.appId).toBe("cli_b456");
+		expect(loadConfig({ rootDir: configRootDir }).lark.appSecret).toBe("secret_abc1234");
+
+		const empty = await request(srv.app)
+			.put("/api/config")
+			.send({ lark: { appSecret: "" } });
+
+		expect(empty.status).toBe(200);
+		expect(loadConfig({ rootDir: configRootDir }).lark.appSecret).toBe("secret_abc1234");
+	});
+
+	it("PUT /api/config restarts lark when credentials change", async () => {
+		const update = await request(srv.app)
+			.put("/api/config")
+			.send({
+				lark: {
+					enabled: false,
+					appId: "cli_restart",
+					appSecret: "secret_restart",
+					chatId: "oc_restart",
+				},
+			});
+
+		expect(update.status).toBe(200);
+		expect(update.body.runtimeApplied.larkRestart).toEqual({ applied: true });
+		expect(loadConfig({ rootDir: configRootDir }).lark.appId).toBe("cli_restart");
+		expect(loadConfig({ rootDir: configRootDir }).lark.appSecret).toBe("secret_restart");
 	});
 
 	it("creates a Telegram topic for Web-started AI after Telegram is enabled via config update", async () => {
@@ -424,6 +490,8 @@ describe("server", () => {
 			},
 			lark: {
 				enabled: true,
+				appId: "cli_test_a",
+				appSecret: "secret_test_a",
 				chatId: "oc_lark_chat",
 				eventSubscribeEnabled: true,
 			},
