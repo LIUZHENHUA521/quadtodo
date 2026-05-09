@@ -25,14 +25,16 @@ function LiveList({ onOpenTerminal, onStop }: {
     return () => clearInterval(t)
   }, [])
 
-  const list = [...sessions.values()].sort((a, b) => {
-    // pending_confirm 置顶；running 其次；其它按时间倒序
-    const rank = (s: typeof a) =>
-      s.status === 'pending_confirm' ? 0 : s.status === 'running' ? 1 : 2
-    const r = rank(a) - rank(b)
-    if (r !== 0) return r
-    return b.startedAt - a.startedAt
-  })
+  // 「待处理 AI 会话」面板已经把 pending_confirm + awaitingReply 的 session 顶上去了，
+  // 这里就只展示真正在跑的 / 刚结束雕像期的，避免视觉重复
+  const list = [...sessions.values()]
+    .filter(s => s.status !== 'pending_confirm' && !s.awaitingReply)
+    .sort((a, b) => {
+      const rank = (s: typeof a) => s.status === 'running' ? 0 : 1
+      const r = rank(a) - rank(b)
+      if (r !== 0) return r
+      return b.startedAt - a.startedAt
+    })
 
   if (list.length === 0) {
     return (

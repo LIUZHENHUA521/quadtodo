@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
-import { Button, Empty, Space, Tag, Tooltip } from 'antd'
-import { AimOutlined, CheckCircleOutlined, ClearOutlined } from '@ant-design/icons'
+import { Button, Empty, Tag, Tooltip } from 'antd'
+import { CheckOutlined, ClearOutlined, RightOutlined } from '@ant-design/icons'
 import type { AttentionItem, AttentionKind } from '../replyHub'
 import { countAttentionItems } from '../replyHub'
 
@@ -53,6 +53,13 @@ export default function AttentionHub({
   const visibleItems = filter === 'all' ? items : items.filter(item => item.kind === filter)
   const reviewSessionIds = items.filter(item => item.kind === 'review').map(item => item.sessionId)
 
+  const chips: { key: 'all' | AttentionKind; label: string; count: number }[] = [
+    { key: 'all', label: '全部', count: counts.total },
+    { key: 'interaction', label: '待交互', count: counts.interaction },
+    { key: 'awaiting_reply', label: '待回复', count: counts.awaitingReply },
+    { key: 'review', label: '待验收', count: counts.review },
+  ]
+
   return (
     <section className="dash-attention-section">
       <div className="dash-section-head">
@@ -72,57 +79,67 @@ export default function AttentionHub({
         )}
       </div>
 
-      <div className="dash-attention-summary">
-        <button type="button" className={`dash-attention-summary-card ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
-          <strong>{counts.total}</strong>
-          <span>全部</span>
-        </button>
-        <button type="button" className={`dash-attention-summary-card interaction ${filter === 'interaction' ? 'active' : ''}`} onClick={() => setFilter('interaction')}>
-          <strong>{counts.interaction}</strong>
-          <span>待交互</span>
-        </button>
-        <button type="button" className={`dash-attention-summary-card awaiting ${filter === 'awaiting_reply' ? 'active' : ''}`} onClick={() => setFilter('awaiting_reply')}>
-          <strong>{counts.awaitingReply}</strong>
-          <span>待回复</span>
-        </button>
-        <button type="button" className={`dash-attention-summary-card review ${filter === 'review' ? 'active' : ''}`} onClick={() => setFilter('review')}>
-          <strong>{counts.review}</strong>
-          <span>待验收</span>
-        </button>
+      <div className="dash-attention-chips" role="tablist">
+        {chips.map(chip => (
+          <button
+            key={chip.key}
+            type="button"
+            role="tab"
+            aria-selected={filter === chip.key}
+            className={`dash-attention-chip ${chip.key} ${filter === chip.key ? 'active' : ''}`}
+            onClick={() => setFilter(chip.key)}
+          >
+            <span>{chip.label}</span>
+            <em>{chip.count}</em>
+          </button>
+        ))}
       </div>
 
       {visibleItems.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无待处理 AI 会话" />
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无待处理 AI 会话" style={{ padding: '8px 0' }} />
       ) : (
         <div className="dash-attention-list">
           {visibleItems.map(item => {
             const qColor = QUADRANT_COLOR[item.quadrant] || QUADRANT_COLOR[4]
             return (
-              <div key={item.id} className={`dash-attention-card ${item.kind}`}>
-                <div className="dash-attention-accent" style={{ background: qColor }} />
+              <div
+                key={item.id}
+                className={`dash-attention-card ${item.kind}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpen?.(item)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onOpen?.(item)
+                  }
+                }}
+              >
+                <span className="dash-attention-accent" style={{ background: qColor }} />
                 <div className="dash-attention-main">
                   <div className="dash-attention-title-row">
-                    <Tag color={kindTagColor(item.kind)}>{kindText(item.kind)}</Tag>
-                    <Tag style={{ color: qColor, borderColor: `${qColor}55`, background: `${qColor}12` }}>{QUADRANT_LABEL[item.quadrant]}</Tag>
+                    <Tag color={kindTagColor(item.kind)} className="dash-attention-kind-tag">{kindText(item.kind)}</Tag>
+                    <Tag className="dash-attention-quadrant-tag" style={{ color: qColor, borderColor: `${qColor}55`, background: `${qColor}12` }}>{QUADRANT_LABEL[item.quadrant]}</Tag>
                     <span className="dash-attention-title" title={item.todoTitle}>{item.todoTitle}</span>
                   </div>
                   <div className="dash-attention-meta">
                     <span>{toolText(item.tool)}</span>
-                    {item.label && <span>· {item.label}</span>}
-                    <span>· {formatAttentionTime(item.timestamp)}</span>
+                    {item.label && <span> · {item.label}</span>}
+                    <span> · {formatAttentionTime(item.timestamp)}</span>
                   </div>
-                  <Space size={6} className="dash-attention-actions">
-                    <Button size="small" type="primary" icon={<AimOutlined />} onClick={() => onOpen?.(item)}>
-                      定位并展开
-                    </Button>
-                    {item.kind === 'review' && (
-                      <Tooltip title="只从待处理列表移除，不改变 todo 状态">
-                        <Button size="small" icon={<CheckCircleOutlined />} onClick={() => onMarkSeen?.(item.sessionId)}>
-                          标记已看
-                        </Button>
-                      </Tooltip>
-                    )}
-                  </Space>
+                </div>
+                <div className="dash-attention-trailing" onClick={(e) => e.stopPropagation()}>
+                  {item.kind === 'review' && (
+                    <Tooltip title="标记已看（不改 todo 状态）">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<CheckOutlined />}
+                        onClick={() => onMarkSeen?.(item.sessionId)}
+                      />
+                    </Tooltip>
+                  )}
+                  <RightOutlined className="dash-attention-chevron" />
                 </div>
               </div>
             )
