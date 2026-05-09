@@ -146,6 +146,10 @@ export interface AppConfig {
   }
   lark?: {
     enabled?: boolean
+    appId?: string
+    appSecret?: string
+    appSecretMasked?: string | null
+    appSecretSource?: 'quadtodo' | 'missing'
     chatId?: string
     requireThreadGroup?: boolean
     eventSubscribeEnabled?: boolean
@@ -960,6 +964,22 @@ export async function testTelegram(input: { botToken?: string } = {}): Promise<T
     body: JSON.stringify(input),
   })
   return await r.json() as TelegramTestResult
+}
+
+export interface LarkTestResult {
+  ok: boolean
+  source: 'quadtodo' | 'missing' | 'input'
+  errorReason?: string
+  detail?: string
+}
+
+export async function testLark(input: { appId?: string; appSecret?: string } = {}): Promise<LarkTestResult> {
+  const r = await fetch(BASE + '/api/config/lark/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return await r.json() as LarkTestResult
 }
 
 export interface ProbeStartResult {

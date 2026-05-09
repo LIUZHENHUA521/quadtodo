@@ -1,7 +1,7 @@
 import { Drawer, Descriptions, Alert, Typography, Form, Input, InputNumber, Button, Radio, Space, message, Tag, Switch, Collapse } from 'antd'
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
-import { getStatus, getConfig, updateConfig, AppConfig, pickDirectory, ToolDiagnostic, testTelegram, type ProbeHit } from './api'
+import { getStatus, getConfig, updateConfig, AppConfig, pickDirectory, ToolDiagnostic, testTelegram, testLark, type ProbeHit } from './api'
 import { TelegramProbeModal } from './TelegramProbeModal'
 
 const { Paragraph, Text } = Typography
@@ -72,6 +72,16 @@ function telegramSourceLabel(source: 'quadtodo' | 'openclaw' | 'missing' | 'inpu
   return 'missing'
 }
 
+function isMaskedLarkSecret(value: unknown): boolean {
+  return typeof value === 'string' && value.startsWith('lark_***')
+}
+
+function larkSourceLabel(source: 'quadtodo' | 'missing' | 'input'): string {
+  if (source === 'input') return '当前输入，保存后生效'
+  if (source === 'quadtodo') return 'quadtodo'
+  return 'missing'
+}
+
 export default function SettingsDrawer({ open, onClose }: Props) {
   const [status, setStatus] = useState<{ version: string; activeSessions: number } | null>(null)
   const [config, setConfig] = useState<AppConfig | null>(null)
@@ -90,6 +100,9 @@ export default function SettingsDrawer({ open, onClose }: Props) {
   const [tokenMasked, setTokenMasked] = useState<string>('')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
+  const [larkSecretSource, setLarkSecretSource] = useState<'quadtodo' | 'missing'>('missing')
+  const [larkTesting, setLarkTesting] = useState(false)
+  const [larkTestResult, setLarkTestResult] = useState<string | null>(null)
   const [form] = Form.useForm()
 
   const buildToolPatch = (tool: 'claude' | 'codex' | 'cursor', nextCommandValue: string, nextBinValue: string) => {
@@ -154,6 +167,8 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           telegramPollRetryDelayMs: result.config.telegram?.pollRetryDelayMs ?? 5000,
           telegramMinRenameIntervalMs: result.config.telegram?.minRenameIntervalMs ?? 30000,
           larkEnabled: result.config.lark?.enabled ?? false,
+          larkAppId: result.config.lark?.appId || '',
+          larkAppSecret: result.config.lark?.appSecretMasked || '',
           larkChatId: result.config.lark?.chatId || '',
           larkRequireThreadGroup: result.config.lark?.requireThreadGroup !== false,
           larkEventSubscribeEnabled: result.config.lark?.eventSubscribeEnabled !== false,
@@ -167,6 +182,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         })
         setTokenSource((result.config.telegram?.botTokenSource as 'quadtodo' | 'openclaw' | 'missing' | undefined) || 'missing')
         setTokenMasked(result.config.telegram?.botTokenMasked || '')
+        setLarkSecretSource((result.config.lark?.appSecretSource as 'quadtodo' | 'missing' | undefined) || 'missing')
         setErr(null)
       })
       .catch((e) => setErr(e.message))
@@ -206,6 +222,8 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         },
         lark: {
           enabled: Boolean(values.larkEnabled),
+          appId: String(values.larkAppId || '').trim(),
+          appSecret: values.larkAppSecret || '',
           chatId: String(values.larkChatId || '').trim(),
           requireThreadGroup: values.larkRequireThreadGroup !== false,
           eventSubscribeEnabled: values.larkEventSubscribeEnabled !== false,
@@ -236,6 +254,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       setToolDiagnostics(result.toolDiagnostics)
       setTokenSource((result.config.telegram?.botTokenSource as 'quadtodo' | 'openclaw' | 'missing' | undefined) || 'missing')
       setTokenMasked(result.config.telegram?.botTokenMasked || '')
+      setLarkSecretSource((result.config.lark?.appSecretSource as 'quadtodo' | 'missing' | undefined) || 'missing')
       form.setFieldsValue({
         claudeCommand: joinCommandLine(result.config.tools.claude.command, result.config.tools.claude.args),
         claudeBin: result.config.tools.claude.bin,
@@ -669,6 +688,51 @@ export default function SettingsDrawer({ open, onClose }: Props) {
 
                   <Form.Item name="larkEnabled" label="启用 Lark / 飞书通知" valuePropName="checked">
                     <Switch />
+                  </Form.Item>
+
+                  <Form.Item name="larkAppId" label="App ID" extra="飞书/Lark 自建应用的 App ID，例如 cli_xxx。">
+                    <Input placeholder="cli_xxx" />
+                  </Form.Item>
+
+                  <Form.Item label="App Secret" required>
+                    <Space.Compact style={{ width: '100%' }}>
+                      <Form.Item name="larkAppSecret" noStyle>
+                        <Input.Password placeholder="paste app secret here，留空/遮罩 = 保留现有值" autoComplete="new-password" />
+                      </Form.Item>
+                      <Button
+                        loading={larkTesting}
+                        onClick={async () => {
+                          setLarkTesting(true)
+                          try {
+                            const rawAppId = String(form.getFieldValue('larkAppId') || '').trim()
+                            const rawSecret = String(form.getFieldValue('larkAppSecret') || '').trim()
+                            const input = {
+                              appId: rawAppId,
+                              appSecret: rawSecret && !isMaskedLarkSecret(rawSecret) ? rawSecret : undefined,
+                            }
+                            const r = await testLark(input)
+                            if (r.ok) {
+                              setLarkTestResult(`✓ 来源：${larkSourceLabel(r.source)}`)
+                              message.success(r.source === 'input' ? 'Lark 连通，保存后生效' : 'Lark 连通')
+                            } else {
+                              setLarkTestResult(`✗ ${r.errorReason || 'unknown'}`)
+                              message.error(r.errorReason || '测试失败')
+                            }
+                          } catch (e: any) {
+                            setLarkTestResult(`✗ ${e.message}`)
+                          } finally {
+                            setLarkTesting(false)
+                          }
+                        }}
+                      >测试</Button>
+                    </Space.Compact>
+                    <div style={{ marginTop: 4, fontSize: 12 }}>
+                      <Tag color={larkSecretSource === 'quadtodo' ? 'default' : 'error'}>
+                        {larkSecretSource === 'quadtodo' && '来自 quadtodo 配置'}
+                        {larkSecretSource === 'missing' && '未配置'}
+                      </Tag>
+                      {larkTestResult && <span style={{ marginLeft: 8 }}>{larkTestResult}</span>}
+                    </div>
                   </Form.Item>
 
                   <Form.Item
