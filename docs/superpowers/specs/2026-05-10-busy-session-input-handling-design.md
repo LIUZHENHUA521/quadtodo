@@ -1,5 +1,7 @@
 # Claude Code busy 期间用户输入处理 — 设计
 
+> **实施状态**：已于 2026-05-10 完成，见 `docs/superpowers/plans/2026-05-10-busy-session-input-handling.md`，dispatcher 单元测试 28/28，全量回归 1085/1085。
+
 ## 背景
 
 当用户通过 Lark thread / Telegram peer-bound 路径继续给一个仍在干活的 Claude
