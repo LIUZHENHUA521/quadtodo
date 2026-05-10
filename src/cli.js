@@ -142,6 +142,18 @@ export async function doctorReport({ rootDir = DEFAULT_ROOT_DIR } = {}) {
     })
   }
 
+  {
+    const distIndex = resolvePath(__dirname, '../dist-web/index.html')
+    const ok = existsSync(distIndex)
+    checks.push({
+      name: 'frontend assets',
+      ok,
+      detail: ok
+        ? distIndex
+        : `missing ${distIndex} — run \`npm run build\` (from source) or \`npm i -g quadtodo\` (reinstall)`,
+    })
+  }
+
   let cfg = null
   try {
     cfg = loadConfig({ rootDir })

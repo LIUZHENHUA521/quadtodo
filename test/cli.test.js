@@ -171,6 +171,14 @@ describe('cli helpers', () => {
     expect(check.detail).toMatch(/^v\d+/)
   })
 
+  it('doctorReport includes a "frontend assets" check naming dist-web/index.html', async () => {
+    const report = await doctorReport({ rootDir })
+    const check = report.checks.find(c => c.name === 'frontend assets')
+    expect(check).toBeTruthy()
+    expect(typeof check.ok).toBe('boolean')
+    expect(check.detail || '').toMatch(/dist-web\/index\.html/)
+  })
+
   it('buildDoctorChecks is pure and sync-returns a predictable set of names', () => {
     const names = buildDoctorChecks()
     expect(names).toEqual([
