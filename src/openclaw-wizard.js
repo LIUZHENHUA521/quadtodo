@@ -1589,6 +1589,32 @@ export function createOpenClawWizard({
           }
         }
 
+        // 走 dispatcher（首选）；未注入时回退到旧裸投递路径
+        if (sessionInputDispatcher) {
+          loadingTracker?.markRunning?.(targetSid)?.catch?.(() => {})
+          try {
+            const r = await sessionInputDispatcher.send({
+              sessionId: targetSid,
+              text: trimmed,
+              imagePaths,
+              channel: 'telegram',
+              echoTarget: { chatId, threadId, messageId: triggerMessageId },
+            })
+            const wizardReply = mapDispatcherResultToWizardReply(r, targetSid, imagePaths)
+            // 保留 first-route hint：dispatcher 返回 'sent' 时叠加到 reply 上
+            if (r.action === 'sent' && shouldAnnounceFirstRoute(peer, targetSid)) {
+              const title = lookupTodoTitleForSession(targetSid)
+              if (title) {
+                wizardReply.reply = `📍 已发给 「${title}」 (#${targetSid.slice(-4)})\n（之后这条 chat 默认都发给它，不再提醒）`
+              }
+            }
+            return wizardReply
+          } catch (e) {
+            logger.warn?.(`[wizard] telegram dispatcher.send failed: ${e.message}`)
+            return { reply: '⚠️ 投递失败，请重试。', action: 'dispatcher_error', sessionId: targetSid }
+          }
+        }
+        // Fallback: 裸 stdin proxy（兜底兼容）
         try {
           // 用户从 telegram 发新输入 → 标题切回 🔄（如果当前是 💤）
           loadingTracker?.markRunning?.(targetSid)?.catch?.(() => {})
