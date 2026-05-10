@@ -4,12 +4,23 @@
 
 GitHub 仓库：`git@github.com:LIUZHENHUA521/quadtodo.git`
 
+## 30 秒上手
+
+```bash
+npm install -g quadtodo            # 装 quadtodo 本体
+quadtodo install-tools --all       # 装 claude + codex（AI 终端必需）
+quadtodo doctor                    # 自检
+quadtodo start                     # 自动打开浏览器 → http://127.0.0.1:5677
+```
+
+> **平台**：仅支持 macOS / Linux；Windows 暂不支持，规划中。
+
 ## 依赖
 
 - Node 20+
 - npm 10+
-- `claude` / `codex`，或公司内封装命令（如 `claude-w` / `codex-w`）可在 PATH 中找到
-- macOS / Linux（node-pty 需要 C++ 编译工具链）
+- `claude` / `codex`（AI 终端必需）—— 没装的话跑 `quadtodo install-tools --all`，或手动 `npm i -g @anthropic-ai/claude-code @openai/codex`
+- macOS / Linux（Windows 暂不支持）
 
 ## 安装
 
