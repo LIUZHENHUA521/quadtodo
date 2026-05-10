@@ -46,7 +46,8 @@
     "telegram:clear-menu": "node scripts/setup-telegram-commands.js --clear",
     "build": "npm run build:web",
     "build:web": "cd web && npm run build",
-    "prepack": "npm run build"
+    "ensure-web-deps": "node scripts/ensure-web-deps.js",
+    "prepack": "npm run ensure-web-deps && npm run build:web"
   },
   "publishConfig": {
     "access": "public"
