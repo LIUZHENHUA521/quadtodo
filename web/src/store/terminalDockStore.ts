@@ -35,8 +35,16 @@ interface DockState {
 
 const WIDTH_KEY = 'quadtodo.dock.width'
 const COLLAPSED_KEY = 'quadtodo.dock.collapsed'
+const SESSION_KEY = 'quadtodo.dock.session'
 const MIN_W = 320
 const DEFAULT_W = 480
+
+interface PersistedSession {
+  openTabs: DockTab[]
+  activeTabId: string | null
+  splitSecondaryTabId: string | null
+  poppedOutTabIds: string[]
+}
 
 const readWidth = (): number => {
   try {
@@ -48,14 +56,47 @@ const readWidth = (): number => {
 const readCollapsed = (): boolean => {
   try { return localStorage.getItem(COLLAPSED_KEY) === '1' } catch { return true }
 }
+const readSession = (): PersistedSession => {
+  const empty: PersistedSession = { openTabs: [], activeTabId: null, splitSecondaryTabId: null, poppedOutTabIds: [] }
+  try {
+    const raw = localStorage.getItem(SESSION_KEY)
+    if (!raw) return empty
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return empty
+    const tabs: DockTab[] = Array.isArray(parsed.openTabs)
+      ? parsed.openTabs.filter((t: unknown): t is DockTab =>
+          !!t && typeof (t as DockTab).id === 'string'
+            && typeof (t as DockTab).todoId === 'string'
+            && typeof (t as DockTab).todoTitle === 'string'
+            && typeof (t as DockTab).createdAt === 'number')
+      : []
+    const tabIds = new Set(tabs.map(t => t.id))
+    return {
+      openTabs: tabs,
+      activeTabId: typeof parsed.activeTabId === 'string' && tabIds.has(parsed.activeTabId)
+        ? parsed.activeTabId : (tabs[tabs.length - 1]?.id ?? null),
+      splitSecondaryTabId: typeof parsed.splitSecondaryTabId === 'string' && tabIds.has(parsed.splitSecondaryTabId)
+        ? parsed.splitSecondaryTabId : null,
+      poppedOutTabIds: Array.isArray(parsed.poppedOutTabIds)
+        ? parsed.poppedOutTabIds.filter((id: unknown): id is string => typeof id === 'string' && tabIds.has(id))
+        : [],
+    }
+  } catch {}
+  return empty
+}
 const writeWidth = (px: number) => { try { localStorage.setItem(WIDTH_KEY, String(px)) } catch {} }
 const writeCollapsed = (c: boolean) => { try { localStorage.setItem(COLLAPSED_KEY, c ? '1' : '0') } catch {} }
+const writeSession = (s: PersistedSession) => {
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)) } catch {}
+}
+
+const initialSession = readSession()
 
 export const useTerminalDockStore = create<DockState>((set, get) => ({
-  openTabs: [],
-  activeTabId: null,
-  splitSecondaryTabId: null,
-  poppedOutTabIds: [],
+  openTabs: initialSession.openTabs,
+  activeTabId: initialSession.activeTabId,
+  splitSecondaryTabId: initialSession.splitSecondaryTabId,
+  poppedOutTabIds: initialSession.poppedOutTabIds,
   widthPx: readWidth(),
   isCollapsed: readCollapsed(),
 
@@ -148,3 +189,20 @@ export const useTerminalDockStore = create<DockState>((set, get) => ({
 }))
 
 export const DOCK_LIMITS = { MIN_W, DEFAULT_W }
+
+// Persist session state (openTabs / activeTabId / split / popout) on every change.
+// Width and collapsed are persisted separately by their own setters.
+let lastSerialized = ''
+useTerminalDockStore.subscribe((state) => {
+  const snapshot: PersistedSession = {
+    openTabs: state.openTabs,
+    activeTabId: state.activeTabId,
+    splitSecondaryTabId: state.splitSecondaryTabId,
+    poppedOutTabIds: state.poppedOutTabIds,
+  }
+  const serialized = JSON.stringify(snapshot)
+  if (serialized !== lastSerialized) {
+    lastSerialized = serialized
+    writeSession(snapshot)
+  }
+})
