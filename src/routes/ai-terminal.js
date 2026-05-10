@@ -880,6 +880,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
     notifyTurnDone,
     spawnSession,
     markSessionAwaitingReply,
+    isSessionAwaitingReply,
     close,
   }
 
@@ -891,5 +892,12 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
     if (session.awaitingReply === next) return false
     session.awaitingReply = next
     return true
+  }
+
+  function isSessionAwaitingReply(sessionId) {
+    const session = sessions.get(sessionId)
+    if (!session) return false  // 不存在 → 视为 busy（保守，避免抢跑）
+    if (session.status !== 'running' && session.status !== 'pending_confirm') return false
+    return !!session.awaitingReply
   }
 }
