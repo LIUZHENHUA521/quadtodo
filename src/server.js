@@ -14,6 +14,8 @@ import {
 } from "./config.js";
 import { openDb } from "./db.js";
 import { PtyManager } from "./pty.js";
+import { createCodexSidecar } from "./codex-sidecar.js";
+import { createCodexEventEmitter } from "./codex-event-emitter.js";
 import { createAiTerminal } from "./routes/ai-terminal.js";
 import { createTranscriptsRouter } from "./routes/transcripts.js";
 import { createTranscriptsService } from "./transcripts/index.js";
@@ -411,6 +413,13 @@ export function resolveEditorTargetPath(baseDirs, rawPath) {
 	return resolveEditorTargetInfo(baseDirs, rawPath)?.resolvedPath || null;
 }
 
+// Phase A 占位：Codex 事件流入后只打日志，Phase C 会接到 openclaw-bridge 走 IM 推送。
+// 留 ptyManager / cfg 形参方便 Phase C 直接拿 sidecar 反查 quadtodoSessionId / cwd。
+function handleCodexEvent(evt, _ptyManager, _cfg) {
+	if (!evt) return;
+	console.log(`[codex-event] ${evt.event} native=${evt.nativeId}`);
+}
+
 function buildSafeLarkConfig(cfg) {
 	const { appSecret: _appSecret, ...larkSafe } = cfg.lark || {};
 	return {
@@ -454,8 +463,24 @@ export function createServer(opts = {}) {
 		tools: tools || resolveToolsConfig(initialConfig?.tools),
 		defaultTool: initialConfig?.defaultTool || "claude",
 	};
+	// Codex sidecar：把 quadtodo session ↔ codex native id 的映射落到 ~/.quadtodo/codex-sessions/，
+	// 重启后 restoreFromDisk() 复活内存映射。Phase A 只暂存元数据；Phase C 起 IM 推送链路会用它
+	// 来反查 quadtodo session / todoId / cwd。
+	const codexSidecar = createCodexSidecar();
+	codexSidecar.restoreFromDisk();
+	let ptyRef = null;
 	const pty =
-		injectedPty || new PtyManager({ tools: runtimeConfig.tools || {} });
+		injectedPty ||
+		new PtyManager({
+			tools: runtimeConfig.tools || {},
+			sidecar: codexSidecar,
+			eventEmitterFactory: (opts) =>
+				createCodexEventEmitter({
+					...opts,
+					onEvent: (evt) => handleCodexEvent(evt, ptyRef, runtimeConfig),
+				}),
+		});
+	ptyRef = pty;
 	// Telegram 自动 topic 钩子：ait 创建在前，wizard 创建在后；用 lazy ref 桥接
 	const aiSessionHooks = {
 		onSessionSpawned: () => null,

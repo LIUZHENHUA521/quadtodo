@@ -14,12 +14,12 @@
     font-size: 14px;
   }
 
-  /* TodoManage 最外层容器有 padding:16（inline style），抽屉 sticky-header
-     依赖 -16 的负 margin；这里统一靠 body 补回安全区即可 */
+  /* TodoManage 最外层容器顶部 padding 为 0（见 TodoManage.tsx 行内样式），
+     sticky-header 不再需要负 margin-top，靠安全区补回顶部内边距即可 */
 
   /* ── 顶部工具栏 / 筛选栏 ── */
   .todo-sticky-header {
-    margin: -8px -8px 0;
+    margin: 0 -8px;
     padding: 8px 8px 4px;
     padding-top: calc(8px + env(safe-area-inset-top));
   }
@@ -256,7 +256,7 @@
 /* 更窄屏（≤380px，iPhone SE / mini）再进一步压缩 */
 @media (max-width: 380px) {
   .todo-sticky-header {
-    margin: -6px -6px 0;
+    margin: 0 -6px;
     padding: 6px;
   }
   .todo-quadrant {

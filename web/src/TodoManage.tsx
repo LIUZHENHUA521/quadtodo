@@ -141,7 +141,6 @@ interface SortableTodoCardProps {
   onClick: (t: Todo) => void
   onToggleDone: (t: Todo) => void
   onAiExec: (todo: Todo, tool: AiTool, session?: Todo['aiSessions'][number]) => void
-  onAiExecBoth: (todo: Todo) => void
   onDeleteAiSession: (todo: Todo, session: Todo['aiSessions'][number], currentSessionId?: string | null) => void
   onUpdateSessionLabel: (todo: Todo, session: Todo['aiSessions'][number], label: string) => void
   onDelete: (t: Todo) => void
@@ -178,7 +177,7 @@ function dockStatusOf(
   return 'background'
 }
 
-function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false, onCreateSubtodo, onClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, onOpenSessionInDock, isNarrow, onRequestFork, onRefresh, highlightTodoId }: SortableTodoCardProps) {
+function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false, onCreateSubtodo, onClick, onToggleDone, onAiExec, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, onOpenSessionInDock, isNarrow, onRequestFork, onRefresh, highlightTodoId }: SortableTodoCardProps) {
   const [editingLabelSessionId, setEditingLabelSessionId] = useState<string | null>(null)
   const [editingLabelText, setEditingLabelText] = useState('')
   const [childrenExpanded, setChildrenExpanded] = useState(true)
@@ -218,7 +217,6 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
     { key: 'start:claude', label: '▶ 启动 Claude' },
     { key: 'start:codex', label: '▶ 启动 Codex' },
     { key: 'start:cursor', label: '▶ 启动 Cursor' },
-    { key: 'start:both', label: '▶ 同时启动 Claude + Codex（并排）' },
   ]
 
   return (
@@ -301,11 +299,7 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
               onClick: ({ key }) => {
                 const [action, value] = key.split(':')
                 if (action === 'start') {
-                  if (value === 'both') {
-                    onAiExecBoth(todo)
-                  } else {
-                    onAiExec(todo, value as AiTool)
-                  }
+                  onAiExec(todo, value as AiTool)
                   return
                 }
                 const target = historySessions.find(item => item.sessionId === value)
@@ -538,7 +532,6 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                       onToggleDone={onToggleDone}
                       onAiExec={onAiExec}
                       onRequestFork={onRequestFork}
-                      onAiExecBoth={onAiExecBoth}
                       onDeleteAiSession={onDeleteAiSession}
                       onUpdateSessionLabel={onUpdateSessionLabel}
                       onDelete={onDelete}
@@ -576,7 +569,6 @@ interface QuadrantZoneProps {
   onCardClick: (t: Todo) => void
   onToggleDone: (t: Todo) => void
   onAiExec: (todo: Todo, tool: AiTool, session?: Todo['aiSessions'][number]) => void
-  onAiExecBoth: (todo: Todo) => void
   onDeleteAiSession: (todo: Todo, session: Todo['aiSessions'][number], currentSessionId?: string | null) => void
   onUpdateSessionLabel: (todo: Todo, session: Todo['aiSessions'][number], label: string) => void
   onDelete: (t: Todo) => void
@@ -593,7 +585,7 @@ interface QuadrantZoneProps {
   highlightTodoId?: string | null
 }
 
-function QuadrantZone({ config, todos, childrenByParentId, childHitIdsByParentId, onCreateSubtodo, onCardClick, onToggleDone, onAiExec, onAiExecBoth, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, style, onOpenSessionInDock, isNarrow, onRequestFork, onRefresh, highlightTodoId }: QuadrantZoneProps) {
+function QuadrantZone({ config, todos, childrenByParentId, childHitIdsByParentId, onCreateSubtodo, onCardClick, onToggleDone, onAiExec, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, style, onOpenSessionInDock, isNarrow, onRequestFork, onRefresh, highlightTodoId }: QuadrantZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `quadrant-${config.q}` })
 
   const header = (
@@ -618,7 +610,6 @@ function QuadrantZone({ config, todos, childrenByParentId, childHitIdsByParentId
             onToggleDone={onToggleDone}
             onAiExec={onAiExec}
             onRequestFork={onRequestFork}
-            onAiExecBoth={onAiExecBoth}
             onDeleteAiSession={onDeleteAiSession}
             onUpdateSessionLabel={onUpdateSessionLabel}
             onDelete={onDelete}
@@ -1417,24 +1408,6 @@ export default function TodoManage() {
     }
   }, [fetchTodos, autoFillPrompt, templates, handleOpenTerminalInDock])
 
-  const handleAiExecBoth = useCallback(async (todo: Todo) => {
-    try {
-      const prompt = autoFillPrompt ? buildTodoPrompt(todo, templates) : ''
-      let permissionMode: string | null = null
-      try { permissionMode = localStorage.getItem('quadtodo.autoMode') } catch { /* ignore */ }
-      const cwd = todo.workDir || undefined
-      const [r1, r2] = await Promise.all([
-        startAiExec({ todoId: todo.id, prompt, tool: 'claude', cwd, permissionMode: permissionMode || undefined }),
-        startAiExec({ todoId: todo.id, prompt, tool: 'codex', cwd, permissionMode: permissionMode || undefined }),
-      ])
-      handleOpenTerminalInDock(todo, r1.sessionId)
-      handleOpenTerminalInDock(todo, r2.sessionId)
-      fetchTodos()
-    } catch (e: any) {
-      message.error(e?.message || '并行启动失败')
-    }
-  }, [fetchTodos, autoFillPrompt, templates, handleOpenTerminalInDock])
-
   const handleRequestFork = useCallback((todo: Todo, sessionId: string) => {
     setForkTarget({ todo, sessionId })
   }, [])
@@ -1679,10 +1652,31 @@ export default function TodoManage() {
         onActivate={handleOpenAttentionItem}
         onOpenDashboard={() => setDashboardOpen(true)}
       />
-      <div className="todo-manage__main" style={{ padding: 16 }}>
+      <div className="todo-manage__main" style={{ padding: '0 16px 16px' }}>
       <div className="todo-sticky-header">
-      {/* 工具栏 */}
+      {/* 工具栏 + 筛选（同一行） */}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <Radio.Group
+          size="small"
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          options={[
+            { label: '待办', value: 'todo' },
+            { label: '已完成', value: 'done' },
+            { label: '全部', value: '' },
+          ]}
+          optionType="button"
+        />
+        <Input
+          placeholder="搜索标题..."
+          size="small"
+          style={{ width: 200 }}
+          prefix={<SearchOutlined />}
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          onPressEnter={() => fetchTodos()}
+          allowClear
+        />
         <div style={{ flex: 1 }} />
         <Button type="primary" icon={<PlusOutlined />} size="small" onClick={handleCreate}>
           新建
@@ -1774,30 +1768,6 @@ export default function TodoManage() {
         )}
       </div>
 
-      {/* 筛选栏 */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-        <Radio.Group
-          size="small"
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          options={[
-            { label: '待办', value: 'todo' },
-            { label: '已完成', value: 'done' },
-            { label: '全部', value: '' },
-          ]}
-          optionType="button"
-        />
-        <Input
-          placeholder="搜索标题..."
-          size="small"
-          style={{ width: 200 }}
-          prefix={<SearchOutlined />}
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          onPressEnter={() => fetchTodos()}
-          allowClear
-        />
-      </div>
       </div>
 
       {viewMode === 'priority' ? (
@@ -1825,7 +1795,6 @@ export default function TodoManage() {
                       onToggleDone={handleToggleDone}
                       onAiExec={handleAiExec}
                       onRequestFork={handleRequestFork}
-                      onAiExecBoth={handleAiExecBoth}
                       onDeleteAiSession={handleDeleteAiSession}
                       onUpdateSessionLabel={handleUpdateSessionLabel}
                       onDelete={handleDelete}
@@ -1873,7 +1842,7 @@ export default function TodoManage() {
                 childHitIdsByParentId={childHitIdsByParentId}
                 onCreateSubtodo={handleCreateSubtodo}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
-                onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
+                onAiExec={handleAiExec} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
                 onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onOpenNativeResume={handleOpenNativeResume} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
                 style={{ flex: splitV }}
                 onOpenSessionInDock={handleOpenTerminalInDock}
@@ -1908,7 +1877,7 @@ export default function TodoManage() {
                 childHitIdsByParentId={childHitIdsByParentId}
                 onCreateSubtodo={handleCreateSubtodo}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
-                onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
+                onAiExec={handleAiExec} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
                 onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onOpenNativeResume={handleOpenNativeResume} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
                 style={{ flex: 100 - splitV }}
                 onOpenSessionInDock={handleOpenTerminalInDock}
@@ -1949,7 +1918,7 @@ export default function TodoManage() {
                 childHitIdsByParentId={childHitIdsByParentId}
                 onCreateSubtodo={handleCreateSubtodo}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
-                onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
+                onAiExec={handleAiExec} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
                 onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onOpenNativeResume={handleOpenNativeResume} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
                 style={{ flex: splitV }}
                 onOpenSessionInDock={handleOpenTerminalInDock}
@@ -1984,7 +1953,7 @@ export default function TodoManage() {
                 childHitIdsByParentId={childHitIdsByParentId}
                 onCreateSubtodo={handleCreateSubtodo}
                 onCardClick={openDetail} onToggleDone={handleToggleDone}
-                onAiExec={handleAiExec} onAiExecBoth={handleAiExecBoth} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
+                onAiExec={handleAiExec} onRequestFork={handleRequestFork} onDeleteAiSession={handleDeleteAiSession} onUpdateSessionLabel={handleUpdateSessionLabel} onDelete={handleDelete}
                 onOpenTrae={handleOpenTrae} onOpenTerminal={handleOpenTerminal} onOpenNativeResume={handleOpenNativeResume} onCopyPrompt={handleCopyPrompt} onExport={handleExport}
                 style={{ flex: 100 - splitV }}
                 onOpenSessionInDock={handleOpenTerminalInDock}

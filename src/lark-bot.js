@@ -1,6 +1,7 @@
 import { createLarkApiClient } from './lark-api-client.js'
 import { createLarkEventClient } from './lark-event-client.js'
 import { downloadLarkImage, extractImageKeys } from './lark-image.js'
+import { downloadLarkVideo, extractVideoFileKey } from './lark-video.js'
 
 // 飞书内置 emoji_type 枚举里挑出一组"在思考 / 在干活"语义的值。
 // 飞书的 emoji_type 是固定枚举（不是任意 unicode），不少看着合理的值（EYES / CLOCK /
@@ -278,15 +279,17 @@ export function createLarkBot({
     // 提取消息里的 image_key（普通 image 消息 + post 富文本里的 img 节点都能识别）
     const rawMsg = raw?.event?.message || raw?.message || {}
     const imageKeys = extractImageKeys(rawMsg)
+    // msg_type === 'media' 时还会有视频；这里跟图片正交（不会误吃 image 消息的封面）
+    const videoMeta = extractVideoFileKey(rawMsg)
 
-    if (isBlank(ev.text) && imageKeys.length === 0) {
+    if (isBlank(ev.text) && imageKeys.length === 0 && !videoMeta) {
       const msgType = rawMsg.msg_type || rawMsg.message_type || '(unknown)'
       const contentRaw = typeof rawMsg.content === 'string' ? rawMsg.content : JSON.stringify(rawMsg.content || {})
       const mentions = JSON.stringify(rawMsg.mentions || [])
       logger.warn?.(`[lark-bot] ignored_empty: no text (eventId=${ev.eventId} msg_type=${msgType} content=${contentRaw.slice(0, 240)} mentions=${mentions.slice(0, 240)})`)
       return { ok: true, action: 'ignored_empty' }
     }
-    logger.info?.(`[lark-bot] dispatching to wizard: chatId=${ev.chatId} thread=${ev.threadId || '-'} root=${ev.rootMessageId || '-'} images=${imageKeys.length} text="${(ev.text || '').slice(0, 80)}"`)
+    logger.info?.(`[lark-bot] dispatching to wizard: chatId=${ev.chatId} thread=${ev.threadId || '-'} root=${ev.rootMessageId || '-'} images=${imageKeys.length} video=${videoMeta ? '1' : '0'} text="${(ev.text || '').slice(0, 80)}"`)
 
     // 下载图片（顺序，简单点；并发收益不大）。失败的跳过，不阻塞 wizard。
     const imagePaths = []
@@ -312,6 +315,33 @@ export function createLarkBot({
       }
     }
 
+    // 下载视频。跟图片走同款失败兜底：失败仅 warn，不阻塞 wizard；
+    // 成功后路径塞进 imagePaths（CC 自己消化），并准备 caption 前缀给 wizard。
+    let videoCaptionTag = null
+    if (videoMeta && ev.messageId && hasCredentials()) {
+      try {
+        const dl = await downloadLarkVideo({
+          apiClient: getApiClient(),
+          messageId: ev.messageId,
+          fileKey: videoMeta.fileKey,
+          fileName: videoMeta.fileName,
+        })
+        if (dl?.ok && dl.localPath) {
+          imagePaths.push(dl.localPath)
+          const labelName = videoMeta.fileName || 'video.mp4'
+          videoCaptionTag = `[用户发了视频：${labelName}]`
+          logger.info?.(`[lark-bot] downloaded video → ${dl.localPath}`)
+        } else {
+          logger.warn?.(`[lark-bot] video download failed: ${dl?.reason || 'unknown'} ${dl?.detail || ''}`)
+        }
+      } catch (e) {
+        logger.warn?.(`[lark-bot] video download threw: ${e.message}`)
+      }
+    }
+    const wizardText = videoCaptionTag
+      ? (ev.text ? `${videoCaptionTag}\n${ev.text}` : videoCaptionTag)
+      : ev.text
+
     // 立即加 "在思考/在干活" reaction 让用户知道 bot 收到了；不 await，避免拖慢 wizard。
     // 拿到 reaction_id 后跟 wizard 返回的 sessionId 配对，等到 PTY 完成一轮回复时清掉。
     let reactionPromise = null
@@ -332,7 +362,7 @@ export function createLarkBot({
         threadId: ev.threadId,
         rootMessageId: ev.rootMessageId,
         messageId: ev.messageId,
-        text: ev.text,
+        text: wizardText,
         fromUserId: ev.fromUserId,
         imagePaths: imagePaths.length > 0 ? imagePaths : undefined,
       })

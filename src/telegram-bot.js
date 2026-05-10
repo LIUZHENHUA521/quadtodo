@@ -23,6 +23,7 @@ import { Blob } from 'node:buffer'
 import net from 'node:net'
 import { toTelegramV2, toPlainText } from './telegram-markdown.js'
 import { downloadTelegramFile, pickLargestPhoto } from './telegram-image.js'
+import { downloadTelegramVideo, extractTelegramVideo } from './telegram-video.js'
 
 const TELEGRAM_API = 'https://api.telegram.org'
 const DEFAULT_LONG_POLL_TIMEOUT_SEC = 30
@@ -597,20 +598,82 @@ export function createTelegramBot({
       }
     }
 
-    // 既无文本（含 caption）也无图片 → drop
+    // ─── 视频处理：跟图片一样下载本地，把路径塞进 imagePaths（CC 自己消化），
+    //     额外在 caption 里追加一行 [用户发了视频：xxx] 让 CC 明确知道附件是视频。
+    //     >20MB 不下载，给用户回提示；下载失败逻辑参考图片。
+    let videoPath = null
+    let videoTooLarge = false
+    let videoDownloadFailed = false
+    let videoCaptionTag = null
+    const videoMeta = extractTelegramVideo(msg)
+    if (videoMeta?.fileId) {
+      const labelName = videoMeta.fileName || `${videoMeta.kind}.mp4`
+      const sizeBytes = videoMeta.fileSize || 0
+      if (sizeBytes && sizeBytes > 20 * 1024 * 1024) {
+        videoTooLarge = true
+        logger.warn?.(`[telegram-bot] video too large kind=${videoMeta.kind} size=${(sizeBytes / 1024 / 1024).toFixed(1)}MB`)
+      } else {
+        const token = readBotToken(getConfig)
+        if (token) {
+          const fetcher = fetchFn || (await getProxyFetch())
+          try {
+            const r = await downloadTelegramVideo({
+              token, fetchFn: fetcher,
+              fileId: videoMeta.fileId, fileSize: videoMeta.fileSize,
+            })
+            videoPath = r.localPath
+            videoCaptionTag = `[用户发了视频：${labelName}]`
+            logger.info?.(`[telegram-bot] downloaded video kind=${videoMeta.kind} → ${r.localPath} (${(r.fileSize / 1024).toFixed(1)}kB)`)
+          } catch (e) {
+            videoDownloadFailed = true
+            logger.warn?.(`[telegram-bot] video download failed: ${e.message}`)
+          }
+        } else {
+          videoDownloadFailed = true
+          logger.warn?.(`[telegram-bot] video received but no bot token to download with`)
+        }
+      }
+    }
+    if (videoPath) {
+      imagePaths = [...(imagePaths || []), videoPath]
+    }
+
+    // 既无文本（含 caption）也无图片/视频 → drop
     const hasText = (msg.text && typeof msg.text === 'string') || (msg.caption && typeof msg.caption === 'string')
-    if (!imagePaths && !hasText) {
-      // 其他非文本/非图（sticker/system msg）暂不处理
+    if (!imagePaths && !hasText && !videoTooLarge) {
+      // 其他非文本/非图/非视频（sticker/system msg）暂不处理
       return
     }
 
     const fromUserId = msg.from ? String(msg.from.id) : null
-    // text：图片消息时优先用 caption；纯文本消息用 text
+    // text：图片/视频消息时优先用 caption；纯文本消息用 text
     const rawText = msg.text || msg.caption || ''
     // Group 里点 slash 命令时 Telegram 自动加 @botUsername 做消歧
     // （`/review` → `/review@lzhtestBot`），这里剥掉，让 PTY / wizard 收到干净的 `/review`
     // 只剥**消息开头**首词的 @xxx，正文中的 @ 不动
-    const text = rawText.replace(/^(\/[A-Za-z0-9_]+)@\w+/, '$1')
+    let text = rawText.replace(/^(\/[A-Za-z0-9_]+)@\w+/, '$1')
+    if (videoCaptionTag) {
+      text = text ? `${videoCaptionTag}\n${text}` : videoCaptionTag
+    }
+
+    // 视频太大：直接告知用户，不进 wizard（caption 文本若有则继续走）
+    if (videoTooLarge && !imagePaths && !hasText) {
+      try {
+        await sendMessage({
+          chatId, threadId,
+          text: '⚠️ 视频太大（>20MB），请压缩或截短后重发。',
+        })
+      } catch {}
+      return
+    }
+    if (videoTooLarge) {
+      try {
+        await sendMessage({
+          chatId, threadId,
+          text: '⚠️ 视频太大（>20MB），无法转给 AI；caption 文字部分已送达。',
+        })
+      } catch {}
+    }
 
     let result
     try {
@@ -641,6 +704,15 @@ export function createTelegramBot({
         await sendMessage({
           chatId, threadId,
           text: '⚠️ 图片下载失败（网络问题），仅文本部分已转给 AI。要让 AI 看图请重发一次。',
+        })
+      } catch {}
+    }
+    // 视频下载失败：跟图片同款提示
+    if (videoDownloadFailed && result?.action === 'stdin_proxy') {
+      try {
+        await sendMessage({
+          chatId, threadId,
+          text: '⚠️ 视频下载失败（网络问题），仅文本部分已转给 AI。要让 AI 看视频请重发一次。',
         })
       } catch {}
     }

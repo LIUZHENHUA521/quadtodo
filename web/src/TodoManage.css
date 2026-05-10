@@ -11,7 +11,7 @@ html {
    区往左挤。用 !important 全部反向锁住，关闭时也不会再反弹回来。 */
 body {
   padding-right: 0 !important;
-  margin-right: 0 !important;
+  margin: 0 !important;
   overflow: visible !important;
   /* Chromium / Firefox / Safari 的 ScrollLocker 实现都会把 body 的 width
      固定成 calc(100% - xxpx)；这里强制恢复成填满视口 */
@@ -25,7 +25,7 @@ body {
   top: 0;
   z-index: 10;
   background: #fff;
-  margin: -16px -16px 0;
+  margin: 0 -16px;
   padding: 16px 16px 4px;
   border-bottom: 1px solid #f0f0f0;
 }

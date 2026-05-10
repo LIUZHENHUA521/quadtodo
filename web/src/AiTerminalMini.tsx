@@ -12,6 +12,7 @@ import '@xterm/xterm/css/xterm.css'
 import { getTerminalWsUrl, startAiExec, stopAiExec, openTraeCN, TodoStatus, ResumeSessionInput, EditorKind } from './api'
 import { useTerminalTheme } from './hooks/useTerminalTheme'
 import { PRESET_LABELS, PRESET_ORDER, TerminalPresetName, TERMINAL_PRESETS, deriveChrome } from './terminalThemes'
+import { useTerminalDockStore } from './store/terminalDockStore'
 import {
   getBrowserNotificationPermission,
   shouldSendTurnDoneSystemNotification,
@@ -195,6 +196,18 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     }
   }, [])
 
+  const focusOwnDockTab = useCallback(() => {
+    try { window.focus() } catch {}
+    const dock = useTerminalDockStore.getState()
+    const exists = dock.openTabs.some(t => t.id === sessionId)
+    if (!exists) {
+      message.info({ content: '会话已关闭，请从待办列表重新打开', key: `turn-done-${sessionId}-closed` })
+      return
+    }
+    if (dock.activeTabId !== sessionId) dock.setActive(sessionId)
+    if (dock.isCollapsed) dock.toggleCollapsed()
+  }, [sessionId])
+
   const showTurnDoneReminder = useCallback(() => {
     setTurnDoneNotice(true)
     if (turnDoneNoticeTimerRef.current) clearTimeout(turnDoneNoticeTimerRef.current)
@@ -204,7 +217,23 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     }, 8000)
 
     if (!document.hidden) {
-      message.success({ content: TURN_DONE_TEXT, key: `turn-done-${sessionId}`, duration: 4 })
+      const messageKey = `turn-done-${sessionId}`
+      message.success({
+        content: (
+          <span
+            onClick={() => {
+              focusOwnDockTab()
+              message.destroy(messageKey)
+            }}
+            style={{ cursor: 'pointer' }}
+          >
+            {TURN_DONE_TEXT}
+            <span style={{ marginLeft: 6, opacity: 0.7, fontSize: 12 }}>点击查看 →</span>
+          </span>
+        ),
+        key: messageKey,
+        duration: 6,
+      })
     }
 
     const permission = getBrowserNotificationPermission()
@@ -218,14 +247,18 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     }
 
     try {
-      new window.Notification('quadtodo', {
+      const notification = new window.Notification('quadtodo', {
         body: TURN_DONE_TEXT,
         tag: `quadtodo-turn-done-${sessionId}`,
       })
+      notification.onclick = () => {
+        focusOwnDockTab()
+        try { notification.close() } catch {}
+      }
     } catch (error) {
       console.warn('[AiTerminalMini] show browser notification failed:', error)
     }
-  }, [sessionId])
+  }, [sessionId, focusOwnDockTab])
 
   /** 去抖发送 resize 到服务端：cols/rows 必须稳定 RESIZE_STABILITY_MS 才真正发，
    *  防止切 tab / 展开瞬间的中间态被后端 PTY 吃掉，进而让 Claude 按窄 cols 折行污染 scrollback。 */
