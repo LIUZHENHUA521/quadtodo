@@ -17,6 +17,11 @@ function appendLine(obj) {
   appendFileSync(file, JSON.stringify(obj) + '\n')
 }
 
+// vitest fork pool 大并发跑全套时，emitter 内部用的 fs.watchFile 共享中央 poll
+// 线程会被挤压；硬等待 100/300ms 并不可靠。这里用 vi.waitFor 主动轮询断言，
+// 既给单跑保留快速通道，又能在 batch 下兜住 1s 的 OS 延迟。
+const WAIT_OPTS = { timeout: 3000, interval: 30 }
+
 describe('codex-event-emitter', () => {
   it('detects task_complete and emits Stop event', async () => {
     const events = []
@@ -28,9 +33,8 @@ describe('codex-event-emitter', () => {
     em.start()
     appendLine({ timestamp: 't', type: 'event_msg', payload: { type: 'task_started' } })
     appendLine({ timestamp: 't', type: 'event_msg', payload: { type: 'task_complete', turn_id: 'T1' } })
-    await new Promise(r => setTimeout(r, 100))
+    await vi.waitFor(() => expect(events.find(e => e.event === 'Stop')).toBeTruthy(), WAIT_OPTS)
     em.stop()
-    expect(events.find(e => e.event === 'Stop')).toBeTruthy()
   })
 
   it('detects turn_aborted and dedups within 100ms against <turn_aborted> user message', async () => {
@@ -42,10 +46,12 @@ describe('codex-event-emitter', () => {
     em.start()
     appendLine({ timestamp: 't', type: 'event_msg', payload: { type: 'turn_aborted' } })
     appendLine({ timestamp: 't', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<turn_aborted>...' }] } })
-    await new Promise(r => setTimeout(r, 200))
+    // 等到 TurnAborted 出现，且至少一次额外 poll 之后再判 length
+    // （否则可能在 dedup 同伴消息到达前就采样）
+    await vi.waitFor(() => expect(events.some(e => e.event === 'TurnAborted')).toBe(true), WAIT_OPTS)
+    await new Promise(r => setTimeout(r, 80))
     em.stop()
-    const aborted = events.filter(e => e.event === 'TurnAborted')
-    expect(aborted.length).toBe(1)
+    expect(events.filter(e => e.event === 'TurnAborted').length).toBe(1)
   })
 
   it('detects event_msg/error and emits Error event with message', async () => {
@@ -56,18 +62,18 @@ describe('codex-event-emitter', () => {
     })
     em.start()
     appendLine({ timestamp: 't', type: 'event_msg', payload: { type: 'error', message: 'boom' } })
-    await new Promise(r => setTimeout(r, 100))
+    await vi.waitFor(() => {
+      const err = events.find(e => e.event === 'Error')
+      expect(err?.rawEventPayload?.message).toBe('boom')
+    }, WAIT_OPTS)
     em.stop()
-    const err = events.find(e => e.event === 'Error')
-    expect(err?.rawEventPayload?.message).toBe('boom')
   })
 
   it('getLatestAssistantContent returns latest response_item assistant text', async () => {
     const em = createCodexEventEmitter({ filePath: file, nativeId: 'abc', onEvent: () => {} })
     em.start()
     appendLine({ timestamp: 't', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hello world' }] } })
-    await new Promise(r => setTimeout(r, 100))
-    expect(em.getLatestAssistantContent()).toContain('hello world')
+    await vi.waitFor(() => expect(em.getLatestAssistantContent()).toContain('hello world'), WAIT_OPTS)
     em.stop()
   })
 
@@ -78,7 +84,8 @@ describe('codex-event-emitter', () => {
     writeFileSync(otherFile, JSON.stringify({ type: 'event_msg', payload: { type: 'task_complete' } }) + '\n')
     const em = createCodexEventEmitter({ filePath: file, nativeId: 'abc', onEvent: (e) => events.push(e) })
     em.start()
-    await new Promise(r => setTimeout(r, 200))
+    // 这条没有正向触发条件，只能等一段固定时间确认没有错触发
+    await new Promise(r => setTimeout(r, 300))
     em.stop()
     expect(events.length).toBe(0)
   })
@@ -88,7 +95,7 @@ describe('codex-event-emitter', () => {
     const em = createCodexEventEmitter({ filePath: file, nativeId: 'abc', onEvent: (e) => events.push(e) })
     em.start()
     appendLine({ type: 'event_msg', payload: { type: 'turn_aborted' } })
-    await new Promise(r => setTimeout(r, 50))
+    await vi.waitFor(() => expect(events.some(e => e.event === 'TurnAborted')).toBe(true), WAIT_OPTS)
     appendLine({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: '<turn_aborted>...' }] } })
     await new Promise(r => setTimeout(r, 200))
     em.stop()

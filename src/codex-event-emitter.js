@@ -14,6 +14,7 @@ export function createCodexEventEmitter({ filePath, nativeId, onEvent, logger = 
 
   let pos = 0
   let watcher = null
+  let pollTimer = null
   let buffer = ''
   let latestAssistantText = ''
   let lastAbortTs = 0
@@ -75,14 +76,23 @@ export function createCodexEventEmitter({ filePath, nativeId, onEvent, logger = 
     pos = 0
     readNew()
     try { watcher = watch(filePath, () => readNew()) } catch {}
-    // fs.watch 在 APFS / 网络盘上偶尔不触发，watchFile 50ms 轮询做兜底
+    // fs.watch 在 APFS / 网络盘上偶尔不触发，watchFile 30ms 轮询做兜底
     watchFile(filePath, { interval: 30, persistent: false }, () => readNew())
+    // setInterval 自轮询：watchFile 用 Node 的中央 polling 线程，并发跑很多 emitter
+    // 时会被压垮（实测 vitest fork pool 全套 batch 下 watchFile 3 秒不触发）；这里
+    // 自己每 50ms statSync 一次，跟 OS 通知双保险，加 stat 廉价。
+    pollTimer = setInterval(readNew, 50)
+    if (pollTimer.unref) pollTimer.unref()
   }
 
   function stop() {
     if (watcher) {
       try { watcher.close() } catch {}
       watcher = null
+    }
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
     }
     try { unwatchFile(filePath) } catch {}
   }
