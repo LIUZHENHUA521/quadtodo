@@ -84,12 +84,15 @@ function defaultCodexWatcherFactory(_spawnTime, onHit) {
   const dayDir = codexTodayDir()
   try { mkdirSync(dayDir, { recursive: true }) } catch { /* ignore */ }
   try {
-    return fsWatch(dayDir, { persistent: false }, (_eventType, filename) => {
+    console.log(`[codex-detect] fs.watch armed on ${dayDir}`)
+    return fsWatch(dayDir, { persistent: false }, (eventType, filename) => {
       if (!filename) return
       const m = filename.match(CODEX_ROLLOUT_FILE_RE)
+      console.log(`[codex-detect] fs.watch event=${eventType} file=${filename} match=${!!m}`)
       if (m) onHit(m[1])
     })
-  } catch {
+  } catch (e) {
+    console.warn(`[codex-detect] fs.watch FAILED:`, e?.message || e)
     return null
   }
 }
@@ -300,6 +303,7 @@ export class PtyManager extends EventEmitter {
     this.emit('native-session', { sessionId: session.sessionId, nativeId })
     // codex 专属：拿到 native id 后落 sidecar + 启动 jsonl 增量 emitter，给 IM 推送链路用。
     if (session.tool === 'codex') {
+      console.log(`[codex-detect] _setNativeId session=${session.sessionId} nativeId=${nativeId}`)
       if (this.sidecar) {
         try {
           const p = this.sidecar.write({
@@ -309,7 +313,12 @@ export class PtyManager extends EventEmitter {
             cwd: session.cwd || null,
           })
           if (p && typeof p.catch === 'function') p.catch(() => {})
-        } catch { /* ignore */ }
+          console.log(`[codex-detect] sidecar.write OK nativeId=${nativeId}`)
+        } catch (e) {
+          console.warn(`[codex-detect] sidecar.write FAILED:`, e?.message || e)
+        }
+      } else {
+        console.warn(`[codex-detect] this.sidecar is null — server.js didn't wire it`)
       }
       if (this.eventEmitterFactory && !session.eventEmitter) {
         try {
@@ -317,8 +326,29 @@ export class PtyManager extends EventEmitter {
           if (loc?.filePath) {
             session.eventEmitter = this.eventEmitterFactory({ filePath: loc.filePath, nativeId })
             session.eventEmitter.start?.()
+            console.log(`[codex-detect] emitter started filePath=${loc.filePath}`)
+          } else {
+            console.warn(`[codex-detect] codexSessionLocator returned null for nativeId=${nativeId} — emitter NOT started (will retry below)`)
+            // jsonl 文件这一刻可能还没 flush 到 fs；500ms / 1500ms 各重试一次。
+            const retry = (delay) => setTimeout(() => {
+              if (session.eventEmitter || session.stopped) return
+              const loc2 = this.codexSessionLocator(nativeId)
+              if (loc2?.filePath && this.eventEmitterFactory) {
+                session.eventEmitter = this.eventEmitterFactory({ filePath: loc2.filePath, nativeId })
+                session.eventEmitter.start?.()
+                console.log(`[codex-detect] emitter started on retry+${delay}ms filePath=${loc2.filePath}`)
+              } else if (delay < 1500) {
+                console.warn(`[codex-detect] retry+${delay}ms still no jsonl file for ${nativeId}`)
+              }
+            }, delay)
+            retry(500).unref?.()
+            retry(1500).unref?.()
           }
-        } catch { /* ignore */ }
+        } catch (e) {
+          console.warn(`[codex-detect] emitter start FAILED:`, e?.message || e)
+        }
+      } else if (!this.eventEmitterFactory) {
+        console.warn(`[codex-detect] this.eventEmitterFactory is null — server.js didn't wire it`)
       }
     }
     return true
@@ -514,6 +544,7 @@ export class PtyManager extends EventEmitter {
       })
 
       let detectAttempts = 0
+      console.log(`[codex-detect] poll started session=${sessionId} spawnTime=${spawnTime}`)
       session.detectTimer = setInterval(() => {
         detectAttempts++
         if (session.nativeId) {
@@ -523,10 +554,14 @@ export class PtyManager extends EventEmitter {
         }
         const id = detectCodexSessionFromFs(spawnTime)
         if (id) {
+          console.log(`[codex-detect] poll attempt=${detectAttempts} found nativeId=${id}`)
           this._setNativeId(session, id)
         } else if (detectAttempts >= 30) {
+          console.warn(`[codex-detect] poll GAVE UP after 30 attempts (12s) for session=${sessionId} — codex never wrote a rollout matching afterMs=${spawnTime}; check ~/.codex/sessions/$(date +%Y/%m/%d)/`)
           clearInterval(session.detectTimer)
           session.detectTimer = null
+        } else if (detectAttempts === 1 || detectAttempts === 5 || detectAttempts === 15) {
+          console.log(`[codex-detect] poll attempt=${detectAttempts} no match yet`)
         }
       }, 400)
       session.detectTimer.unref?.()
