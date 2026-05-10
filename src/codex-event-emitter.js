@@ -91,5 +91,11 @@ export function createCodexEventEmitter({ filePath, nativeId, onEvent, logger = 
     return latestAssistantText
   }
 
-  return { start, stop, getLatestAssistantContent }
+  // 给 PtyManager.onExit 用：codex 自己不会在 jsonl 里写 SessionEnd（它就只是
+  // 进程结束），所以由外层合成一条事件触发"会话整体结束"分支。
+  function emitSynthetic(evt) {
+    onEvent({ ...evt, nativeId: evt.nativeId ?? nativeId })
+  }
+
+  return { start, stop, getLatestAssistantContent, emitSynthetic }
 }

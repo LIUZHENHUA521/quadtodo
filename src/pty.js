@@ -265,13 +265,14 @@ function defaultClaudeSessionLocator(nativeSessionId) {
 }
 
 export class PtyManager extends EventEmitter {
-  constructor({ tools, ptyFactory, promptDelayMs = 2000, codexWatcherFactory, claudeSessionLocator, sidecar = null, eventEmitterFactory = null } = {}) {
+  constructor({ tools, ptyFactory, promptDelayMs = 2000, codexWatcherFactory, claudeSessionLocator, codexSessionLocator, sidecar = null, eventEmitterFactory = null } = {}) {
     super()
     if (!tools) throw new Error('PtyManager: tools required')
     this.tools = tools
     this.ptyFactory = ptyFactory || defaultPtyFactory()
     this.codexWatcherFactory = codexWatcherFactory || defaultCodexWatcherFactory
     this.claudeSessionLocator = claudeSessionLocator || defaultClaudeSessionLocator
+    this.codexSessionLocator = codexSessionLocator || ((id) => findCodexSession(id))
     this.promptDelayMs = promptDelayMs
     this.sidecar = sidecar
     this.eventEmitterFactory = eventEmitterFactory
@@ -310,7 +311,7 @@ export class PtyManager extends EventEmitter {
       }
       if (this.eventEmitterFactory && !session.eventEmitter) {
         try {
-          const loc = findCodexSession(nativeId)
+          const loc = this.codexSessionLocator(nativeId)
           if (loc?.filePath) {
             session.eventEmitter = this.eventEmitterFactory({ filePath: loc.filePath, nativeId })
             session.eventEmitter.start?.()
@@ -544,7 +545,21 @@ export class PtyManager extends EventEmitter {
       if (session.detectTimer) clearInterval(session.detectTimer)
       if (session.promptTimer) clearTimeout(session.promptTimer)
       if (session.fsWatcher) { try { session.fsWatcher.close() } catch { /* ignore */ } session.fsWatcher = null }
-      if (session.eventEmitter) { try { session.eventEmitter.stop?.() } catch { /* ignore */ } session.eventEmitter = null }
+      if (session.eventEmitter) {
+        // codex 在 jsonl 里没有"会话整体结束"的事件，只有 task_complete（一轮）和
+        // 进程实际退出。这里合成 SessionEnd 抛给上层，对应 IM 里的 ✅ + 全量 transcript 附件。
+        if (session.tool === 'codex' && session.nativeId) {
+          try {
+            session.eventEmitter.emitSynthetic?.({
+              event: 'SessionEnd',
+              nativeId: session.nativeId,
+              rawEventPayload: { exitCode: exitCode ?? 1 },
+            })
+          } catch { /* ignore */ }
+        }
+        try { session.eventEmitter.stop?.() } catch { /* ignore */ }
+        session.eventEmitter = null
+      }
       if (this.sidecar && session.tool === 'codex' && session.nativeId) {
         try { this.sidecar.clear(session.nativeId) } catch { /* ignore */ }
       }
