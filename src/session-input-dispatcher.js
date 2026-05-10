@@ -55,7 +55,17 @@ export function createSessionInputDispatcher({ pty, aiTerminal, callbacks = {}, 
 
   async function enqueue({ sessionId, stripped, imagePaths, channel, echoTarget }) {
     const q = getOrCreateQueue(sessionId)
+    if (q.items.length >= QUEUE_LIMIT) {
+      return { full: true, queueSize: q.items.length }
+    }
     q.items.push({ text: stripped, imagePaths, enqueuedAt: Date.now() })
+    if (q.staleTimer) clearTimeout(q.staleTimer)
+    q.staleTimer = setTimeout(() => {
+      if (callbacks.onStale) {
+        Promise.resolve(callbacks.onStale({ sessionId, channel, echoTarget, queueSize: q.items.length }))
+          .catch((e) => logger?.warn?.(`[dispatcher] onStale failed: ${e.message}`))
+      }
+    }, STALE_MS)
     const isFirst = q.items.length === 1
     const cb = isFirst ? callbacks.onQueueFirstEnqueue : callbacks.onQueueAdditionalEnqueue
     if (cb) {
@@ -66,7 +76,7 @@ export function createSessionInputDispatcher({ pty, aiTerminal, callbacks = {}, 
         logger?.warn?.(`[dispatcher] echo callback failed: ${e.message}`)
       }
     }
-    return q.items.length
+    return { full: false, queueSize: q.items.length }
   }
 
   async function send({ sessionId, text, imagePaths = [], channel, echoTarget } = {}) {
@@ -87,15 +97,17 @@ export function createSessionInputDispatcher({ pty, aiTerminal, callbacks = {}, 
     }
 
     if (mode === 'queue_or_send') {
-      const size = await enqueue({ sessionId, stripped, imagePaths, channel, echoTarget })
-      return { action: 'queued', queueSize: size, sessionId }
+      const r = await enqueue({ sessionId, stripped, imagePaths, channel, echoTarget })
+      if (r.full) return { action: 'queue_full', queueSize: r.queueSize, sessionId }
+      return { action: 'queued', queueSize: r.queueSize, sessionId }
     }
 
     if (mode === 'soft_interrupt') {
       if (softInterrupting.has(sessionId)) {
         // 250ms 窗口内的第 2 个 ! → 降级为入队
-        const size = await enqueue({ sessionId, stripped, imagePaths, channel, echoTarget })
-        return { action: 'queued', queueSize: size, reason: 'soft_interrupt_in_progress', sessionId }
+        const r = await enqueue({ sessionId, stripped, imagePaths, channel, echoTarget })
+        if (r.full) return { action: 'queue_full', queueSize: r.queueSize, sessionId }
+        return { action: 'queued', queueSize: r.queueSize, reason: 'soft_interrupt_in_progress', sessionId }
       }
       return await performSoftInterrupt({ sessionId, stripped, imagePaths })
     }
@@ -172,7 +184,25 @@ export function createSessionInputDispatcher({ pty, aiTerminal, callbacks = {}, 
   async function onSessionIdle(sessionId) {
     return flushQueue(sessionId)
   }
-  function onSessionEnd(_sessionId) { /* TODO Task 8 */ }
+
+  async function onSessionEnd(sessionId) {
+    const q = queues.get(sessionId)
+    if (!q) return
+    if (q.staleTimer) clearTimeout(q.staleTimer)
+    const undelivered = q.items.slice()
+    queues.delete(sessionId)
+    if (callbacks.onSessionEnd) {
+      try {
+        await callbacks.onSessionEnd({
+          sessionId,
+          undeliveredCount: undelivered.length,
+          undeliveredTexts: undelivered.map((it) => it.text),
+        })
+      } catch (e) {
+        logger?.warn?.(`[dispatcher] onSessionEnd callback failed: ${e.message}`)
+      }
+    }
+  }
 
   function describe() {
     const byId = {}

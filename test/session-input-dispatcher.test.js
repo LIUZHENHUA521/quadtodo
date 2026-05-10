@@ -256,3 +256,49 @@ describe('send: busy + hard_cancel', () => {
     expect(writes).toEqual([{ sid: 'sid1', data: '\x03' }])
   })
 })
+
+describe('queue limits / lifecycle', () => {
+  it('队列满 20 → 第 21 条返回 queue_full', async () => {
+    const { pty, aiTerminal } = makeDeps({ awaitingReply: false })
+    const d = createSessionInputDispatcher({ pty, aiTerminal })
+    for (let i = 0; i < 20; i++) {
+      const r = await d.send({ sessionId: 'sid1', text: `m${i}` })
+      expect(r.action).toBe('queued')
+    }
+    const result = await d.send({ sessionId: 'sid1', text: 'overflow' })
+    expect(result).toMatchObject({ action: 'queue_full', queueSize: 20 })
+  })
+
+  it('5 分钟未 flush → onStale 回调被调用，队列保留', async () => {
+    vi.useFakeTimers()
+    const { pty, aiTerminal } = makeDeps({ awaitingReply: false })
+    const onStale = vi.fn().mockResolvedValue()
+    const d = createSessionInputDispatcher({
+      pty, aiTerminal,
+      callbacks: { onStale },
+    })
+    await d.send({ sessionId: 'sid1', text: 'a' })
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100)
+    expect(onStale).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sid1' }))
+    expect(d.describe().byId.sid1?.queueSize).toBe(1)
+    vi.useRealTimers()
+  })
+
+  it('onSessionEnd → 清队列，触发 onSessionEnd 回调暴露未投递消息', async () => {
+    const { pty, aiTerminal } = makeDeps({ awaitingReply: false })
+    const onEnd = vi.fn().mockResolvedValue()
+    const d = createSessionInputDispatcher({
+      pty, aiTerminal,
+      callbacks: { onSessionEnd: onEnd },
+    })
+    await d.send({ sessionId: 'sid1', text: 'a' })
+    await d.send({ sessionId: 'sid1', text: 'b' })
+    await d.onSessionEnd('sid1')
+    expect(onEnd).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'sid1',
+      undeliveredCount: 2,
+      undeliveredTexts: ['a', 'b'],
+    }))
+    expect(d.describe().sessions).toBe(0)
+  })
+})
