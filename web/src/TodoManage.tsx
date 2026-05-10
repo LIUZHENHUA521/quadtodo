@@ -1661,6 +1661,12 @@ export default function TodoManage() {
               title="AI 工作面板"
             >AI 面板</Button>
             <Button
+              icon={<SearchOutlined />}
+              size="small"
+              onClick={() => setTranscriptDrawerOpen(true)}
+              title="历史会话找回"
+            >找回</Button>
+            <Button
               icon={<SettingOutlined />}
               size="small"
               onClick={() => setSettingsOpen(true)}
@@ -1678,12 +1684,6 @@ export default function TodoManage() {
                     ),
                   },
                   { type: 'divider' as const },
-                  {
-                    key: 'transcript',
-                    icon: <SearchOutlined />,
-                    label: '找回',
-                    onClick: () => setTranscriptDrawerOpen(true),
-                  },
                   {
                     key: 'template',
                     icon: <FileTextOutlined />,
