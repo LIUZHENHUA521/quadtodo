@@ -519,6 +519,29 @@ program.command('doctor')
       const tail = c.detail ? ` — ${c.detail}` : ''
       console.log(`${icon} ${c.name}${tail}`)
     }
+
+    const missing = report.checks
+      .filter(c => !c.ok && /^(claude|codex) binary$/.test(c.name))
+      .map(c => c.name.split(' ')[0])
+
+    if (missing.length > 0) {
+      const flags = missing.map(t => `--${t}`).join(' ')
+      console.log(`\nMissing AI CLI(s): ${missing.join(', ')}`)
+      console.log(`Suggested fix: quadtodo install-tools ${flags}`)
+      if (process.stdin.isTTY) {
+        const ans = await prompt(`Run it now? [Enter = yes / q = skip] `)
+        if (ans.trim().toLowerCase() !== 'q') {
+          const r = spawnSync(process.execPath, [
+            fileURLToPath(import.meta.url),
+            'install-tools',
+            ...missing.map(t => `--${t}`),
+            '-y',
+          ], { stdio: 'inherit' })
+          process.exit(r.status ?? 1)
+        }
+      }
+    }
+
     process.exit(report.ok ? 0 : 1)
   })
 
