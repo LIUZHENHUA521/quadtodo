@@ -82,4 +82,16 @@ describe('codex-event-emitter', () => {
     em.stop()
     expect(events.length).toBe(0)
   })
+
+  it('within 100ms window, only one TurnAborted is emitted', async () => {
+    const events = []
+    const em = createCodexEventEmitter({ filePath: file, nativeId: 'abc', onEvent: (e) => events.push(e) })
+    em.start()
+    appendLine({ type: 'event_msg', payload: { type: 'turn_aborted' } })
+    await new Promise(r => setTimeout(r, 50))
+    appendLine({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: '<turn_aborted>...' }] } })
+    await new Promise(r => setTimeout(r, 200))
+    em.stop()
+    expect(events.filter(e => e.event === 'TurnAborted').length).toBe(1)
+  })
 })
