@@ -17,6 +17,8 @@ export interface AiSession {
   completedAt: number | null
   prompt: string
   label?: string
+  /** 服务端记录的最近一次 turn_done 时间戳；客户端用本地 lastSeenAt 比对判断未读 */
+  lastTurnDoneAt?: number | null
   telegramRoute?: {
     targetUserId?: string | number | null
     threadId?: string | number | null
@@ -588,6 +590,7 @@ export interface LiveSession {
   startedAt: number
   completedAt: number | null
   lastOutputAt: number | null
+  lastTurnDoneAt?: number | null
   outputBytesTotal: number
   awaitingReply?: boolean
 }
