@@ -438,6 +438,45 @@ describe('lark-bot inbound videos (msg_type=media)', () => {
     expect(passed.imagePaths).toHaveLength(1)
   })
 
+  it('downloads video from REAL Lark shape: msg_type=post + tag=media node', async () => {
+    // 真实抓到的飞书 shape：发视频时 msg_type='post'，
+    // 视频是 content.content[][] 里 tag==='media' 的节点。
+    const wizard = { handleInbound: vi.fn().mockResolvedValue({ reply: 'ok' }) }
+    const apiClient = makeApiClient({
+      getMessageResource: vi.fn().mockResolvedValue({
+        ok: true,
+        headers: { 'content-type': 'video/mp4' },
+        writeFile: async (p) => p,
+      }),
+    })
+    const { bot } = makeBot({ wizard, apiClient })
+
+    const r = await bot.handleEvent({
+      event_id: 'evt_real_post_media',
+      event: {
+        message: {
+          chat_id: 'oc_default',
+          message_id: 'om_real',
+          msg_type: 'post',
+          content: '{"title":"","content":[[{"tag":"media","file_key":"file_v3_0011j_153455b3-9010-456c-82ba-9482b23c7cag","image_key":"img_v3_0211j_9341e90d-d393-4707-9ad3-026f190380dg"}]]}',
+        },
+        sender: { sender_id: { open_id: 'ou_user' }, sender_type: 'user' },
+      },
+    })
+
+    expect(r.action).not.toBe('ignored_empty')
+    expect(apiClient.getMessageResource).toHaveBeenCalledWith({
+      messageId: 'om_real',
+      fileKey: 'file_v3_0011j_153455b3-9010-456c-82ba-9482b23c7cag',
+      type: 'file',
+    })
+    expect(wizard.handleInbound).toHaveBeenCalledTimes(1)
+    const passed = wizard.handleInbound.mock.calls[0][0]
+    expect(passed.imagePaths).toHaveLength(1)
+    expect(passed.imagePaths[0]).toMatch(/\.mp4$/)
+    expect(passed.text).toMatch(/^\[用户发了视频/)
+  })
+
   it('does not drop a video-only message with empty text', async () => {
     const wizard = { handleInbound: vi.fn().mockResolvedValue({ reply: '' }) }
     const apiClient = makeApiClient({

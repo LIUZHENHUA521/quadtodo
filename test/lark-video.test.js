@@ -101,6 +101,61 @@ describe('extractVideoFileKey', () => {
     })
     expect(r?.fileKey).toBe('k')
   })
+
+  // ── 实测飞书 shape：post 富文本里 tag==='media' 的节点（**最关键的一条路径**）──
+  it('extracts file_key from post msg containing tag=media node (real Lark shape)', () => {
+    const realPayload = {
+      msg_type: 'post',
+      content: '{"title":"","content":[[{"tag":"media","file_key":"file_v3_0011j_153455b3-9010-456c-82ba-9482b23c7cag","image_key":"img_v3_0211j_9341e90d-d393-4707-9ad3-026f190380dg"}]]}',
+    }
+    const r = extractVideoFileKey(realPayload)
+    expect(r?.fileKey).toBe('file_v3_0011j_153455b3-9010-456c-82ba-9482b23c7cag')
+  })
+
+  it('extracts file_name + duration from post media node when present', () => {
+    const r = extractVideoFileKey({
+      msg_type: 'post',
+      content: JSON.stringify({
+        content: [[{ tag: 'media', file_key: 'fk', file_name: 'movie.mp4', duration: 8000 }]],
+      }),
+    })
+    expect(r).toMatchObject({ fileKey: 'fk', fileName: 'movie.mp4', duration: 8000 })
+  })
+
+  it('returns the first media node when post has multiple media nodes', () => {
+    const r = extractVideoFileKey({
+      msg_type: 'post',
+      content: JSON.stringify({
+        content: [
+          [{ tag: 'text', text: '看这俩' }],
+          [{ tag: 'media', file_key: 'fk_first' }],
+          [{ tag: 'media', file_key: 'fk_second' }],
+        ],
+      }),
+    })
+    expect(r?.fileKey).toBe('fk_first')
+  })
+
+  it('ignores image-only post messages (no media node)', () => {
+    expect(extractVideoFileKey({
+      msg_type: 'post',
+      content: JSON.stringify({
+        content: [[{ tag: 'img', image_key: 'img_x' }]],
+      }),
+    })).toBe(null)
+  })
+
+  it('finds media node even when surrounded by text nodes (post with caption)', () => {
+    const r = extractVideoFileKey({
+      msg_type: 'post',
+      content: JSON.stringify({
+        content: [
+          [{ tag: 'text', text: '看视频：' }, { tag: 'media', file_key: 'fk_with_text' }],
+        ],
+      }),
+    })
+    expect(r?.fileKey).toBe('fk_with_text')
+  })
 })
 
 describe('videoExtFromContentType', () => {

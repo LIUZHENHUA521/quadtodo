@@ -1,11 +1,15 @@
 /**
  * 飞书视频入站：跟 lark-image 类似，但用 getMessageResource(type:'file')。
  *
- * 飞书的视频消息 msg_type === 'media'，content 形如：
- *   { file_key: 'media_v3_xxx', image_key: 'img_v2_xxx'(封面，可选), file_name: 'a.mp4', duration: 12345 }
+ * 实测飞书发视频时，事件 shape 是：
+ *   msg_type: 'post'
+ *   content: { title:'', content: [[{ tag:'media', file_key:'file_v3_xxx', image_key:'img_v3_xxx' }]] }
  *
- * extractVideoFileKey 只处理 msg_type === 'media' 的消息，避免误吃 image 消息封面。
- * 当前只支持单视频（飞书一次发一条），返回 null 或 { fileKey, fileName, duration }。
+ * 也可能（理论上 / 其他版本）出现：
+ *   msg_type: 'media' / 'video', 顶层 content.file_key
+ *   msg_type: 'file',  content.file_key + file_name 后缀是视频
+ *
+ * extractVideoFileKey 把以上几种 shape 都覆盖。
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -35,18 +39,18 @@ export function videoExtFromContentType(headers) {
   return 'mp4'  // 飞书视频默认 mp4，未知 mime 兜底成 mp4 比 bin 更安全
 }
 
-// 视频类的 msg_type 枚举：飞书国际版 / 国内版 / 不同事件版本可能用不同枚举名，
-// 这里把已知的全列上，宽松识别。'file' 在 file_name 看起来是视频时也认。
 const VIDEO_MSG_TYPES = new Set(['media', 'video'])
-
 const VIDEO_FILE_NAME_RE = /\.(mp4|mov|m4v|webm|mkv|avi|3gp|mpeg|mpg|wmv|flv)$/i
 
 /**
  * 从飞书 message 提取视频 file_key。
- * 容忍多种 shape：
- *   - msg_type/message_type ∈ {media, video} → content.file_key 直接拿
- *   - msg_type === 'file' 且 file_name 后缀是视频格式 → 也认
- *   - content.file_key 不在顶层时，尝试 content.video.file_key / content.media.file_key
+ *
+ * 识别优先级：
+ *   ① post 富文本里的 media 节点 —— 实测飞书发视频走的就是这条
+ *   ② msg_type ∈ {media, video} → content.file_key（顶层）
+ *   ③ msg_type='file' 且 file_name 是视频后缀 → content.file_key
+ *   ④ 兜底嵌套：content.video.file_key / content.media.file_key
+ *   ⑤ 兜底：未知 msg_type 但 content 里有 file_key + 文件名是视频后缀
  *
  * @returns {{ fileKey: string, fileName: string|null, duration: number|null, msgType: string|null } | null}
  */
@@ -60,24 +64,37 @@ export function extractVideoFileKey(message = {}) {
   }
   if (!content || typeof content !== 'object') return null
 
-  // 多路径找 file_key
+  // ① post 富文本里的 media 节点
+  if (Array.isArray(content.content)) {
+    for (const line of content.content) {
+      if (!Array.isArray(line)) continue
+      for (const node of line) {
+        if (node && node.tag === 'media' && typeof node.file_key === 'string' && node.file_key) {
+          return {
+            fileKey: node.file_key,
+            fileName: typeof node.file_name === 'string' ? node.file_name : null,
+            duration: typeof node.duration === 'number' ? node.duration : null,
+            msgType,
+          }
+        }
+      }
+    }
+  }
+
+  // ②③④⑤ 顶层 / 嵌套 file_key
   const fileKey = pickFirstString([
     content.file_key,
-    content.video?.file_key,
-    content.media?.file_key,
+    content.video && content.video.file_key,
+    content.media && content.media.file_key,
   ])
   if (!fileKey) return null
 
   const fileName = pickFirstString([
     content.file_name,
-    content.video?.file_name,
-    content.media?.file_name,
+    content.video && content.video.file_name,
+    content.media && content.media.file_name,
   ]) || null
 
-  // 决定要不要认领这条消息：
-  //   - 已知视频类 msg_type → 直接认
-  //   - 'file' 类型 + 视频后缀 → 认
-  //   - msg_type 为空/未知，但 content 里有 file_key + 视频后缀 → 也认（兜底）
   let claim = false
   if (msgType && VIDEO_MSG_TYPES.has(String(msgType).toLowerCase())) {
     claim = true
@@ -101,7 +118,7 @@ function pickFirstString(candidates) {
 /**
  * @param opts.apiClient lark-api-client 实例（必须有 getMessageResource）
  * @param opts.messageId 飞书 message_id
- * @param opts.fileKey content.file_key
+ * @param opts.fileKey content.file_key 或 post media 节点的 file_key
  * @param opts.fileName 用于推扩展名（可选；优先级低于 content-type）
  * @param opts.destDir 目标目录
  * @returns {Promise<{ ok: true, localPath } | { ok: false, reason, detail? }>}
@@ -127,7 +144,6 @@ export async function downloadLarkVideo({
     return { ok: false, reason: 'mkdir_failed', detail: e.message }
   }
 
-  // 优先：content-type → mime → ext；fallback：file_name 后缀
   let ext = videoExtFromContentType(r.headers || {})
   if (ext === 'mp4' && fileName) {
     const dot = fileName.lastIndexOf('.')
