@@ -8,6 +8,13 @@ export const DEFAULT_PRICING = {
 		'claude-opus-4*':   { input: 15.00, output: 75.00, cacheRead: 1.50, cacheWrite: 18.75 },
 		'claude-sonnet-4*': { input: 3.00,  output: 15.00, cacheRead: 0.30, cacheWrite: 3.75  },
 		'claude-haiku-4*':  { input: 1.00,  output: 5.00,  cacheRead: 0.10, cacheWrite: 1.25  },
+		// OpenAI/GPT — USD per 1M tokens. cacheWrite 沿用 cacheRead（OpenAI 只暴露
+		// cached input 一档，没有 Anthropic 式的 cache creation）。'gpt-4o-mini*'
+		// 必须排在 'gpt-4o*' 之前，否则 mini 会先命中 4o 主价表。
+		'gpt-5*':           { input: 1.25,  output: 10.00, cacheRead: 0.125, cacheWrite: 0.125 },
+		'gpt-4.1*':         { input: 2.00,  output: 8.00,  cacheRead: 0.50,  cacheWrite: 0.50  },
+		'gpt-4o-mini*':     { input: 0.15,  output: 0.60,  cacheRead: 0.075, cacheWrite: 0.075 },
+		'gpt-4o*':          { input: 2.50,  output: 10.00, cacheRead: 1.25,  cacheWrite: 1.25  },
 	},
 	cnyRate: 7.2,
 }
