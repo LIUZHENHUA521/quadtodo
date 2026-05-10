@@ -1397,6 +1397,24 @@ export function createOpenClawWizard({
       if (isGeneralChannel(chatId, threadId)) {
         return handleSlashCommand({ cmd, argText, chatId, threadId })
       }
+      // task topic 里 /stop（无参数）→ dispatcher hard_cancel：中断当前 turn 但保留 session
+      // 带参数（/stop all / /stop <短码>）仍 fallback 到 General 的 admin 杀 session 路径
+      if (cmd === 'stop' && !argText && sessionInputDispatcher && openclaw?.findSessionByRoute) {
+        const boundSid = openclaw.findSessionByRoute({ channel: 'telegram', chatId, threadId })
+        if (boundSid && pty?.has?.(boundSid)) {
+          try {
+            const r = await sessionInputDispatcher.send({
+              sessionId: boundSid,
+              text: '/stop',
+              channel: 'telegram',
+              echoTarget: { chatId, threadId, messageId: triggerMessageId },
+            })
+            return mapDispatcherResultToWizardReply(r, boundSid, [])
+          } catch (e) {
+            logger.warn?.(`[wizard] in-topic /stop dispatcher failed: ${e.message}`)
+          }
+        }
+      }
       return {
         reply: `⚠️ /${cmd} 只在 General 频道用（避免污染当前 task topic 的 AI 上下文）。\n\n请到 General 里发 /${cmd}。`,
         action: 'slash_wrong_topic',
