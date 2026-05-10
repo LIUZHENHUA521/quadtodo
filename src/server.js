@@ -413,11 +413,28 @@ export function resolveEditorTargetPath(baseDirs, rawPath) {
 	return resolveEditorTargetInfo(baseDirs, rawPath)?.resolvedPath || null;
 }
 
-// Phase A 占位：Codex 事件流入后只打日志，Phase C 会接到 openclaw-bridge 走 IM 推送。
-// 留 ptyManager / cfg 形参方便 Phase C 直接拿 sidecar 反查 quadtodoSessionId / cwd。
-function handleCodexEvent(evt, _ptyManager, _cfg) {
+// Phase C：Codex 事件流转给 /api/openclaw/hook（与 Claude hook 同一端点，靠 source/path 区分）。
+// 让 hook handler 走与 Claude 相同的路由 / 节流 / 推送链路，无需在内存里另开桥。
+async function handleCodexEvent(evt, _ptyManager, runtimeConfig) {
 	if (!evt) return;
+	const port = runtimeConfig?.port || 5677;
 	console.log(`[codex-event] ${evt.event} native=${evt.nativeId}`);
+	try {
+		await fetch(`http://127.0.0.1:${port}/api/openclaw/hook`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				source: "codex",
+				path: "jsonl",
+				event: evt.event,
+				nativeId: evt.nativeId,
+				transcript_path: evt.transcriptPath || null,
+				raw_event_payload: evt.rawEventPayload || null,
+			}),
+		});
+	} catch (e) {
+		console.warn("[codex-event] post failed:", e.message);
+	}
 }
 
 function buildSafeLarkConfig(cfg) {
@@ -477,7 +494,13 @@ export function createServer(opts = {}) {
 			eventEmitterFactory: (opts) =>
 				createCodexEventEmitter({
 					...opts,
-					onEvent: (evt) => handleCodexEvent(evt, ptyRef, runtimeConfig),
+					// 把 emitterFactory 已知的 jsonl 路径注入到事件里，下游 hook 可以直接读 transcript。
+					onEvent: (evt) =>
+						handleCodexEvent(
+							{ ...evt, transcriptPath: evt?.transcriptPath || opts?.filePath || null },
+							ptyRef,
+							runtimeConfig,
+						),
 				}),
 		});
 	ptyRef = pty;
