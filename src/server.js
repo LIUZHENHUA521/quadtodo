@@ -504,6 +504,30 @@ export function createServer(opts = {}) {
 				}),
 		});
 	ptyRef = pty;
+
+	// Phase E：Codex stdout 提示词检测器命中 → 走与 Claude/Codex jsonl 相同的 hook 端点。
+	// path=detector 让 hook handler 走 handleCodexDetector 分支，推权限卡片到 IM。
+	pty.on("codex-prompt", async (data) => {
+		const port = runtimeConfig?.port || 5677;
+		try {
+			await fetch(`http://127.0.0.1:${port}/api/openclaw/hook`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					source: "codex",
+					path: "detector",
+					event: "Notification",
+					sessionId: data.sessionId,
+					nativeId: data.nativeId,
+					promptText: data.promptText,
+					matchedPattern: data.matchedPattern,
+				}),
+			});
+		} catch (e) {
+			console.warn("[codex-prompt] post failed:", e.message);
+		}
+	});
+
 	// Telegram 自动 topic 钩子：ait 创建在前，wizard 创建在后；用 lazy ref 桥接
 	const aiSessionHooks = {
 		onSessionSpawned: () => null,

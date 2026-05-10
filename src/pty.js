@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { readdirSync, statSync, existsSync, watch as fsWatch, mkdirSync, openSync, readSync, closeSync, readFileSync } from 'node:fs'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import { homedir } from 'node:os'
+import { createCodexPromptDetector } from './codex-prompt-detector.js'
 
 const require = createRequire(import.meta.url)
 
@@ -265,7 +266,7 @@ function defaultClaudeSessionLocator(nativeSessionId) {
 }
 
 export class PtyManager extends EventEmitter {
-  constructor({ tools, ptyFactory, promptDelayMs = 2000, codexWatcherFactory, claudeSessionLocator, codexSessionLocator, sidecar = null, eventEmitterFactory = null } = {}) {
+  constructor({ tools, ptyFactory, promptDelayMs = 2000, codexWatcherFactory, claudeSessionLocator, codexSessionLocator, sidecar = null, eventEmitterFactory = null, codexPromptDetectorFactory = null } = {}) {
     super()
     if (!tools) throw new Error('PtyManager: tools required')
     this.tools = tools
@@ -276,6 +277,7 @@ export class PtyManager extends EventEmitter {
     this.promptDelayMs = promptDelayMs
     this.sidecar = sidecar
     this.eventEmitterFactory = eventEmitterFactory
+    this.codexPromptDetectorFactory = codexPromptDetectorFactory || createCodexPromptDetector
     this.sessions = new Map()
   }
 
@@ -460,9 +462,35 @@ export class PtyManager extends EventEmitter {
       detectTimer: null,
       fsWatcher: null,
       eventEmitter: null,
+      detector: null,
       lastTuiAlertAt: 0,
     }
     this.sessions.set(sessionId, session)
+
+    // Codex 专属：stdout 提示词检测器（接 [Y/n] / apply patch? 之类的兜底权限弹窗）。
+    // emitter 用迟绑定 getter 包装：detector 创建在 _setNativeId 之前，eventEmitter 还是 null。
+    if (tool === 'codex') {
+      try {
+        session.detector = this.codexPromptDetectorFactory({
+          pty: proc,
+          emitter: {
+            getLatestAssistantContent: () => session.eventEmitter?.getLatestAssistantContent?.() || '',
+          },
+          onMatch: ({ promptText, matchedPattern }) => {
+            this.emit('codex-prompt', {
+              sessionId: session.sessionId,
+              nativeId: session.nativeId,
+              promptText,
+              matchedPattern,
+            })
+          },
+        })
+        session.detector.start?.()
+      } catch (e) {
+        console.warn('[pty] codex prompt detector start failed:', e?.message || e)
+        session.detector = null
+      }
+    }
 
     // 已知 nativeId 立即同步通知 —— 覆盖三种情况：
     //   1) Claude 新会话：presetClaudeId（randomUUID）
@@ -545,6 +573,7 @@ export class PtyManager extends EventEmitter {
       if (session.detectTimer) clearInterval(session.detectTimer)
       if (session.promptTimer) clearTimeout(session.promptTimer)
       if (session.fsWatcher) { try { session.fsWatcher.close() } catch { /* ignore */ } session.fsWatcher = null }
+      if (session.detector) { try { session.detector.stop?.() } catch { /* ignore */ } session.detector = null }
       if (session.eventEmitter) {
         // codex 在 jsonl 里没有"会话整体结束"的事件，只有 task_complete（一轮）和
         // 进程实际退出。这里合成 SessionEnd 抛给上层，对应 IM 里的 ✅ + 全量 transcript 附件。
@@ -662,6 +691,7 @@ export class PtyManager extends EventEmitter {
     // Codex 侧的 sidecar/emitter 在这里同步清理 —— onExit 也会再做一次（幂等）。
     // 之所以提前清，是因为某些 PTY 实现的 kill() 不一定会准时触发 onExit（测试环境
     // 用 mock proc 完全不触发），sidecar 残留会让下次 boot 误以为会话还在。
+    if (s.detector) { try { s.detector.stop?.() } catch { /* ignore */ } s.detector = null }
     if (s.eventEmitter) { try { s.eventEmitter.stop?.() } catch { /* ignore */ } s.eventEmitter = null }
     if (this.sidecar && s.tool === 'codex' && s.nativeId) {
       try { this.sidecar.clear(s.nativeId) } catch { /* ignore */ }
