@@ -101,12 +101,29 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
   function notifyTurnDone(sessionId, payload = {}) {
     const session = sessions.get(sessionId)
     if (!session) return false
+    const ts = payload.timestamp || Date.now()
+    session.lastTurnDoneAt = ts
+    // 持久化到 todo.aiSessions[i].lastTurnDoneAt：即使 server 重启或浏览器关掉，
+    // 客户端再开仍能根据 lastTurnDoneAt > 本地 lastSeenAt 判断未读。
+    try {
+      const todo = db.getTodo(session.todoId)
+      if (todo) {
+        const current = (todo.aiSessions || []).find(item => item.sessionId === sessionId) || todo.aiSession
+        if (current) {
+          db.updateTodo(session.todoId, {
+            aiSessions: mergeTodoAiSessions(todo, { ...current, lastTurnDoneAt: ts }),
+          })
+        }
+      }
+    } catch (e) {
+      console.warn('[ai-terminal] persist lastTurnDoneAt failed:', e.message)
+    }
     broadcastToSession(session, {
       ...payload,
       type: 'turn_done',
       event: payload.event || 'stop',
       status: payload.status || 'idle',
-      timestamp: payload.timestamp || Date.now(),
+      timestamp: ts,
     })
     return true
   }
@@ -341,6 +358,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       permissionMode: effectivePermissionMode,
       autoMode: effectivePermissionMode !== 'default' ? effectivePermissionMode : null,
       lastOutputAt: null,
+      lastTurnDoneAt: null,
       outputBytesTotal: 0,
       awaitingReply: false,
     }
@@ -447,6 +465,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
           startedAt: s.startedAt,
           completedAt: s.completedAt || null,
           lastOutputAt: s.lastOutputAt || null,
+          lastTurnDoneAt: s.lastTurnDoneAt || null,
           outputBytesTotal: s.outputBytesTotal || 0,
           awaitingReply: !!s.awaitingReply,
         })
@@ -820,6 +839,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
         currentCwd: cwd,
         autoMode: null,
         lastOutputAt: null,
+        lastTurnDoneAt: null,
         outputBytesTotal: 0,
         completedAt: null,
         awaitingReply: false,

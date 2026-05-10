@@ -13,6 +13,7 @@ import { getTerminalWsUrl, startAiExec, stopAiExec, openTraeCN, TodoStatus, Resu
 import { useTerminalTheme } from './hooks/useTerminalTheme'
 import { PRESET_LABELS, PRESET_ORDER, TerminalPresetName, TERMINAL_PRESETS, deriveChrome } from './terminalThemes'
 import { useTerminalDockStore } from './store/terminalDockStore'
+import { useUnreadStore } from './store/unreadStore'
 import {
   getBrowserNotificationPermission,
   shouldSendTurnDoneSystemNotification,
@@ -150,6 +151,30 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       turnDoneNoticeTimerRef.current = null
     }
   }, [sessionId])
+
+  // 标记已读：仅当用户当前真的能在本窗口看到这个 session（dock active/secondary、
+  // 未折叠、页面可见）时才 markSeen。pop-out 到独立窗口的 tab 由那个窗口的 AiTerminalMini
+  // 实例自己 mark；当前窗口看不到，不要替它 mark。
+  const markSeen = useUnreadStore(s => s.markSeen)
+  useEffect(() => {
+    function isVisibleHere(): boolean {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false
+      const dock = useTerminalDockStore.getState()
+      if (dock.poppedOutTabIds.includes(sessionId)) return false
+      if (dock.isCollapsed) return false
+      return dock.activeTabId === sessionId || dock.splitSecondaryTabId === sessionId
+    }
+    function evaluate() { if (isVisibleHere()) markSeen(sessionId) }
+    evaluate()
+    const unsub = useTerminalDockStore.subscribe(evaluate)
+    document.addEventListener('visibilitychange', evaluate)
+    window.addEventListener('focus', evaluate)
+    return () => {
+      unsub()
+      document.removeEventListener('visibilitychange', evaluate)
+      window.removeEventListener('focus', evaluate)
+    }
+  }, [sessionId, markSeen])
 
   const tryAutoRecover = useCallback(async () => {
     const latestResumeTarget = resumeTargetRef.current
@@ -533,9 +558,17 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             case 'auto_mode_notice':
               if (msg.message) message.warning(msg.message)
               break
-            case 'turn_done':
+            case 'turn_done': {
               showTurnDoneReminder()
+              // 用户当前正盯着这个会话（dock 可见、页面在前台）— turn_done 一到就标已读，
+              // 避免红点闪一下又消失带来的视觉干扰。
+              const dock = useTerminalDockStore.getState()
+              const docVisible = typeof document === 'undefined' || document.visibilityState === 'visible'
+              const tabVisible = !dock.isCollapsed && !dock.poppedOutTabIds.includes(sessionId)
+                && (dock.activeTabId === sessionId || dock.splitSecondaryTabId === sessionId)
+              if (docVisible && tabVisible) markSeen(sessionId)
               break
+            }
             case 'done':
               setSessionStatus(msg.status === 'done' ? 'ai_done' : 'todo')
               term.writeln(`\r\n\x1b[${msg.exitCode === 0 ? '32' : '31'}m=== ${msg.status === 'done' ? 'AI 任务已结束' : '任务失败'} ===\x1b[0m\r`)

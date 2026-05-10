@@ -563,6 +563,26 @@ body {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6), 0 0 0 4px rgba(114, 46, 209, 0.18);
 }
 
+/* 未读红点：放在卡片右上角，独立于左侧 dock-dot 颜色编码，避免视觉冲突。
+   呼吸动画用低对比的 outer ring，确保即便用户没盯着也能扫到。 */
+.todo-history-unread-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4d4f;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 0 4px rgba(255, 77, 79, 0.22);
+  pointer-events: auto;
+  animation: todo-history-unread-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes todo-history-unread-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 0 4px rgba(255, 77, 79, 0.22); }
+  50%       { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 0 6px rgba(255, 77, 79, 0.10); }
+}
+
 .todo-history-body {
   min-width: 0;
   flex: 1;

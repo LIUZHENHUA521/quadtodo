@@ -63,6 +63,7 @@ import PipelineRunDrawer from './pipeline/PipelineRunDrawer'
 import TerminalDock from './dock/TerminalDock'
 import AttentionRail from './dock/AttentionRail'
 import { useTerminalDockStore } from './store/terminalDockStore'
+import { useUnreadStore, isSessionUnread } from './store/unreadStore'
 import { useDrawerStackStore } from './store/drawerStackStore'
 import { useDrawerStack } from './hooks/useDrawerStack'
 import './TodoManage.css'
@@ -204,6 +205,8 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
   const dockIsCollapsed = useTerminalDockStore(s => s.isCollapsed)
   const dockOpenTabIdSet = useMemo(() => new Set(dockOpenTabs.map(t => t.id)), [dockOpenTabs])
   const dockPoppedSet = useMemo(() => new Set(dockPoppedOutTabIds), [dockPoppedOutTabIds])
+  const lastSeenMap = useUnreadStore(s => s.lastSeenAt)
+  const liveSessionsMap = useAiSessionStore(s => s.sessions)
 
   const focusSessionInDock = useCallback((sid: string) => {
     if (!dockOpenTabIdSet.has(sid)) return false
@@ -355,6 +358,10 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                   dockPoppedSet,
                 )
                 const isOpenInDock = dockStatus !== 'closed'
+                // 未读优先取 live session（in-memory，最新），其次 historical（持久化值）
+                const liveTurnDoneAt = liveSessionsMap.get(session.sessionId)?.lastTurnDoneAt ?? null
+                const turnDoneAt = liveTurnDoneAt || session.lastTurnDoneAt || null
+                const sessionUnread = isSessionUnread(turnDoneAt, lastSeenMap.get(session.sessionId))
                 return (
                   <button
                     key={session.sessionId}
@@ -372,6 +379,11 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                           className={`todo-history-dock-dot is-${dockStatus}`}
                           aria-label={DOCK_STATUS_TIP[dockStatus as Exclude<HistoryDockStatus, 'closed'>]}
                         />
+                      </Tooltip>
+                    )}
+                    {sessionUnread && (
+                      <Tooltip title="此 AI 会话有新回复未读" placement="left">
+                        <span className="todo-history-unread-dot" aria-label="未读" />
                       </Tooltip>
                     )}
                     <div className="todo-history-body">
@@ -853,6 +865,29 @@ export default function TodoManage() {
     seenSessionIds: seenReplySessionIds,
   }), [todos, liveSessionsMap, seenReplySessionIds])
   const attentionCounts = useMemo(() => countAttentionItems(attentionItems), [attentionItems])
+  const lastSeenMap = useUnreadStore(s => s.lastSeenAt)
+  // 未读会话总数：合并 live（in-memory，最新）与 todo.aiSessions（持久化）的 lastTurnDoneAt，
+  // 按 sessionId 去重取较新的那个时间，再与本地 lastSeenAt 比较。
+  const unreadCount = useMemo(() => {
+    const turnDoneBySid = new Map<string, number>()
+    for (const live of liveSessionsMap.values()) {
+      const ts = live.lastTurnDoneAt || 0
+      if (ts > 0) turnDoneBySid.set(live.sessionId, ts)
+    }
+    for (const todo of todos) {
+      for (const session of todo.aiSessions || []) {
+        const ts = session.lastTurnDoneAt || 0
+        if (!ts) continue
+        const prev = turnDoneBySid.get(session.sessionId) || 0
+        if (ts > prev) turnDoneBySid.set(session.sessionId, ts)
+      }
+    }
+    let n = 0
+    for (const [sid, ts] of turnDoneBySid) {
+      if (isSessionUnread(ts, lastSeenMap.get(sid))) n++
+    }
+    return n
+  }, [todos, liveSessionsMap, lastSeenMap])
   const [acknowledgedAttentionIds, setAcknowledgedAttentionIds] = useState<Set<string>>(new Set())
   const hasNewAttention = useMemo(
     () => attentionItems.some(item => !acknowledgedAttentionIds.has(item.id)),
@@ -1648,6 +1683,7 @@ export default function TodoManage() {
       <AttentionRail
         items={attentionItems}
         counts={attentionCounts}
+        unreadCount={unreadCount}
         hasNew={hasNewAttention}
         onActivate={handleOpenAttentionItem}
         onOpenDashboard={() => setDashboardOpen(true)}
