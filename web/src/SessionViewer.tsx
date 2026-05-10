@@ -34,12 +34,11 @@ export default function SessionViewer(props: Props) {
 
   return (
     <div style={{
-      position: 'relative',
       display: 'flex', flexDirection: 'column',
       ...(fillHeight ? { height: '100%', flex: 1, minHeight: 0 } : {}),
     }}>
-      {/* Live/Log 切换浮在右上角，不再占用顶部一整行 */}
-      <div style={{ position: 'absolute', top: 4, right: 8, zIndex: 5 }}>
+      {/* Live/Log 切换：紧凑独立行（避免与 AiTerminalMini 顶部工具条按钮重叠） */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', flexShrink: 0, padding: '2px 6px 0' }}>
         <Segmented
           size="small"
           value={mode}
