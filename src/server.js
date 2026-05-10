@@ -1375,6 +1375,7 @@ export function createServer(opts = {}) {
 		db,
 		openclaw: openclawBridge,
 		aiTerminal: ait,
+		sidecar: codexSidecar,                                // Codex jsonl 分支反查 nativeId → quadtodoSessionId
 		pty,
 		telegramBot: telegramBotProxy,
 		larkBot: larkBotProxy,                                // Stop hook → 清掉 lark "在思考" reaction

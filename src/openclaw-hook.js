@@ -459,8 +459,11 @@ export function createOpenClawHookHandler(deps = {}) {
       todoId = fromSidecar.todoId
       cwd = fromSidecar.cwd
     } else if (aiTerminal?.sessions) {
+      // pty.js 里 session 上挂的字段是 `nativeId`（见 pty.js:297），不是
+      // `nativeSessionId`——只有 PtyManager 内部 API 参数名是 nativeSessionId。
+      // 早期实现写错了字段名，导致 fallback 扫描永远 miss。
       for (const [sid, sess] of aiTerminal.sessions) {
-        if (sess?.nativeSessionId === nativeId) {
+        if (sess?.nativeId === nativeId) {
           quadtodoSessionId = sid
           todoId = sess.todoId || null
           cwd = sess.cwd || null
