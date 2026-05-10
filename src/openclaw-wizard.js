@@ -1301,7 +1301,7 @@ export function createOpenClawWizard({
             text: trimmed,
             imagePaths,
             channel: 'lark',
-            echoTarget: { chatId, threadId, rootMessageId, messageId: triggerMessageId },
+            echoTarget: { chatId, threadId, rootMessageId, messageId },
           })
           return mapDispatcherResultToWizardReply(r, sid, imagePaths)
         } catch (e) {
@@ -1418,7 +1418,7 @@ export function createOpenClawWizard({
               sessionId: boundSid,
               text: '/stop',
               channel: 'telegram',
-              echoTarget: { chatId, threadId, messageId: triggerMessageId },
+              echoTarget: { chatId, threadId, messageId },
             })
             return mapDispatcherResultToWizardReply(r, boundSid, [])
           } catch (e) {
@@ -1627,7 +1627,7 @@ export function createOpenClawWizard({
               text: trimmed,
               imagePaths,
               channel: 'telegram',
-              echoTarget: { chatId, threadId, messageId: triggerMessageId },
+              echoTarget: { chatId, threadId, messageId },
             })
             const wizardReply = mapDispatcherResultToWizardReply(r, targetSid, imagePaths)
             // 保留 first-route hint：dispatcher 返回 'sent' 时叠加到 reply 上
