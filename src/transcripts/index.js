@@ -157,7 +157,8 @@ export function createTranscriptsService({ db, listTodos, updateTodo, dirs = {} 
   async function preview(fileId, { offset = 0, limit = 200 } = {}) {
     const f = db.getTranscriptFile(fileId)
     if (!f) return null
-    // preview 模式：包含 tool_use / tool_result 摘要，过滤 isMeta/isSidechain；
+    // preview 模式：包含 tool_use / tool_result 摘要，过滤 isMeta（保留 isSidechain，
+    // 否则 subagent transcript 文件会变成空预览）。
     // index 模式（默认）保持纯文本以避免污染 FTS。
     const parsed = await parseTranscriptFile(f.tool, f.jsonl_path, { preview: true })
     return {

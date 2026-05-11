@@ -136,17 +136,44 @@ describe('scanner preview mode', () => {
     const fp = writeClaudeRich(tmp, '/Users/me/proj')
     const r = await parseTranscriptFile('claude', fp, { preview: true })
     const assistantTurns = r.turns.filter(t => t.role === 'assistant')
-    expect(assistantTurns.length).toBe(2)
+    // 3 = (text + tool_use 混合) + (sidechain 文本) + (纯 tool_use)
+    expect(assistantTurns.length).toBe(3)
     expect(assistantTurns[0].content).toContain('🔧 Bash: ls /tmp')
-    expect(assistantTurns[1].content).toBe('🔧 Edit: /foo/bar.ts')
+    expect(assistantTurns[1].content).toBe('<sidechain-noise>')
+    expect(assistantTurns[2].content).toBe('🔧 Edit: /foo/bar.ts')
   })
 
-  it('preview=true 过滤 isMeta / isSidechain', async () => {
+  it('preview=true 过滤 isMeta，但保留 isSidechain（subagent 内容）', async () => {
     const fp = writeClaudeRich(tmp, '/Users/me/proj')
     const r = await parseTranscriptFile('claude', fp, { preview: true })
     const all = r.turns.map(t => t.content).join('\n')
     expect(all).not.toContain('<meta-noise>')
-    expect(all).not.toContain('<sidechain-noise>')
+    // sidechain 必须保留 —— 否则 subagent transcript 预览会全空
+    expect(all).toContain('<sidechain-noise>')
+  })
+
+  it('preview=true 对全 sidechain 文件（subagent transcript）能解析出 turns', async () => {
+    // 模拟 ~/.claude/projects/<encoded>/<uuid>/subagents/agent-*.jsonl
+    // 这种文件每一行都是 isSidechain: true —— 旧实现会全部过滤掉，导致预览白屏。
+    const uuid = 'subagnt-0000-0000-0000-000000000001'
+    const encoded = '-Users-me-proj'
+    const subDir = path.join(tmp, encoded, uuid, 'subagents')
+    fs.mkdirSync(subDir, { recursive: true })
+    const fp = path.join(subDir, 'agent-abc.jsonl')
+    const lines = [
+      { type: 'user', isSidechain: true, sessionId: uuid, timestamp: '2026-04-14T11:00:00.000Z',
+        message: { role: 'user', content: 'subagent prompt' } },
+      { type: 'assistant', isSidechain: true, sessionId: uuid, timestamp: '2026-04-14T11:00:01.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'subagent reply' }] } },
+    ]
+    fs.writeFileSync(fp, lines.map(l => JSON.stringify(l)).join('\n') + '\n')
+
+    const r = await parseTranscriptFile('claude', fp, { preview: true })
+    expect(r.turns.length).toBe(2)
+    expect(r.turns[0].role).toBe('user')
+    expect(r.turns[0].content).toBe('subagent prompt')
+    expect(r.turns[1].role).toBe('assistant')
+    expect(r.turns[1].content).toBe('subagent reply')
   })
 
   it('默认 (preview=false) 保持向后兼容：tool_result-only / tool_use-only 仍被丢弃，meta 不过滤', async () => {

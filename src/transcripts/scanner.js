@@ -65,9 +65,11 @@ async function parseClaudeFile(filePath, opts = {}) {
       if (!startedAt || ts < startedAt) startedAt = ts
       if (!endedAt || ts > endedAt) endedAt = ts
     }
-    // preview 模式：和 buildFullTranscript 对齐 —— 过滤 meta/sidechain，只取 user/assistant
+    // preview 模式：剔除 isMeta（local-command-caveat 等噪音）与非 user/assistant 类型。
+    // 注意：不能过滤 isSidechain —— subagent transcript 文件全部是 sidechain，
+    // 过滤后会变成空预览（与索引时 turn_count 不一致）。
     if (preview) {
-      if (j.isMeta || j.isSidechain) continue
+      if (j.isMeta) continue
       if (j.type !== 'user' && j.type !== 'assistant') continue
     }
     const role = j.message?.role || j.type || j.role
