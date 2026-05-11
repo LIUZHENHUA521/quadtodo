@@ -17,7 +17,7 @@
  */
 
 const NEW_TASK_TRIGGERS = [
-  /^(在\s*agentquad\s*[里中])?\s*(新建|开个|开一?个|创建)\s*[任务todo]/i,
+  /^(在\s*(?:agentquad|quadtodo)\s*[里中])?\s*(新建|开个|开一?个|创建)\s*[任务todo]/i,
   /^(帮我|帮忙)?\s*(做|搞|修|搞定|实现|写一?个|做一?个|修复|重构|调试|debug|加|开发)/i,
   /^新?任务[:：]/,
 ]
@@ -139,7 +139,7 @@ function extractTitle(text) {
   // "新建任务: X" / "帮我做 X" / "新建任务 X"
   let s = text.trim()
   // 剥触发词头
-  s = s.replace(/^在?\s*agentquad\s*[里中]?\s*/i, '')
+  s = s.replace(/^在?\s*(?:agentquad|quadtodo)\s*[里中]?\s*/i, '')
   s = s.replace(/^(新建|开个|开一?个|创建)\s*(任务|todo)?[:：\s]*/i, '')
   s = s.replace(/^任务[:：]\s*/, '')
   s = s.replace(/^(帮我|帮忙)\s*(做|搞|修|搞定|实现|写一?个|做一?个|修复|重构|调试|debug|加|开发)\s*[:：]?\s*/i, '')
