@@ -3,10 +3,12 @@ import { DEFAULT_PRICING } from "./pricing.js";
 import {
 	accessSync,
 	constants,
+	cpSync,
 	existsSync,
 	mkdirSync,
 	readFileSync,
 	renameSync,
+	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -23,11 +25,17 @@ function canUseRootDir(rootDir) {
 }
 
 function resolveDefaultRootDir() {
-	const envRootDir = process.env.QUADTODO_ROOT_DIR;
+	const envRootDir = process.env.AGENTQUAD_ROOT_DIR || process.env.QUADTODO_ROOT_DIR;
 	if (envRootDir) return resolvePath(envRootDir);
 
-	const homeRootDir = join(homedir(), ".quadtodo");
-	if (canUseRootDir(homeRootDir)) return homeRootDir;
+	const newHomeDir = join(homedir(), ".agentquad");
+	if (canUseRootDir(newHomeDir)) return newHomeDir;
+
+	const legacyHomeDir = join(homedir(), ".quadtodo");
+	if (existsSync(legacyHomeDir) && canUseRootDir(legacyHomeDir)) return legacyHomeDir;
+
+	const newCwdDir = resolvePath(process.cwd(), ".agentquad");
+	if (canUseRootDir(newCwdDir)) return newCwdDir;
 
 	return resolvePath(process.cwd(), ".quadtodo");
 }
@@ -306,7 +314,7 @@ function defaultConfig() {
 		pricing: cloneDefaultPricing(),
 		stats: { idleThresholdMs: 120_000 },
 		wiki: {
-			wikiDir: join(homedir(), ".quadtodo", "wiki"),
+			wikiDir: join(homedir(), ".agentquad", "wiki"),
 			maxTailTurns: 20,
 			tool: "claude",
 			timeoutMs: 600_000,
@@ -501,4 +509,97 @@ export function setConfigValue(
 	obj[keys[keys.length - 1]] = v;
 	saveConfig(cfg, { rootDir });
 	return v;
+}
+
+function defaultIsPidAlive(pid) {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function rewriteConfigPaths(configPath, oldHome, newHome) {
+	if (!existsSync(configPath)) return;
+	try {
+		const raw = readFileSync(configPath, "utf8");
+		const rewritten = raw.split(oldHome).join(newHome);
+		if (rewritten !== raw) writeFileSync(configPath, rewritten);
+	} catch {
+		// Non-fatal: caller will surface the abnormal config on next normalize.
+	}
+}
+
+function moveDirectory(src, dest) {
+	try {
+		renameSync(src, dest);
+		return;
+	} catch (err) {
+		if (err && err.code !== "EXDEV") throw err;
+	}
+	cpSync(src, dest, { recursive: true });
+	rmSync(src, { recursive: true, force: true });
+}
+
+export function migrateLegacyHomeDirIfNeeded({
+	home = homedir(),
+	stderr = process.stderr,
+	isPidAlive = defaultIsPidAlive,
+} = {}) {
+	const newDir = join(home, ".agentquad");
+	const oldDir = join(home, ".quadtodo");
+
+	if (existsSync(newDir)) {
+		if (existsSync(oldDir)) {
+			stderr.write(
+				`AgentQuad: found legacy ~/.quadtodo/ alongside ~/.agentquad/; ignoring. Delete it manually when ready.\n`,
+			);
+		}
+		return { action: "skip", reason: "new-exists" };
+	}
+	if (!existsSync(oldDir)) {
+		return { action: "skip", reason: "no-legacy" };
+	}
+
+	const legacyPidFile = join(oldDir, "quadtodo.pid");
+	if (existsSync(legacyPidFile)) {
+		const pid = Number.parseInt(
+			(readFileSync(legacyPidFile, "utf8") || "").trim(),
+			10,
+		);
+		if (Number.isFinite(pid) && pid > 0 && isPidAlive(pid)) {
+			stderr.write(
+				`AgentQuad: detected running quadtodo service (pid ${pid}).\n`,
+			);
+			stderr.write(
+				`Please run \`quadtodo stop\` (or kill ${pid}) and start AgentQuad again.\n`,
+			);
+			return { action: "abort", reason: "pid-alive", pid };
+		}
+	}
+
+	moveDirectory(oldDir, newDir);
+
+	rewriteConfigPaths(join(newDir, "config.json"), oldDir, newDir);
+
+	const stalePid = join(newDir, "quadtodo.pid");
+	if (existsSync(stalePid)) rmSync(stalePid, { force: true });
+
+	const oldLog = join(newDir, "logs", "quadtodo.log");
+	const newLog = join(newDir, "logs", "agentquad.log");
+	if (existsSync(oldLog) && !existsSync(newLog)) {
+		try {
+			renameSync(oldLog, newLog);
+		} catch {
+			// Non-fatal.
+		}
+	}
+
+	writeFileSync(
+		join(newDir, ".migrated-from-quadtodo"),
+		new Date().toISOString(),
+	);
+	stderr.write(`AgentQuad: migrated ~/.quadtodo → ~/.agentquad\n`);
+	return { action: "migrated" };
 }
