@@ -24,6 +24,22 @@ function canUseRootDir(rootDir) {
 	}
 }
 
+// Auto-run legacy → ~/.agentquad migration once per process at import time.
+// Must happen BEFORE DEFAULT_ROOT_DIR is computed, because canUseRootDir() has
+// a mkdirSync side effect that would short-circuit the migration's
+// existsSync(newDir) guard. Skipped in tests and when callers manage rootDir
+// themselves via env vars.
+if (
+	!process.env.AGENTQUAD_SKIP_AUTO_MIGRATE &&
+	!process.env.AGENTQUAD_ROOT_DIR &&
+	!process.env.QUADTODO_ROOT_DIR &&
+	!process.env.VITEST &&
+	process.env.NODE_ENV !== "test"
+) {
+	const _migration = migrateLegacyHomeDirIfNeeded();
+	if (_migration.action === "abort") process.exit(1);
+}
+
 function resolveDefaultRootDir() {
 	const envRootDir = process.env.AGENTQUAD_ROOT_DIR || process.env.QUADTODO_ROOT_DIR;
 	if (envRootDir) return resolvePath(envRootDir);

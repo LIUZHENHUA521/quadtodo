@@ -12,18 +12,10 @@ import {
   getConfigValue,
   setConfigValue,
   resolveToolsConfig,
-  migrateLegacyHomeDirIfNeeded,
 } from './config.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-
-// Run legacy-dir migration once per CLI invocation, before any config read.
-// Aborts the process if a legacy quadtodo service is still running.
-{
-  const result = migrateLegacyHomeDirIfNeeded()
-  if (result.action === 'abort') process.exit(1)
-}
 
 // Bin names verified via `npm view <pkg> bin`.
 export const TOOL_PACKAGES = {
