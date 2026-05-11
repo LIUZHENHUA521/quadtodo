@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Drawer, Input, Select, Button, Tag, Space, message, Modal, Empty, Spin, Typography, Tooltip } from 'antd'
-import { ReloadOutlined, LinkOutlined, DisconnectOutlined, SearchOutlined } from '@ant-design/icons'
+import { ReloadOutlined, LinkOutlined, DisconnectOutlined, SearchOutlined, CopyOutlined } from '@ant-design/icons'
 import {
   scanTranscripts, searchTranscripts, bindTranscript, unbindTranscript, previewTranscript,
   getTranscriptStats, listTodos, type TranscriptFile, type Todo, type AiTool,
 } from '../api'
+import { buildResumeCommand, type ResumeTool } from './resumeCommand'
 
 type Props = {
   open: boolean
@@ -196,6 +197,36 @@ export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId,
     })
   }
 
+  const COPY_SUPPORTED_TOOLS: ResumeTool[] = ['claude', 'codex', 'cursor']
+
+  function canCopyResume(f: TranscriptFile): boolean {
+    return !!f.native_id && (COPY_SUPPORTED_TOOLS as string[]).includes(f.tool)
+  }
+
+  function copyDisabledReason(f: TranscriptFile): string {
+    if (!f.native_id) return '该记录无 native session id'
+    if (!(COPY_SUPPORTED_TOOLS as string[]).includes(f.tool)) return '暂不支持该工具'
+    return ''
+  }
+
+  async function handleCopyResume(f: TranscriptFile) {
+    try {
+      const { command, warnings } = buildResumeCommand({
+        tool: f.tool as ResumeTool,
+        native_id: f.native_id as string,
+        cwd: f.cwd,
+      })
+      await navigator.clipboard.writeText(command)
+      const display = command.length > 80 ? command.slice(0, 80) + '…' : command
+      message.success(`已复制：${display}`)
+      if (warnings.includes('cwd_missing')) {
+        message.warning('未识别 cwd，请先 cd 到原工作目录')
+      }
+    } catch (e) {
+      message.error('复制失败，请手动复制')
+    }
+  }
+
   const todoOptions = useMemo(() => todos.map(t => ({ label: t.title, value: t.id })), [todos])
 
   return (
@@ -275,6 +306,16 @@ export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId,
                         {boundTodo && (
                           <Button size="small" danger icon={<DisconnectOutlined />} onClick={() => handleUnbind(f)}>解绑</Button>
                         )}
+                        <Tooltip title={canCopyResume(f) ? undefined : copyDisabledReason(f)}>
+                          <Button
+                            size="small"
+                            icon={<CopyOutlined />}
+                            disabled={!canCopyResume(f)}
+                            onClick={() => handleCopyResume(f)}
+                          >
+                            复制恢复命令
+                          </Button>
+                        </Tooltip>
                       </Space>
                     </div>
                   )
