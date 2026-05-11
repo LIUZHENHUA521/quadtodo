@@ -12,7 +12,7 @@ const webModules = resolve(webDir, 'node_modules')
 
 if (!existsSync(webPkg)) {
   process.stderr.write(`ensure-web-deps: web/package.json not found at ${webPkg}\n`)
-  process.stderr.write('Run this script from the quadtodo repo root.\n')
+  process.stderr.write('Run this script from the AgentQuad repo root.\n')
   process.exit(1)
 }
 

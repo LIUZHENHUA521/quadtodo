@@ -24,7 +24,7 @@ async function gitInit(wikiDir) {
   } catch {
     await execFileP(
       'git',
-      ['-c', 'user.email=quadtodo@local', '-c', 'user.name=quadtodo', 'commit', '-q', '-m', 'wiki: initial commit'],
+      ['-c', 'user.email=agentquad@local', '-c', 'user.name=agentquad', 'commit', '-q', '-m', 'wiki: initial commit'],
       { cwd: wikiDir },
     )
   }
@@ -41,7 +41,7 @@ async function gitCommit(wikiDir, message) {
   } catch {
     await execFileP(
       'git',
-      ['-c', 'user.email=quadtodo@local', '-c', 'user.name=quadtodo', 'commit', '-q', '-m', message],
+      ['-c', 'user.email=agentquad@local', '-c', 'user.name=agentquad', 'commit', '-q', '-m', message],
       { cwd: wikiDir },
     )
   }
@@ -219,7 +219,7 @@ export function createWikiService({
   function markOrphansAsFailed() {
     let n = 0
     for (const orphan of db.findOrphanWikiRuns()) {
-      db.failWikiRun(orphan.id, 'quadtodo process died mid-run')
+      db.failWikiRun(orphan.id, 'AgentQuad process died mid-run')
       n++
     }
     return n

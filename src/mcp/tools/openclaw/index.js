@@ -152,7 +152,7 @@ export function registerOpenClawTools(server, deps) {
         '可选 routeUserId：把这个微信对端绑定到这个 sessionId，' +
         'AI 后续调 ask_user / Stop hook 都自动推到该用户。' +
         '同时会向 PTY 注入 QUADTODO_SESSION_ID/TARGET_USER/TODO_ID/TODO_TITLE 环境变量，' +
-        '让嵌套 Claude Code 的 hook 脚本能识别这是个 quadtodo 启动的会话。',
+        '让嵌套 Claude Code 的 hook 脚本能识别这是个 AgentQuad 启动的会话。',
       inputSchema: {
         todoId: z.string().min(1),
         tool: z.enum(['claude', 'codex']).optional().describe('默认 claude'),
@@ -211,7 +211,7 @@ export function registerOpenClawTools(server, deps) {
         if (args.routeUserId) extraEnv.QUADTODO_TARGET_USER = String(args.routeUserId)
 
         // 先注册路由（用预生成的 sessionId）—— 否则 PTY 启动后第一秒内的 hook
-        // 若发到 quadtodo，可能因路由没注册而 fallback 到 config.targetUserId
+        // 若发到 AgentQuad，可能因路由没注册而 fallback 到 config.targetUserId
         if (openclaw?.registerSessionRoute && args.routeUserId) {
           openclaw.registerSessionRoute(sessionId, {
             targetUserId: args.routeUserId,

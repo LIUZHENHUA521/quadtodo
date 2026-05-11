@@ -36,7 +36,7 @@ export const WIKI_GUIDE_CONTENT = `# Wiki 维护指南（LLM 读这个）
 
 export const EMPTY_INDEX_CONTENT = `# Wiki Index
 
-还没有沉淀任何主题。去 quadtodo 里点「沉淀到记忆」按钮开始。
+还没有沉淀任何主题。去 AgentQuad 里点「沉淀到记忆」按钮开始。
 `
 
 export const EMPTY_LOG_CONTENT = `# Wiki 更新日志

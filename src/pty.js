@@ -42,7 +42,7 @@ function buildPermissionArgs(tool, mode) {
 // Claude Code 的 AskUserQuestion 是 TUI（ANSI 重绘 + Tab/Arrow 导航），在 PTY 里
 // 推到 Telegram 既看不全也没法回复。这里源头禁掉，AI 调用会失败 → 退路到文本或
 // 自家 ask_user MCP（后者在 Telegram 渲染成 inline 按钮）。
-// 仅作用于 quadtodo 启动的 claude，不写到全局 settings.json。
+// 仅作用于 AgentQuad 启动的 claude，不写到全局 settings.json。
 function buildClaudeDisallowedToolsArgs(tool) {
   if (tool !== 'claude') return []
   return ['--disallowedTools', 'AskUserQuestion']
@@ -79,7 +79,7 @@ function codexTodayDir() {
   return codexDayDir(new Date())
 }
 
-// quadtodo 进程时区可能跟 codex CLI 进程时区不一致（典型场景：quadtodo 没设 TZ + LANG=zh_CN
+// AgentQuad 进程时区可能跟 codex CLI 进程时区不一致（典型场景：AgentQuad 没设 TZ + LANG=zh_CN
 // 让 Node 默认 CST，但 codex 用 macOS 系统 TZ 是 PDT，差 15h 直接跨日）；同时盯 today/
 // yesterday/tomorrow 三个目录，把 ±24h 时区漂移吃掉。
 function codexNearbyDayDirs() {
@@ -119,7 +119,7 @@ function defaultCodexWatcherFactory(_spawnTime, onHit) {
 }
 
 function detectCodexSessionFromFs(afterMs) {
-  // 同时扫 today / yesterday / tomorrow，对抗 quadtodo / codex 进程间的 TZ 漂移
+  // 同时扫 today / yesterday / tomorrow，对抗 AgentQuad / codex 进程间的 TZ 漂移
   let newest = null
   let newestTime = 0
   for (const dayDir of codexNearbyDayDirs()) {

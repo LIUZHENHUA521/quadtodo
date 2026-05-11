@@ -60,7 +60,7 @@ function canResizeSession(session) {
 
 // 在 spawn PTY 前先确认工具确实在 PATH（或显式 bin 路径）里。
 // 比起让 node-pty 抛 ENOENT，这里返回结构化的 tool_missing → 路由层映射成 HTTP 424，
-// CLI/前端可以直接展示「跑 quadtodo install-tools --claude」修复指引。
+// CLI/前端可以直接展示「跑 agentquad install-tools --claude」修复指引。
 function checkToolAvailable(tool, cfg) {
   const tools = resolveToolsConfig(cfg?.tools || {})
   const bin = tools?.[tool]?.bin || tools?.[tool]?.command || tool
@@ -350,7 +350,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       err.code = 'tool_missing'
       err.tool = tool
       err.bin = avail.bin
-      err.fix = `quadtodo install-tools --${tool}`
+      err.fix = `agentquad install-tools --${tool}`
       throw err
     }
     const todo = db.getTodo(todoId)
@@ -419,7 +419,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
 
     try {
       // 自动注入 QUADTODO_* env，让 ~/.agentquad/claude-hooks/notify.js 能识别这是
-      // quadtodo 启的 Claude Code → Stop / SessionEnd 事件回推到 quadtodo /api/openclaw/hook。
+      // AgentQuad 启的 Claude Code → Stop / SessionEnd 事件回推到 AgentQuad /api/openclaw/hook。
       // 之前只有 wizard.finalize 会显式传 extraEnv，web/CLI 直接 spawn 的 session 由于缺这些
       // env，hook 脚本 exit 0 → 完成时不推 telegram。caller-supplied 排前面，自动 env 后置覆盖
       // 防止 caller 传错的 sessionId。

@@ -508,7 +508,7 @@ export function createServer(opts = {}) {
 		if (!webDist || !existsSync(indexPath)) {
 			throw new Error(
 				`frontend assets missing: ${indexPath}\n` +
-					`  - if you installed via npm: reinstall with \`npm i -g quadtodo\`\n` +
+					`  - if you installed via npm: reinstall with \`npm i -g agentquad\`\n` +
 					`  - if running from source: \`cd web && npm install && npm run build\``,
 			);
 		}
@@ -527,9 +527,9 @@ export function createServer(opts = {}) {
 		tools: tools || resolveToolsConfig(initialConfig?.tools),
 		defaultTool: initialConfig?.defaultTool || "claude",
 	};
-	// Codex sidecar：把 quadtodo session ↔ codex native id 的映射落到 ~/.agentquad/codex-sessions/，
+	// Codex sidecar：把 AgentQuad session ↔ codex native id 的映射落到 ~/.agentquad/codex-sessions/，
 	// 重启后 restoreFromDisk() 复活内存映射。Phase A 只暂存元数据；Phase C 起 IM 推送链路会用它
-	// 来反查 quadtodo session / todoId / cwd。
+	// 来反查 AgentQuad session / todoId / cwd。
 	const codexSidecar = createCodexSidecar();
 	codexSidecar.restoreFromDisk();
 	let ptyRef = null;
@@ -1461,7 +1461,7 @@ export function createServer(opts = {}) {
 
 	// ─── Telegram / Lark 自动 topic 镜像（B 方案）─────────────────
 	// 默认开；config.{telegram,lark}.autoCreateTopic = false 可关。这里必须读实时配置，
-	// 因为设置页会热启用 Telegram/Lark，不应要求重启 quadtodo 才生效。
+	// 因为设置页会热启用 Telegram/Lark，不应要求重启 AgentQuad 才生效。
 	aiSessionHooks.onSessionSpawned = ({ sessionId, todoId }) => {
 		const cfg = loadConfig({ rootDir: configRootDir })
 		const telegramConfig = cfg.telegram || {}
@@ -1581,7 +1581,7 @@ export function createServer(opts = {}) {
 	app.use("/api/telegram-sync", syncRouter);
 	app.use("/api/sync", syncRouter);
 
-	// MCP Streamable HTTP 端点：把 quadtodo 暴露给 Claude Code 等 MCP 客户端
+	// MCP Streamable HTTP 端点：把 AgentQuad 暴露给 Claude Code 等 MCP 客户端
 	try {
 		const mcp = createMcpRouter({
 			db,
@@ -1755,7 +1755,7 @@ export function createServer(opts = {}) {
 		})
 		const more = active.length > 10 ? `\n…还有 ${active.length - 10} 个` : ''
 		const message = [
-			'🔄 quadtodo 重启完成（之前的 PTY 都被换了新身体）',
+			'🔄 AgentQuad 重启完成（之前的 PTY 都被换了新身体）',
 			`Resume 了 ${active.length} 个会话：`,
 			...lines,
 		].join('\n') + more + '\n\n可用 /list 看详情，或直接发消息（多 session 时会让你点按钮选）。'

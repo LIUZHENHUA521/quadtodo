@@ -101,7 +101,7 @@ export function buildAskUserReplyMarkup(ticket, options) {
 
 /**
  * 解析 callback_data。
- * 返回 { kind, ticket, idx } 或 null（不是 quadtodo 的 callback）。
+ * 返回 { kind, ticket, idx } 或 null（不是 AgentQuad 的 callback）。
  *
  * 对未知 prefix（包括老的 qt:wd / qt:q / qt:t wizard prefix）返回 null —— caller 决定 fallback。
  */

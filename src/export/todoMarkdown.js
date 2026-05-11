@@ -241,6 +241,6 @@ export function renderTodoMarkdown(report) {
 	}
 
 	lines.push('---')
-	lines.push(`_生成于 ${fmtDateTime(report.generatedAt)} · quadtodo_`)
+	lines.push(`_生成于 ${fmtDateTime(report.generatedAt)} · AgentQuad_`)
 	return lines.join('\n')
 }

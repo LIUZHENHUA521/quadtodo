@@ -464,7 +464,7 @@ export function createOrchestrator({ db, pty, aiTerminal, logDir }) {
       cwd: todo.workDir,
       branch: writer.branch,
       strategy,
-      commitMessage: `quadtodo pipeline: ${strategy}-merge ${writer.branch} (run ${run.id})`,
+      commitMessage: `AgentQuad pipeline: ${strategy}-merge ${writer.branch} (run ${run.id})`,
     })
     appendMessage(run, {
       from: 'orchestrator', to: '__run__', kind: 'finalize',

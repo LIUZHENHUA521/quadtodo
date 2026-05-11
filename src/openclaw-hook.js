@@ -280,7 +280,7 @@ export function createOpenClawHookHandler(deps = {}) {
     } catch { return 600_000 }
   }
 
-  // 默认丢弃 Claude Code 的 idle Notification —— quadtodo bypass 模式下纯噪声。
+  // 默认丢弃 Claude Code 的 idle Notification —— AgentQuad bypass 模式下纯噪声。
   // 用户可在 config 里 telegram.suppressNotificationEvents = false 恢复旧 cooldown 行为。
   function notificationSuppressed() {
     try {
@@ -466,7 +466,7 @@ export function createOpenClawHookHandler(deps = {}) {
 
   // ─── Codex 分支（Phase C）─────────────────────────────────────────────────────
   async function handleCodexJsonl({ event, nativeId, transcript_path, raw_event_payload }) {
-    // 1) 解析 quadtodo sessionId
+    // 1) 解析 AgentQuad sessionId
     let quadtodoSessionId = null
     let todoId = null
     let cwd = null
@@ -489,7 +489,7 @@ export function createOpenClawHookHandler(deps = {}) {
       }
     }
     if (!quadtodoSessionId) {
-      logger.warn?.(`[codex-hook] no quadtodo session for nativeId=${nativeId}`)
+      logger.warn?.(`[codex-hook] no AgentQuad session for nativeId=${nativeId}`)
       return { ok: false, reason: 'no_quadtodo_session' }
     }
 

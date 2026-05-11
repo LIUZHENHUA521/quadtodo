@@ -1,6 +1,6 @@
 /**
- * OpenClaw 向导状态机：把"在微信里多轮创建 quadtodo 任务"的所有决策从
- * OpenClaw agent 搬到 quadtodo 内部，OpenClaw 只做消息转发。
+ * OpenClaw 向导状态机：把"在微信里多轮创建 AgentQuad 任务"的所有决策从
+ * OpenClaw agent 搬到 AgentQuad 内部，OpenClaw 只做消息转发。
  *
  * 设计目标：
  *   - 一条 inbound 消息 → 一个完整的判断 → 一个 reply 字符串
@@ -17,7 +17,7 @@
  */
 
 const NEW_TASK_TRIGGERS = [
-  /^(在\s*quadtodo\s*[里中])?\s*(新建|开个|开一?个|创建)\s*[任务todo]/i,
+  /^(在\s*agentquad\s*[里中])?\s*(新建|开个|开一?个|创建)\s*[任务todo]/i,
   /^(帮我|帮忙)?\s*(做|搞|修|搞定|实现|写一?个|做一?个|修复|重构|调试|debug|加|开发)/i,
   /^新?任务[:：]/,
 ]
@@ -139,7 +139,7 @@ function extractTitle(text) {
   // "新建任务: X" / "帮我做 X" / "新建任务 X"
   let s = text.trim()
   // 剥触发词头
-  s = s.replace(/^在?\s*quadtodo\s*[里中]?\s*/i, '')
+  s = s.replace(/^在?\s*agentquad\s*[里中]?\s*/i, '')
   s = s.replace(/^(新建|开个|开一?个|创建)\s*(任务|todo)?[:：\s]*/i, '')
   s = s.replace(/^任务[:：]\s*/, '')
   s = s.replace(/^(帮我|帮忙)\s*(做|搞|修|搞定|实现|写一?个|做一?个|修复|重构|调试|debug|加|开发)\s*[:：]?\s*/i, '')
@@ -279,11 +279,11 @@ function makeRouteKey(channel, chatId, threadId) {
  * 是否为 Telegram supergroup 的 General 频道。
  *
  * supergroup 的 chatId 是负数且以 -100 开头，General 频道没有 message_thread_id。
- * 全局 quadtodo slash 命令（/list /stop 等）只在 General 响应：
+ * 全局 AgentQuad slash 命令（/list /stop 等）只在 General 响应：
  *   - General 不会有 PTY 直连，命令不会污染任何 AI 上下文
  *   - task topic 里发会被拦截 + 提示去 General 用
  *
- * 注意：weixin 之类的旧路径 chatId 不是 -100… 开头 → 返回 false → 不响应 quadtodo slash，
+ * 注意：weixin 之类的旧路径 chatId 不是 -100… 开头 → 返回 false → 不响应 AgentQuad slash，
  * 走老的 fallback / PTY 转发逻辑（保持向后兼容）。
  */
 function isGeneralChannel(chatId, threadId) {
@@ -292,7 +292,7 @@ function isGeneralChannel(chatId, threadId) {
   return /^-100\d+/.test(String(chatId))
 }
 
-// quadtodo 全局 slash command 集合。仅在 General 频道响应；其它 topic 拦截并提示。
+// AgentQuad 全局 slash command 集合。仅在 General 频道响应；其它 topic 拦截并提示。
 const QUADTODO_GLOBAL_SLASH = new Set(['list', 'pending', 'stop'])
 
 /**
@@ -745,7 +745,7 @@ export function createOpenClawWizard({
         }
 
         // 持久化路由到 DB.todo.aiSessions[i].telegramRoute（在 spawnSession 之后，
-        // 此时 aiSessions[0] 已被写入）→ quadtodo 重启时 recoverPendingTodosOnStartup
+        // 此时 aiSessions[0] 已被写入）→ AgentQuad 重启时 recoverPendingTodosOnStartup
         // 复活 session 时通过 mergeTodoAiSessions 的 spread 保留 telegramRoute；
         // server.js 启动时扫描 ait.sessions 并 re-register 到 openclaw-bridge
         if (sessionInfo && ((createdThreadId && sessionRoute) || (larkRootMessageId && sessionRoute))) {
@@ -1275,7 +1275,7 @@ export function createOpenClawWizard({
     // Lark 任务话题/root 回复必须严格隔离到原始路由：不允许被全局 ask_user、新任务触发词、
     // lastPush 或单活跃 session 等模糊 fallback 消费，避免把群内任务线程回复送到不相关会话。
     //
-    // 但 *用户自己新建的话题* 也是 thread message，并未绑过任何 quadtodo session ——
+    // 但 *用户自己新建的话题* 也是 thread message，并未绑过任何 AgentQuad session ——
     // 这种情况下要把消息当成普通群消息处理（让 NEW_TASK_TRIGGERS / wizard 能在新话题里启动）。
     // 所以 thread 路径只在 *找到了绑定到这个 thread 的 PTY session* 时启用 stdin proxy。
     let larkBoundThreadSid = null
@@ -1390,7 +1390,7 @@ export function createOpenClawWizard({
       }
     }
 
-    // 1.7 quadtodo 全局 slash command（/list /pending /stop）
+    // 1.7 AgentQuad 全局 slash command（/list /pending /stop）
     //
     // 仅在 Telegram supergroup 内识别（chatId 以 -100 开头）。
     //  - General 频道（threadId=null）→ 执行命令
@@ -2104,7 +2104,7 @@ export function createOpenClawWizard({
     }
   }
 
-  // ─── /list /pending /stop —— quadtodo 全局 slash command（仅 General 响应） ──
+  // ─── /list /pending /stop —— AgentQuad 全局 slash command（仅 General 响应） ──
   //
   // 设计：
   //  - 入口在 handleInbound 第 1.7 步（DETACH_TRIGGERS 后、active wizard 之前）
@@ -2371,7 +2371,7 @@ export function createOpenClawWizard({
   }
 
   /**
-   * 分发 quadtodo 全局 slash command。被 handleInbound 在 General 频道命中时调用。
+   * 分发 AgentQuad 全局 slash command。被 handleInbound 在 General 频道命中时调用。
    * 不在 General 时由 handleInbound 直接拦截，不会进这里。
    */
   function handleSlashCommand({ cmd, argText = '' } = {}) {

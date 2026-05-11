@@ -1,26 +1,26 @@
 #!/usr/bin/env node
 // quadtodo-hook-version: 2
 /**
- * quadtodo Claude Code hook —— 把 PTY 内 Claude Code 的状态事件转推到微信。
+ * AgentQuad Claude Code hook —— 把 PTY 内 Claude Code 的状态事件转推到微信。
  *
  * 调用约定：
  *   - argv[2] = 事件名: stop | notification | session-end
  *   - stdin = Claude Code 注入的 hook payload（JSON 文本，可空）
- *   - env: QUADTODO_SESSION_ID  (空 = 非 quadtodo 启动的 Claude Code，立刻 exit 0)
+ *   - env: QUADTODO_SESSION_ID  (空 = 非 AgentQuad 启动的 Claude Code，立刻 exit 0)
  *          QUADTODO_TARGET_USER (微信 peer id)
  *          QUADTODO_TODO_ID
  *          QUADTODO_TODO_TITLE
  *
  * 故障策略：失败一律静默。这个脚本绝不能阻塞 Claude Code。
  * - 没注 env → 仍然记日志（"no env"），exit 0
- * - quadtodo 没起 / 网络失败 → catch 后记日志，exit 0
+ * - AgentQuad 没起 / 网络失败 → catch 后记日志，exit 0
  * - JSON 解析失败 → 当作空 payload 继续
  *
  * Debug log: 写到 ~/.agentquad/claude-hooks/hook.log，记每次 fire。
- * 这样能 100% 区分"hook 没 fire" vs "fire 了但 quadtodo 没收到"。
+ * 这样能 100% 区分"hook 没 fire" vs "fire 了但 AgentQuad 没收到"。
  *
  * 这个文件是模板源；安装器会拷贝到 ~/.agentquad/claude-hooks/notify.js。
- * 顶部 `quadtodo-hook-version` 行用于版本比对，升级 quadtodo 时会自动覆盖旧脚本（带备份）。
+ * 顶部 `quadtodo-hook-version` 行用于版本比对，升级 AgentQuad 时会自动覆盖旧脚本（带备份）。
  * 注意：脚本独立运行（不能 import config.js）。LOG_PATH 用 import.meta.url 派生，
  * 跟随脚本所在目录，自动适配 ~/.agentquad / ~/.quadtodo（legacy）。
  */

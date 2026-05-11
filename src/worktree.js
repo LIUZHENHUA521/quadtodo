@@ -160,8 +160,8 @@ export async function getLogSinceBase({ worktreePath, baseSha, maxCount = 10 }) 
 export async function mergeWorktreeBranch({ cwd, branch, strategy = 'merge', commitMessage }) {
   if (strategy === 'squash') {
     await git(['merge', '--squash', branch], cwd)
-    await git(['commit', '-m', commitMessage || `quadtodo: squash-merge ${branch}`], cwd)
+    await git(['commit', '-m', commitMessage || `AgentQuad: squash-merge ${branch}`], cwd)
   } else {
-    await git(['merge', branch, '-m', commitMessage || `quadtodo: merge ${branch}`], cwd)
+    await git(['merge', branch, '-m', commitMessage || `AgentQuad: merge ${branch}`], cwd)
   }
 }

@@ -7,8 +7,8 @@
  *   npm run telegram:clear-menu     # 清空
  *
  * 读取：
- *   - bot token：~/.openclaw/openclaw.json → channels.telegram.botToken（fallback ~/.quadtodo/config.json → telegram.botToken）
- *   - supergroup id：~/.quadtodo/config.json → telegram.defaultSupergroupId（fallback allowedChatIds[0]）
+ *   - bot token：~/.openclaw/openclaw.json → channels.telegram.botToken（fallback ~/.agentquad/config.json → telegram.botToken）
+ *   - supergroup id：~/.agentquad/config.json → telegram.defaultSupergroupId（fallback allowedChatIds[0]）
  *
  * Per-chat scope：只影响这个 supergroup（含其下所有 topic），不动 bot 在私聊 / 别群的菜单。
  */
@@ -45,7 +45,7 @@ function readBotToken(cfg) {
 
 async function tgCall(token, method, params) {
   const url = `https://api.telegram.org/bot${token}/${method}`
-  // 走系统 HTTPS_PROXY（与 quadtodo 一致）
+  // 走系统 HTTPS_PROXY（与 AgentQuad 一致）
   let fetchFn = fetch
   const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy
   if (proxy) {
@@ -71,13 +71,13 @@ async function main() {
   const cfg = readConfig()
   const token = readBotToken(cfg)
   if (!token) {
-    console.error('❌ no bot token found in ~/.quadtodo/config.json or ~/.openclaw/openclaw.json')
+    console.error('❌ no bot token found in ~/.agentquad/config.json or ~/.openclaw/openclaw.json')
     process.exit(1)
   }
   const chatId = cfg?.telegram?.defaultSupergroupId
     || (Array.isArray(cfg?.telegram?.allowedChatIds) ? cfg.telegram.allowedChatIds[0] : null)
   if (!chatId) {
-    console.error('❌ no telegram.defaultSupergroupId / allowedChatIds[0] in ~/.quadtodo/config.json')
+    console.error('❌ no telegram.defaultSupergroupId / allowedChatIds[0] in ~/.agentquad/config.json')
     process.exit(1)
   }
   const scope = { type: 'chat', chat_id: Number(chatId) || chatId }

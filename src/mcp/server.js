@@ -20,7 +20,7 @@ const SERVER_NAME = 'quadtodo'
  *   - db：openDb(...) 返回的句柄
  *   - searchService：createSearchService 返回
  *   - wikiDir：wiki .md 文件所在目录（用于 read_wiki）
- *   - getVersion()：可选，注入当前 quadtodo 版本
+ *   - getVersion()：可选，注入当前 AgentQuad 版本
  *   - aiTerminal：可选，{ spawnSession }，用于 start_ai_session
  *   - openclaw：可选，OpenClaw bridge 句柄
  *   - pending：可选，pending-question coordinator 句柄
@@ -74,7 +74,7 @@ export function createMcpRouter({
   router.get('/', handle)
   router.delete('/', handle)
 
-  // 健康检查（MCP 客户端一般不走这个，但方便 `quadtodo mcp status` 和运维）
+  // 健康检查（MCP 客户端一般不走这个，但方便 `agentquad mcp status` 和运维）
   router.get('/health', (_req, res) => {
     res.json({ ok: true, server: SERVER_NAME, tools: server._registeredTools ? Object.keys(server._registeredTools).length : undefined })
   })

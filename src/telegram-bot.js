@@ -1,5 +1,5 @@
 /**
- * quadtodo 自己跑的 Telegram bot：
+ * AgentQuad 自己跑的 Telegram bot：
  *   - 长轮询 getUpdates 拿入站消息（含 message_thread_id 用于 Topic 路由）
  *   - 出站 sendMessage / sendDocument / createForumTopic / closeForumTopic / editForumTopic
  *
@@ -38,7 +38,7 @@ function readProxyUrl() {
 
 /**
  * 走 HTTPS_PROXY 的 fetch。按 proxyUrl 缓存 dispatcher，URL 变了自动切，
- * 这样 Clash / 代理重启不再需要重启 quadtodo。
+ * 这样 Clash / 代理重启不再需要重启 AgentQuad。
  */
 const dispatcherCache = new Map()
 async function getProxyFetch() {

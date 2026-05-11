@@ -1,6 +1,6 @@
 /**
  * 飞书 text 消息不渲染 markdown，把常见 markdown 语法降级为可读纯文本。
- * 主线场景：把 LLM/quadtodo 输出的 markdown 长文本干净地推到飞书 thread。
+ * 主线场景：把 LLM/AgentQuad 输出的 markdown 长文本干净地推到飞书 thread。
  *
  * 处理范围（按顺序）：
  *   - 代码块 ```lang ... ``` → 去掉栅栏，保留内容

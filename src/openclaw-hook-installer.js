@@ -1,10 +1,10 @@
 /**
- * Claude Code hooks 安装器：把 quadtodo 的 3 个 hook entry 合并写入
+ * Claude Code hooks 安装器：把 AgentQuad 的 3 个 hook entry 合并写入
  * `~/.claude/settings.json`，不破坏用户现有 hooks 配置。
  *
  * 合并策略：
  *   - 已有 hooks.<event> 数组 → append；不删除已有 entry
- *   - quadtodo 加的 entry 用 `_quadtodoManaged: true` 字段标记，方便 uninstall
+ *   - AgentQuad 加的 entry 用 `_quadtodoManaged: true` 字段标记，方便 uninstall
  *   - 卸载时仅删带这个标记的 entry，其他保留不动
  *   - settings.json 不存在 → 创建
  *   - settings.json 损坏 → 抛错让用户修，绝不擅自覆盖
@@ -13,8 +13,8 @@
  *   - 部署/升级 ~/.agentquad/claude-hooks/notify.js（带版本号比对）
  *   - 合并 hooks 到 settings.json（已装则 noop，避免 .bak 刷屏）
  *   - 用户跑过 uninstall-hook → 留 .uninstalled marker，bootstrap 默认尊重；
- *     `quadtodo openclaw bootstrap` 显式忽略 marker 强制装回
- *   - settings.json 损坏 → warn-skip，不让 quadtodo start 挂掉
+ *     `agentquad openclaw bootstrap` 显式忽略 marker 强制装回
+ *   - settings.json 损坏 → warn-skip，不让 agentquad start 挂掉
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -93,7 +93,7 @@ function backupSettings(path) {
 }
 
 /**
- * 把 quadtodo 的 3 个 hook entry 合并到 settings.json。
+ * 把 AgentQuad 的 3 个 hook entry 合并到 settings.json。
  * 重复安装是幂等的：如果已经有 quadtodo-managed 同名 entry，先清掉再加，避免重复 fire。
  *
  * 返回 { settingsPath, backup, added: [event...], skipped: [event...] }
@@ -118,7 +118,7 @@ export function installHooks({
   const added = []
   for (const event of events) {
     if (!Array.isArray(data.hooks[event])) data.hooks[event] = []
-    // 移除旧的 quadtodo-managed entry（避免重复 install 累加）
+    // 移除旧的 _quadtodoManaged entry（避免重复 install 累加）
     data.hooks[event] = data.hooks[event].filter((entry) => !entry?.[QUADTODO_MANAGED_KEY])
     data.hooks[event].push(buildHookEntry(event, hookScriptPath))
     added.push(event)
@@ -134,8 +134,8 @@ export function installHooks({
 }
 
 /**
- * 移除 quadtodo 加的所有 hook entry（按 _quadtodoManaged 标记）。
- * 不动其他 entry。默认会写一个 .uninstalled marker，让后续 `quadtodo start` 自检不再回写。
+ * 移除 AgentQuad 加的所有 hook entry（按 _quadtodoManaged 标记）。
+ * 不动其他 entry。默认会写一个 .uninstalled marker，让后续 `agentquad start` 自检不再回写。
  */
 export function uninstallHooks({
   settingsPath = defaultSettingsPath(),
@@ -182,7 +182,7 @@ export function uninstallHooks({
 }
 
 /**
- * 查询当前 quadtodo hook 安装状态。返回 {installed: bool, eventsInstalled: [], settingsPath, scriptExists}
+ * 查询当前 AgentQuad hook 安装状态。返回 {installed: bool, eventsInstalled: [], settingsPath, scriptExists}
  */
 export function inspectHooks({
   settingsPath = defaultSettingsPath(),
@@ -263,13 +263,13 @@ export function deployHookScript({
 }
 
 /**
- * `quadtodo start` 启动时调用：部署 notify.js + 合入 settings.json hook entry。
+ * `agentquad start` 启动时调用：部署 notify.js + 合入 settings.json hook entry。
  *
  * 设计要点：
  *   - 已经装好（inspectHooks.installed === true）→ 不重写 settings.json，避免每次 start 都生成 .bak
  *   - settings.json 损坏 → skip + 返回 reason，让调用方 warn 而不是让启动挂掉
  *   - 用户跑过 uninstall-hook 留下 marker → respectUninstallMarker=true 时 skip
- *     `quadtodo openclaw bootstrap` 子命令传 false 强装回（同时清掉 marker）
+ *     `agentquad openclaw bootstrap` 子命令传 false 强装回（同时清掉 marker）
  *
  * 返回 { skipped, reason?, scriptResult, hookResult, alreadyInstalled }
  */

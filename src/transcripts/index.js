@@ -108,7 +108,7 @@ export function createTranscriptsService({ db, listTodos, updateTodo, dirs = {} 
     const todos = listTodos()
 
     // Pass 1（直连）：transcript_files.native_id 直接命中 todo.aiSessions[].nativeSessionId
-    // quadtodo 启动的会话都走这条，避免依赖 cwd+time+prompt 的模糊匹配
+    // AgentQuad 启动的会话都走这条，避免依赖 cwd+time+prompt 的模糊匹配
     const nativeToTodo = new Map()
     for (const t of todos) {
       for (const s of (t.aiSessions || [])) {

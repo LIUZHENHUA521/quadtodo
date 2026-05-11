@@ -21,7 +21,7 @@ export function renderMarkdown(r) {
 	const { range, summary, topTodos, byModel } = r
 	const lines = []
 	const title = range.label === '本月' ? '月报' : '周报'
-	lines.push(`# quadtodo ${title} · ${fmtDate(range.since)} ~ ${fmtDate(range.until)}`)
+	lines.push(`# AgentQuad ${title} · ${fmtDate(range.since)} ~ ${fmtDate(range.until)}`)
 	lines.push('')
 	lines.push(`AI 活跃 ${fmtHours(summary.activeMs)}（墙钟 ${fmtHours(summary.wallClockMs)}）· ${summary.sessionCount} 场会话 · 覆盖 ${summary.todoCount} 个任务`)
 	lines.push(`Token ${fmtTokens(summary.tokens.total)}（cache 命中 ${fmtTokens(summary.tokens.cacheRead)}）· 成本 ${fmtCost(summary.cost)}`)
