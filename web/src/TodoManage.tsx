@@ -883,39 +883,6 @@ export default function TodoManage() {
     seenSessionIds: seenReplySessionIds,
   }), [todos, liveSessionsMap, seenReplySessionIds])
   const attentionCounts = useMemo(() => countAttentionItems(attentionItems), [attentionItems])
-  const lastSeenMap = useUnreadStore(s => s.lastSeenAt)
-  // 未读会话总数：合并 live（in-memory，最新）与 todo.aiSessions（持久化）的 lastTurnDoneAt，
-  // 按 sessionId 去重取较新的那个时间，再与本地 lastSeenAt 比较。
-  const unreadCount = useMemo(() => {
-    const turnDoneBySid = new Map<string, number>()
-    for (const live of liveSessionsMap.values()) {
-      const ts = live.lastTurnDoneAt || 0
-      if (ts > 0) turnDoneBySid.set(live.sessionId, ts)
-    }
-    for (const todo of todos) {
-      for (const session of todo.aiSessions || []) {
-        const ts = session.lastTurnDoneAt || 0
-        if (!ts) continue
-        const prev = turnDoneBySid.get(session.sessionId) || 0
-        if (ts > prev) turnDoneBySid.set(session.sessionId, ts)
-      }
-    }
-    let n = 0
-    for (const [sid, ts] of turnDoneBySid) {
-      if (isSessionUnread(ts, lastSeenMap.get(sid))) n++
-    }
-    return n
-  }, [todos, liveSessionsMap, lastSeenMap])
-  const [acknowledgedAttentionIds, setAcknowledgedAttentionIds] = useState<Set<string>>(new Set())
-  const hasNewAttention = useMemo(
-    () => attentionItems.some(item => !acknowledgedAttentionIds.has(item.id)),
-    [attentionItems, acknowledgedAttentionIds],
-  )
-
-  useEffect(() => {
-    if (!dashboardOpen) return
-    setAcknowledgedAttentionIds(new Set(attentionItems.map(i => i.id)))
-  }, [dashboardOpen, attentionItems])
 
   useEffect(() => {
     let cancelled = false
@@ -1709,8 +1676,6 @@ export default function TodoManage() {
       <AttentionRail
         items={attentionItems}
         counts={attentionCounts}
-        unreadCount={unreadCount}
-        hasNew={hasNewAttention}
         onActivate={handleOpenAttentionItem}
         onOpenDashboard={() => setDashboardOpen(true)}
       />
