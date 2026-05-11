@@ -532,7 +532,12 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         linkProviderRef.current = linkProvider
       }
 
-      requestAnimationFrame(() => { try { fit.fit() } catch {} })
+      // Synchronous fit — Task 5's waitTerminalReady already ensured the container
+      // has measurable width, so we don't need rAF defensiveness anymore. Doing this
+      // sync (instead of waiting for the next frame) makes `term.cols / term.rows`
+      // valid before connectWs() runs — important for hidden tabs where rAF is
+      // throttled and would otherwise leave term at xterm's constructor default 80×24.
+      try { fit.fit() } catch (e) { console.warn('[AiTerminalMini] initial fit failed:', e) }
 
       function connectWs() {
         if (disposedRef.current || stopReconnectRef.current) return
@@ -558,7 +563,9 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
           reconnectCountRef.current = 0
           setWsConnected(true)
           lastPongRef.current = Date.now()
-          // 清掉 lastSent，让后续 ResizeObserver 即便测出同一 cols/rows 也不会被去重判成"无需重发"
+          // 清掉 lastSent：visible-tab 走到下面会立刻按 {cols,rows} 再 seed，所以这次清是
+          // 给 fallback / hidden-tab 分支用 —— 让后续 ResizeObserver 即便测出 cols=80
+          // 之类的兜底默认值也能正常送给后端，不被去重判成"无需重发"。
           lastSentSizeRef.current = null
 
           if (!resumeTargetRef.current?.nativeSessionId && status === 'ai_running') {
