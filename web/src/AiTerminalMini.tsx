@@ -471,6 +471,11 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       // Canvas 渲染器：移动端长 scrollback 滚动比默认 DOM 渲染器流畅得多。
       // 装载失败也不影响核心功能，DOM 渲染会自动兜底。
       try { term.loadAddon(new CanvasAddon()) } catch { /* 老浏览器回退 DOM */ }
+      // 永久隐藏 xterm cursor：AI TUI 在 task list 重绘时会快速跨 cell 移动 cursor，
+      // xterm 每个位置都画一次 block，肉眼看到"光标在 3 个位置闪跳"。Claude 自己会画
+      // `>` 输入提示符，不需要 xterm 再叠一个 cursor block。配合上面 stripCursorVisibility
+      // 过滤掉 incoming `\x1b[?25h`，TUI 无法再翻回 show。
+      term.write('\x1b[?25l')
       termRef.current = term
       fitRef.current = fit
 
