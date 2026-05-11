@@ -397,6 +397,8 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       lastTurnDoneAt: null,
       outputBytesTotal: 0,
       awaitingReply: false,
+      spawned: false,
+      spawnFallbackTimer: null,
     }
     sessions.set(sessionId, session)
     todoSessionMap.set(todoId, sessionId)
@@ -428,7 +430,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
         QUADTODO_TODO_ID: String(todoId),
         QUADTODO_TODO_TITLE: String(todo.title || ''),
       }
-      pty.start({
+      pty.create({
         sessionId,
         todoId,
         tool,
@@ -438,6 +440,20 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
         permissionMode: permissionMode || null,
         extraEnv: { ...(extraEnv || {}), ...autoEnv },
       })
+      // 5s 兜底：前端如果一直没发合法 init（极少见 — /exec 返回后 WS 还没连上），
+      // 用老的 80×24 兜底 spawn，避免 session 永远卡在 create 状态。
+      session.spawnFallbackTimer = setTimeout(() => {
+        if (session.spawned) return
+        console.warn(`[ai-terminal] spawn fallback fired session=${sessionId} (no init within 5s)`)
+        try {
+          pty.startWithSize(sessionId, 80, 24)
+          session.spawned = true
+        } catch (e) {
+          console.warn(`[ai-terminal] spawn fallback failed: ${e.message}`)
+        }
+        session.spawnFallbackTimer = null
+      }, 5000)
+      session.spawnFallbackTimer.unref?.()
     } catch (error) {
       sessions.delete(sessionId)
       if (todoSessionMap.get(todoId) === sessionId) todoSessionMap.delete(todoId)
