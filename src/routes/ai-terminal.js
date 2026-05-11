@@ -404,21 +404,6 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
     todoSessionMap.set(todoId, sessionId)
     if (resumeNativeId) nativeSessionMap.set(`${tool}:${resumeNativeId}`, sessionId)
 
-    db.updateTodo(todoId, {
-      status: 'ai_running',
-      aiSessions: mergeTodoAiSessions(todo, {
-        sessionId,
-        tool,
-        nativeSessionId: resumeNativeId || null,
-        cwd: sessionCwd,
-        status: 'running',
-        startedAt: session.startedAt,
-        completedAt: null,
-        prompt,
-        ...(label ? { label } : {}),
-      }),
-    })
-
     try {
       // 自动注入 QUADTODO_* env，让 ~/.quadtodo/claude-hooks/notify.js 能识别这是
       // quadtodo 启的 Claude Code → Stop / SessionEnd 事件回推到 quadtodo /api/openclaw/hook。
@@ -430,6 +415,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
         QUADTODO_TODO_ID: String(todoId),
         QUADTODO_TODO_TITLE: String(todo.title || ''),
       }
+      // 1. 先 pty.create 让 PtyManager 把 presetClaudeId / resumeNativeId 落进 session 记录。
       pty.create({
         sessionId,
         todoId,
@@ -440,11 +426,32 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
         permissionMode: permissionMode || null,
         extraEnv: { ...(extraEnv || {}), ...autoEnv },
       })
-      // 5s 兜底：前端如果一直没发合法 init（极少见 — /exec 返回后 WS 还没连上），
+      // 2. 读出 preset nativeId（claude 新会话 = randomUUID, resume = resumeNativeId, codex 新 = null）。
+      //    这是让"首屏即正确"成立的核心：先于 db.updateTodo 拿到值。
+      const presetNativeId = pty.getNativeId?.(sessionId) ?? null
+      session.nativeSessionId = presetNativeId
+      if (presetNativeId && !resumeNativeId) {
+        // resume 路径上面已经 set 过；新会话首次得到 nativeId 时补一次。
+        nativeSessionMap.set(`${tool}:${presetNativeId}`, sessionId)
+      }
+      // 3. 一次性把 nativeSessionId 写进 DB（搬进 try 内：失败时不留脏 DB）。
+      db.updateTodo(todoId, {
+        status: 'ai_running',
+        aiSessions: mergeTodoAiSessions(todo, {
+          sessionId,
+          tool,
+          nativeSessionId: presetNativeId,
+          cwd: sessionCwd,
+          status: 'running',
+          startedAt: session.startedAt,
+          completedAt: null,
+          prompt,
+          ...(label ? { label } : {}),
+        }),
+      })
+      // 4. 5s 兜底：前端如果一直没发合法 init（极少见 — /exec 返回后 WS 还没连上），
       // 用老的 80×24 兜底 spawn，避免 session 永远卡在 create 状态。
       session.spawnFallbackTimer = setTimeout(() => {
-        // Always clear the pointer first so the "is pending" state is accurate
-        // the moment the timer fires, even if init won the race and we return early.
         session.spawnFallbackTimer = null
         if (session.spawned) return
         console.warn(`[ai-terminal] spawn fallback fired session=${sessionId} (no init within 5s)`)
@@ -463,6 +470,8 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
         const nativeKey = `${tool}:${resumeNativeId}`
         if (nativeSessionMap.get(nativeKey) === sessionId) nativeSessionMap.delete(nativeKey)
       }
+      // 顺手补：如果 pty.create 已经把 session 占位写进 pty.sessions、但后续步骤抛错，要清掉。
+      try { if (pty.has?.(sessionId)) pty.stop?.(sessionId) } catch { /* ignore */ }
       throw error
     }
 

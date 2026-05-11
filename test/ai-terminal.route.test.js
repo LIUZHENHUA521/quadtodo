@@ -1022,6 +1022,11 @@ describe('routes/ai-terminal', () => {
     const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
       .send({ todoId: todo.id, prompt: 'hi', tool: 'claude', cwd: '/tmp' })
 
+    // 模拟 nativeSessionId 缺失（正常情况下 spawnSession 已预置；这里强制清空来触发
+    // native_session_missing 路径，验证 bypass handler 不会在没有 nativeId 时启动新会话）。
+    const session = ctx.ait.sessions.get(body.sessionId)
+    session.nativeSessionId = null
+
     const sent = []
     const ws = { readyState: 1, OPEN: 1, send: (d) => sent.push(JSON.parse(d)) }
     ctx.ait.addBrowser(body.sessionId, ws)
