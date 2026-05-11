@@ -1,6 +1,6 @@
 # Telegram 配置教程（精简版）
 
-> 跟着这 6 步走完就能把 quadtodo 接到 Telegram 群里。完整版（CLI 自动化、故障排查、字段表）见 `docs/TELEGRAM.md`。
+> 跟着这 6 步走完就能把 AgentQuad 接到 Telegram 群里。完整版（CLI 自动化、故障排查、字段表）见 `docs/TELEGRAM.md`。
 
 ## 1. 在 Telegram 建一个 Supergroup 并启用 Topics
 
@@ -42,7 +42,7 @@
 
 ## 6. 保存
 
-抽屉右上角 **保存** → 后端会自动重启 Telegram 长轮询，**不用** `quadtodo stop && start`。
+抽屉右上角 **保存** → 后端会自动重启 Telegram 长轮询，**不用** `agentquad stop && start`。
 
 启动 log（终端里）应有：
 
@@ -82,11 +82,11 @@
 | 测试通过但群里 @bot 没反应 | bot 没在群里、或没给 Manage Topics 权限 |
 | 消息发送被 drop | log 里有 `dropped message from unauthorized chat` → 把那个 chat id 加到「白名单 chatIds」 |
 | Topic 没建出来 | 群没开 Topics（步骤 1）、或 bot 没 Manage Topics 权限（步骤 3） |
-| token 来源显示「来自 ~/.openclaw」 | 老用户兜底路径，重新填一次 token 后保存即可迁到 quadtodo 自己的 config |
+| token 来源显示「来自 ~/.openclaw」 | 老用户兜底路径，重新填一次 token 后保存即可迁到 AgentQuad 自己的 config |
 
 排查命令：
 
 ```bash
-quadtodo doctor                        # 应有 telegram 段全 ✓
-tail -50 ~/.quadtodo/logs/quadtodo.log # 启动/连接 log
+agentquad doctor                          # 应有 telegram 段全 ✓
+tail -50 ~/.agentquad/logs/agentquad.log  # 启动/连接 log
 ```

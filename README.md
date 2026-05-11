@@ -1,25 +1,40 @@
-# quadtodo
+# AgentQuad
 
-本地四象限待办 CLI，每条 todo 可内嵌一个 Claude Code 或 Codex 终端会话。单 Node 进程自包含，不依赖云服务。
+四象限里的 AI 调度台 —— 每个待办都能跑一个 Claude/Codex 会话，全本地。
 
-GitHub 仓库：`git@github.com:LIUZHENHUA521/quadtodo.git`
+> 原名 `quadtodo`。`quadtodo` 命令保留为 CLI alias，老脚本不受影响。
+
+GitHub 仓库：`git@github.com:LIUZHENHUA521/agentquad.git`
 
 ## 30 秒上手
 
 ```bash
-npm install -g quadtodo            # 装 quadtodo 本体
-quadtodo install-tools --all       # 装 claude + codex（AI 终端必需）
-quadtodo doctor                    # 自检
-quadtodo start                     # 自动打开浏览器 → http://127.0.0.1:5677
+npm install -g agentquad           # 装 AgentQuad 本体
+agentquad install-tools --all      # 装 claude + codex（AI 终端必需）
+agentquad doctor                   # 自检
+agentquad start                    # 自动打开浏览器 → http://127.0.0.1:5677
 ```
 
 > **平台**：仅支持 macOS / Linux；Windows 暂不支持，规划中。
+
+## 从 quadtodo 升级
+
+```bash
+npm uninstall -g quadtodo        # 卸掉老包，避免 bin 冲突
+npm install -g agentquad         # 装新包，自带 `agentquad` + `quadtodo` 两个命令
+agentquad start                  # 第一次启动会自动把 ~/.quadtodo/ 迁移到 ~/.agentquad/
+```
+
+- MCP 用户：跑 `agentquad mcp install` 把 `~/.claude/settings.json` 里的旧条目刷成新条目。
+- OpenClaw 用户：旧 skill 目录 `~/.openclaw/skills/quadtodo-claw/` 不再使用；跑 `agentquad openclaw install-hook` 写入新目录。
+- Telegram 用户：跑 `agentquad telegram:setup-menu` 刷新命令菜单。
+- 想跳过自动迁移？设环境变量 `AGENTQUAD_SKIP_AUTO_MIGRATE=1`（库使用场景）。
 
 ## 依赖
 
 - Node 20+
 - npm 10+
-- `claude` / `codex`（AI 终端必需）—— 没装的话跑 `quadtodo install-tools --all`，或手动 `npm i -g @anthropic-ai/claude-code @openai/codex`
+- `claude` / `codex`（AI 终端必需）—— 没装的话跑 `agentquad install-tools --all`，或手动 `npm i -g @anthropic-ai/claude-code @openai/codex`
 - macOS / Linux（Windows 暂不支持）
 
 ## 安装
@@ -27,60 +42,60 @@ quadtodo start                     # 自动打开浏览器 → http://127.0.0.1:
 ### 从 npm 全局安装
 
 ```bash
-npm install -g quadtodo
+npm install -g agentquad
 ```
 
 首次安装后，建议先执行：
 
 ```bash
-quadtodo doctor
+agentquad doctor
 ```
 
 ### 从源码安装
 
 ```bash
-cd quadtodo
+cd agentquad
 npm install                 # 后端依赖 + node-pty 原生编译
 cd web && npm install       # 前端依赖
 cd ..
 npm run build               # 前端构建，产物在 dist-web/
 cd ..
-npm link                    # 全局链接 `quadtodo` 命令
+npm link                    # 全局链接 `agentquad` 命令
 ```
 
 ## 快速开始
 
 ```bash
-quadtodo doctor             # 检查环境是否就绪
-quadtodo start              # 启动服务并自动打开浏览器
+agentquad doctor            # 检查环境是否就绪
+agentquad start             # 启动服务并自动打开浏览器
 # → http://127.0.0.1:5677
 ```
 
-停止：在前台会话按 Ctrl+C，或在另一个终端里 `quadtodo stop`。
+停止：在前台会话按 Ctrl+C，或在另一个终端里 `agentquad stop`。
 
 ## 给 Claude Code 当知识库用（MCP）
 
-quadtodo 内置了一个 MCP Streamable HTTP 服务（`POST /mcp`），17 个工具覆盖 搜索 / 增删改 / 合并 / 归档 / 批量操作 / AI 会话日志检索。外部 Claude Code session 配上之后，可以用自然语言"帮我清理重复的 todo"、"最近一周我在忙啥"、"合并这三条关于登录的 todo"。
+AgentQuad 内置了一个 MCP Streamable HTTP 服务（`POST /mcp`），17 个工具覆盖 搜索 / 增删改 / 合并 / 归档 / 批量操作 / AI 会话日志检索。外部 Claude Code session 配上之后，可以用自然语言"帮我清理重复的 todo"、"最近一周我在忙啥"、"合并这三条关于登录的 todo"。
 
 一键接入：
 
 ```bash
-quadtodo mcp install   # 把 quadtodo 写进 ~/.claude/settings.json 的 mcpServers
-quadtodo mcp status    # 健康检查
+agentquad mcp install   # 把 AgentQuad 写进 ~/.claude/settings.json 的 mcpServers
+agentquad mcp status    # 健康检查
 ```
 
 完整工具清单 + preview/confirm 安全模型 + ⌘K 面板说明：**[docs/MCP.md](docs/MCP.md)**。
 
 ## 通过 Telegram supergroup 使用（每任务一个 Topic）⭐ 推荐
 
-quadtodo 直接跑一个 Telegram bot，每开一个 task 自动建一个 **Forum Topic**，对话物理隔离；
+AgentQuad 直接跑一个 Telegram bot，每开一个 task 自动建一个 **Forum Topic**，对话物理隔离；
 内容直接从 Claude Code jsonl 日志读（干净，无 spinner / ANSI 噪声）；任务结束 close topic + 改名 ✅。
 
 详见 **[docs/TELEGRAM.md](docs/TELEGRAM.md)**。
 
 ## 通过 OpenClaw 在微信里使用（双向）
 
-把 quadtodo 接到 [OpenClaw](https://openclaw.ai/) 的微信渠道，实现"在微信里跟 AI 助理说一句『帮我做：X』就自动建 todo + 启动 Claude Code，AI 卡到决策点又能在微信里推给你选"的工作流。
+把 AgentQuad 接到 [OpenClaw](https://openclaw.ai/) 的微信渠道，实现"在微信里跟 AI 助理说一句『帮我做：X』就自动建 todo + 启动 Claude Code，AI 卡到决策点又能在微信里推给你选"的工作流。
 
 详见 **[docs/OPENCLAW.md](docs/OPENCLAW.md)** —— 5 步启用清单 + P0 端到端验证表。
 
@@ -88,32 +103,32 @@ quadtodo 直接跑一个 Telegram bot，每开一个 task 自动建一个 **Foru
 
 想在外面用手机继续看待办 / 接 AI 会话？详见 **[docs/MOBILE.md](docs/MOBILE.md)** —— 基于 Tailscale 私有 mesh VPN，不暴露公网，配置 5 分钟。
 
-> **安全提醒**：quadtodo 内置 shell + AI 终端能力，**绝对不要**直接暴露到公网。Tailscale 私网是推荐的访问方式。
+> **安全提醒**：AgentQuad 内置 shell + AI 终端能力，**绝对不要**直接暴露到公网。Tailscale 私网是推荐的访问方式。
 
 快速上手：
 
 ```bash
 # 一次性把监听地址改成 0.0.0.0（否则 Tailscale 网卡也不可达）
-quadtodo config set host 0.0.0.0
-quadtodo start
-# 或者：quadtodo start --expose
+agentquad config set host 0.0.0.0
+agentquad start
+# 或者：agentquad start --expose
 ```
 
 ## 命令
 
 | 命令 | 作用 |
 |---|---|
-| `quadtodo start [--port 5677] [--host 0.0.0.0] [--expose] [--no-open] [--cwd <path>]` | 启动服务（`--expose` = `--host 0.0.0.0`） |
-| `quadtodo stop` | 停止服务（SIGTERM 3 秒后 SIGKILL） |
-| `quadtodo status` | 查看运行状态 + 活跃会话数 |
-| `quadtodo doctor` | 环境自检 |
-| `quadtodo config get <key>` | 读配置项 |
-| `quadtodo config set <key> <value>` | 写配置项 |
-| `quadtodo config list` | 打印整份配置 |
+| `agentquad start [--port 5677] [--host 0.0.0.0] [--expose] [--no-open] [--cwd <path>]` | 启动服务（`--expose` = `--host 0.0.0.0`） |
+| `agentquad stop` | 停止服务（SIGTERM 3 秒后 SIGKILL） |
+| `agentquad status` | 查看运行状态 + 活跃会话数 |
+| `agentquad doctor` | 环境自检 |
+| `agentquad config get <key>` | 读配置项 |
+| `agentquad config set <key> <value>` | 写配置项 |
+| `agentquad config list` | 打印整份配置 |
 
 ## 配置
 
-配置文件：`~/.quadtodo/config.json`
+配置文件：`~/.agentquad/config.json`
 
 ```json
 {
@@ -131,11 +146,11 @@ quadtodo start
 示例：
 
 ```bash
-quadtodo config set port 6000
-quadtodo config set tools.claude.command claude-w
-quadtodo config set tools.codex.command codex-w
-quadtodo config set tools.claude.bin /usr/local/bin/claude
-quadtodo config set tools.codex.bin /opt/homebrew/bin/codex
+agentquad config set port 6000
+agentquad config set tools.claude.command claude-w
+agentquad config set tools.codex.command codex-w
+agentquad config set tools.claude.bin /usr/local/bin/claude
+agentquad config set tools.codex.bin /opt/homebrew/bin/codex
 ```
 
 说明：
@@ -146,21 +161,21 @@ quadtodo config set tools.codex.bin /opt/homebrew/bin/codex
 ## 数据存储
 
 ```
-~/.quadtodo/
-├── config.json      # 配置
-├── data.db          # SQLite: todos 表
-├── quadtodo.pid     # 服务运行时的 PID
-└── logs/            # 每个 AI 会话的完整日志（最后 512KB）
+~/.agentquad/
+├── config.json
+├── data.db
+├── agentquad.pid
+└── logs/
     └── ai-*.log
 ```
 
-导出/迁移：整个 `~/.quadtodo/` 是一个普通目录，tar 打包即可。
+导出/迁移：整个 `~/.agentquad/` 是一个普通目录，tar 打包即可。
 
 ## 统计与周/月报告
 
 顶栏 📊 按钮打开"统计"抽屉：展示所选时段的 AI 活跃时长、墙钟时长、token 消耗、成本估算与 Top 10 任务，支持复制/下载 Markdown 周报。
 
-单价默认内置，也可在 `~/.quadtodo/config.json` 的 `pricing` 段里 override：
+单价默认内置，也可在 `~/.agentquad/config.json` 的 `pricing` 段里 override：
 
 ```json
 "pricing": {
@@ -177,24 +192,24 @@ quadtodo config set tools.codex.bin /opt/homebrew/bin/codex
 
 ```bash
 # 在源机器
-git clone <this-repo-url> ~/code/quadtodo
-cd ~/code/quadtodo/quadtodo
+git clone <this-repo-url> ~/code/agentquad
+cd ~/code/agentquad/agentquad
 npm install
 cd web && npm install && npm run build && cd ..
 npm link
 
 # 如果要带走现有 todo 数据：
-scp -r ~/.quadtodo target-host:~/
+scp -r ~/.agentquad target-host:~/
 ```
 
 ## 从零开始的目录结构
 
 ```
-quadtodo/
+agentquad/
 ├── package.json      # 后端 deps: express / ws / node-pty / better-sqlite3
 ├── src/
 │   ├── cli.js        # commander 入口
-│   ├── config.js     # ~/.quadtodo/config.json 读写
+│   ├── config.js     # ~/.agentquad/config.json 读写
 │   ├── db.js         # better-sqlite3 包装
 │   ├── pty.js        # PtyManager（node-pty 会话 Map）
 │   ├── server.js     # Express + ws + 路由组装
@@ -215,8 +230,8 @@ quadtodo/
 
 ## 故障排除
 
-- **端口占用**：`quadtodo config set port <new>`
-- **`claude` 找不到**：`quadtodo config set tools.claude.bin /full/path/to/claude`
+- **端口占用**：`agentquad config set port <new>`
+- **`claude` 找不到**：`agentquad config set tools.claude.bin /full/path/to/claude`
 - **`node-pty` 安装报错**：通常是 node-gyp 找不到 C++ 工具链。macOS 装 Xcode Command Line Tools (`xcode-select --install`)
 - **终端显示 `session_not_found`**：会话已超时（30 分钟已结束的会话会被清理），重新点"启动 AI 终端"
 

@@ -1,11 +1,11 @@
-# OpenClaw × quadtodo 微信双向桥接
+# OpenClaw × AgentQuad 微信双向桥接
 
-把 quadtodo 接到 [OpenClaw](https://openclaw.ai/) 的微信渠道，实现：
+把 AgentQuad 接到 [OpenClaw](https://openclaw.ai/) 的微信渠道，实现：
 
 - 在微信跟 OpenClaw 说"帮我做：X" → 多轮向导（目录/象限/模板）→ 自动建 todo + 启动 Claude Code
 - AI 在终端里调 `ask_user` 卡到决策点 → 微信收到 `[#xxx] 选项` → 你回数字 → AI 继续
 
-详见设计稿：`docs/superpowers/specs/2026-04-29-openclaw-quadtodo-bridge-design.md`
+详见设计稿（旧路径保留）：`docs/superpowers/specs/2026-04-29-openclaw-quadtodo-bridge-design.md`
 
 ---
 
@@ -24,30 +24,32 @@ openclaw --version
 openclaw channels list   # 看到 openclaw-weixin 状态 OK
 ```
 
-### 2. 注册 quadtodo MCP 到 OpenClaw
+### 2. 注册 AgentQuad MCP 到 OpenClaw
 
 ```bash
-openclaw mcp set quadtodo '{"transport":"http","url":"http://127.0.0.1:5677/mcp"}'
-openclaw mcp list   # 确认 quadtodo 在列
+openclaw mcp set agentquad '{"transport":"http","url":"http://127.0.0.1:5677/mcp"}'
+openclaw mcp list   # 确认 agentquad 在列
 openclaw gateway restart
 ```
 
-### 3. 把 quadtodo skill 装进 OpenClaw
+### 3. 把 AgentQuad skill 装进 OpenClaw
 
 skill 文件在本仓库的：
-- 设计稿: `docs/superpowers/specs/2026-04-29-openclaw-quadtodo-bridge-design.md`
-- 已经写好的 skill: `~/.openclaw/skills/quadtodo-claw/SKILL.md`（quadtodo 仓库附带的脚本会自动放过去；如果没有，手动复制）
+- 设计稿（旧路径保留）: `docs/superpowers/specs/2026-04-29-openclaw-quadtodo-bridge-design.md`
+- 已经写好的 skill: `~/.openclaw/skills/agentquad-claw/SKILL.md`（AgentQuad 仓库附带的脚本会自动放过去；如果没有，跑 `agentquad openclaw install-hook` 让 CLI 写入）
+
+> 老用户：如果你之前装过 `~/.openclaw/skills/quadtodo-claw/`，那个旧目录不再使用；新的 install-hook 会写到 `agentquad-claw/`。
 
 确认：
 
 ```bash
-openclaw skills list | grep quadtodo-claw   # 应显示 ✓ ready
+openclaw skills list | grep agentquad-claw   # 应显示 ✓ ready
 ```
 
-### 4. quadtodo 端配置
+### 4. AgentQuad 端配置
 
 ```bash
-quadtodo config set openclaw.enabled true
+agentquad config set openclaw.enabled true
 
 # 可选：targetUserId 仅作为「没有 session 路由的 ad-hoc ask_user」兜底用。
 # 主路径下 OpenClaw skill 会在 start_ai_session 时把 routeUserId 显式绑到 session 上，
@@ -55,26 +57,26 @@ quadtodo config set openclaw.enabled true
 # 想填的话，找你自己的微信 peer id（你给机器人发第一条消息后，看：
 #   openclaw logs --tail 100 | grep from_user_id
 # ）：
-# quadtodo config set openclaw.targetUserId <你的微信 peer id>
+# agentquad config set openclaw.targetUserId <你的微信 peer id>
 ```
 
 > openclaw CLI 自己读 `~/.openclaw/openclaw.json`（0600 权限）的 gateway token，
-> 不需要在 quadtodo 这边注入额外环境变量。
+> 不需要在 AgentQuad 这边注入额外环境变量。
 
 ### 5. 自检
 
 ```bash
-quadtodo doctor
+agentquad doctor
 # 应看到：
 #   ✓ openclaw CLI
 #   ✓ openclaw.targetUserId (fallback)
-#   ✓ quadtodo-claw skill installed
+#   ✓ agentquad-claw skill installed
 ```
 
-启动 quadtodo：
+启动 AgentQuad：
 
 ```bash
-quadtodo start
+agentquad start
 ```
 
 ---
@@ -87,7 +89,7 @@ quadtodo start
 | 2 | 回 `1` | 第二条返回"🎯 选象限：1. ..." |
 | 3 | 回 `2` | 第三条返回"📋 选模板：1. ..." |
 | 4 | 回 `5`（自由模式） | 收到"✅ todo #N 已建 + Claude Code 已启动" |
-| 5 | 打开 quadtodo Web UI（http://127.0.0.1:5677）| 看到刚才创建的 todo + 终端在跑 |
+| 5 | 打开 AgentQuad Web UI（http://127.0.0.1:5677）| 看到刚才创建的 todo + 终端在跑 |
 | 6 | 在终端里让 AI 调 `ask_user` 测试（例：发"用 npm 还是 pnpm？调 ask_user 让我选"） | 微信收到 `[#xxx] 任务... 1. npm 2. pnpm` |
 | 7 | 微信回 `1` | AI 收到 chosen=npm 并继续；微信收到"✅ 已回复 [#xxx]" |
 | 8 | 同时跑 2 个会话，都触发 ask_user，分别拿到 ticket #aaa #bbb | 微信里能看到两条 |
@@ -101,10 +103,10 @@ quadtodo start
 | 现象 | 排查 |
 |---|---|
 | 微信发"帮我做：X"没反应 | OpenClaw 日志 `openclaw logs --tail 100`，看 skill 是否被选中 |
-| skill 选中了但 MCP 调用失败 | 看 quadtodo 日志（`tail -f ~/.quadtodo/logs/*.log`）+ 确认 `quadtodo status` |
-| AI 调 ask_user 但你微信没收到 | `quadtodo doctor` + 看是否 `openclaw_disabled` / token env 缺失 |
-| 推送了但回复没路由 | quadtodo Web UI → pending list 看 ticket / `submit_user_reply` 返回内容 |
-| AI 等不到回复 timeout | `quadtodo config set openclaw.askUser.defaultTimeoutMs <更大的值>` |
+| skill 选中了但 MCP 调用失败 | 看 AgentQuad 日志（`tail -f ~/.agentquad/logs/*.log`）+ 确认 `agentquad status` |
+| AI 调 ask_user 但你微信没收到 | `agentquad doctor` + 看是否 `openclaw_disabled` / token env 缺失 |
+| 推送了但回复没路由 | AgentQuad Web UI → pending list 看 ticket / `submit_user_reply` 返回内容 |
+| AI 等不到回复 timeout | `agentquad config set openclaw.askUser.defaultTimeoutMs <更大的值>` |
 | 风控/封号担忧 | 默认每分钟最多 6 条出站，必要时改 `openclaw.askUser.rateLimitPerMin` 减小 |
 
 ---

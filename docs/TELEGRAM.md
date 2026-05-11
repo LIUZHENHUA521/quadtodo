@@ -1,6 +1,6 @@
 # Telegram 直连 + Topics setup
 
-quadtodo 自己跑 Telegram bot 长轮询，每开一个 task 自动建一个 Topic（Telegram Forum），
+AgentQuad 自己跑 Telegram bot 长轮询，每开一个 task 自动建一个 Topic（Telegram Forum），
 任务结束后 close + 标题加 `✅` 前缀，对话物理隔离。
 
 设计稿：`docs/superpowers/specs/2026-04-30-telegram-direct-topics-design.md`
@@ -20,10 +20,10 @@ quadtodo 自己跑 Telegram bot 长轮询，每开一个 task 自动建一个 To
 
 跟 [@BotFather](https://t.me/BotFather) 发 `/newbot` 申请一个新 bot，记下 token（形如 `7846123456:AAH9xK_...`）。
 
-### 3. 启动 quadtodo + 打开设置
+### 3. 启动 AgentQuad + 打开设置
 
 ```bash
-quadtodo start
+agentquad start
 ```
 
 浏览器打开 `http://127.0.0.1:5677/` → 右上角齿轮图标 → 拉到 **Telegram** 折叠区。
@@ -34,10 +34,10 @@ quadtodo start
 
 - 「启用 Telegram」开关 ON
 - Bot Token 填 BotFather 给的串
-- 点旁边的「测试」按钮 → 看到 `✓ @yourbot（来源：quadtodo 配置）` 即连通
+- 点旁边的「测试」按钮 → 看到 `✓ @yourbot（来源：AgentQuad 配置）` 即连通
 
 > 注：旧用户如果 token 仍写在 `~/.openclaw/openclaw.json`，Token 输入框旁边会显示 Tag「来自 ~/.openclaw/openclaw.json（兜底）」。
-> 想迁到 quadtodo 自己的 config，在 Bot Token 输入框里重新填一次再保存即可。
+> 想迁到 AgentQuad 自己的 config，在 Bot Token 输入框里重新填一次再保存即可。
 
 ### 5. 抓 supergroup ID
 
@@ -48,7 +48,7 @@ quadtodo start
 
 ### 6. 保存
 
-点底部「保存」按钮 → 后端会自动重启长轮询，无需手动 `quadtodo stop && start`。
+点底部「保存」按钮 → 后端会自动重启长轮询，无需手动 `agentquad stop && start`。
 
 启动 log 应该看到：
 
@@ -60,14 +60,14 @@ quadtodo start
 ### 7. 验证
 
 ```bash
-quadtodo doctor
+agentquad doctor
 ```
 
 应有：
 ```
 ✓ telegram.supergroupId — -1001234567890
 ✓ telegram.allowedChatIds — -1001234567890
-✓ telegram bot token — ✓ found in quadtodo 配置
+✓ telegram bot token — ✓ found in AgentQuad 配置
 ```
 
 ---
@@ -102,7 +102,7 @@ quadtodo doctor
 
 在 #t42 topic 里直接回 `c` 或任意文本：
 
-- quadtodo 把它写进 PTY 的 stdin（静默成功，不发 ack）
+- AgentQuad 把它写进 PTY 的 stdin（静默成功，不发 ack）
 - AI 处理后下一轮回话又推到 #t42
 
 ### 多任务并行
@@ -125,10 +125,10 @@ PTY 退出（Claude Code session 自然结束）→ SessionEnd hook：
 ### bot 不响应
 
 ```bash
-# 看 quadtodo 长轮询起来了吗
-quadtodo doctor                                        # 应有 telegram 段全 ✓
-tail -50 ~/.quadtodo/logs/quadtodo.log 2>/dev/null     # 启动 log
-quadtodo status                                        # 进程在跑
+# 看 AgentQuad 长轮询起来了吗
+agentquad doctor                                       # 应有 telegram 段全 ✓
+tail -50 ~/.agentquad/logs/agentquad.log 2>/dev/null   # 启动 log
+agentquad status                                       # 进程在跑
 ```
 
 ```bash
@@ -138,7 +138,7 @@ openclaw channels list | grep telegram                 # 应该看不到 enabled
 
 ### 消息发了但被 drop
 
-quadtodo log 里：
+AgentQuad log 里：
 ```
 [telegram-bot] dropped message from unauthorized chat=-100xxx ...
 ```
@@ -146,14 +146,14 @@ quadtodo log 里：
 → 这个 `-100xxx` 没在 `telegram.allowedChatIds` 里。配进去：
 
 ```bash
-quadtodo config set telegram.allowedChatIds.0 -100xxx
-quadtodo stop && quadtodo start
+agentquad config set telegram.allowedChatIds.0 -100xxx
+agentquad stop && agentquad start
 ```
 
 ### topic 没自动建
 
 ```bash
-quadtodo config get telegram.useTopics                 # 应该 true
+agentquad config get telegram.useTopics                # 应该 true
 ```
 
 bot 必须有 `Manage Topics` 权限。
@@ -164,17 +164,17 @@ bot 必须有 `Manage Topics` 权限。
 
 ```bash
 # 看 hook log
-tail -50 ~/.quadtodo/claude-hooks/hook.log
+tail -50 ~/.agentquad/claude-hooks/hook.log
 ```
 
 如果显示 `fired` + `sent` 但内容差，说明 `pty.findClaudeSession(nativeId)` 返回 null。
-可能 native id 还没探测到 → 重启那个 PTY 会让 quadtodo 重新通过 `--session-id` 显式绑定。
+可能 native id 还没探测到 → 重启那个 PTY 会让 AgentQuad 重新通过 `--session-id` 显式绑定。
 
 ---
 
 ## 配置项参考
 
-`~/.quadtodo/config.json` 的 `telegram` 段：
+`~/.agentquad/config.json` 的 `telegram` 段：
 
 ```json
 {
@@ -197,7 +197,7 @@ tail -50 ~/.quadtodo/claude-hooks/hook.log
 
 | 字段 | 含义 |
 |---|---|
-| `enabled` | 启用 quadtodo 自己的 Telegram 长轮询 |
+| `enabled` | 启用 AgentQuad 自己的 Telegram 长轮询 |
 | `supergroupId` | 主 supergroup 的 chat id（负数，含 `-100` 前缀） |
 | `longPollTimeoutSec` | getUpdates 长轮询超时 |
 | `useTopics` | 启用 Topic 路由（任务结束/任务推送都按 thread） |
@@ -211,20 +211,20 @@ tail -50 ~/.quadtodo/claude-hooks/hook.log
 | `minRenameIntervalMs` | Topic 重命名最小间隔，防风控（默认 30000；当前仅终态前缀走 rename，节流压力已大幅减小） |
 | `reactionEnabled` | 在用户触发消息上加 ✍ reaction 表示 AI 在干活；Stop hook 触发时清掉。默认 true |
 | `reactionRunningEmoji` | running 状态用哪个 Telegram 标准 emoji。默认 `✍`；群里限制了 Available Reactions 时改成允许列表里的（譬如 👀 / 🤔 / 👨‍💻） |
-| `botToken` | （可选）quadtodo 自己持有的 token；缺省时从 `~/.openclaw/openclaw.json` 兜底读 |
+| `botToken` | （可选）AgentQuad 自己持有的 token；缺省时从 `~/.openclaw/openclaw.json` 兜底读 |
 
 ---
 
 ## 附：CLI setup（自动化场景）
 
-如果你需要脚本化批量配置（譬如部署到一台新机器），所有字段都可以用 `quadtodo config set` 直接写：
+如果你需要脚本化批量配置（譬如部署到一台新机器），所有字段都可以用 `agentquad config set` 直接写：
 
 ```bash
-quadtodo config set telegram.enabled true
-quadtodo config set telegram.botToken 7846123456:AAH9xK_xxx
-quadtodo config set telegram.supergroupId -1001234567890
-quadtodo config set telegram.allowedChatIds.0 -1001234567890
-quadtodo stop && quadtodo start
+agentquad config set telegram.enabled true
+agentquad config set telegram.botToken 7846123456:AAH9xK_xxx
+agentquad config set telegram.supergroupId -1001234567890
+agentquad config set telegram.allowedChatIds.0 -1001234567890
+agentquad stop && agentquad start
 ```
 
-注：CLI 改完 config 文件后**仍需 `quadtodo stop && start`** 才能让长轮询切到新值（CLI 路径不触发热重启）。Web UI 的保存按钮会自动热重启。
+注：CLI 改完 config 文件后**仍需 `agentquad stop && start`** 才能让长轮询切到新值（CLI 路径不触发热重启）。Web UI 的保存按钮会自动热重启。

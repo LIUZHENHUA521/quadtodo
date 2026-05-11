@@ -7,7 +7,7 @@
 
 ## Scope
 
-- Project: `quadtodo`
+- Project: `agentquad` (旧名 `quadtodo`)
 - Area: `mira-proxy`
 - Entrypoint: `mira-proxy/server.js`
 

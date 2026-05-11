@@ -1,6 +1,6 @@
 # 飞书 / Lark 配置教程
 
-> quadtodo 通过飞书自建应用 + 长连接（WSClient）订阅事件，把任务消息发到话题群的 thread 里，群里 @bot 可以反向触发任务。
+> AgentQuad 通过飞书自建应用 + 长连接（WSClient）订阅事件，把任务消息发到话题群的 thread 里，群里 @bot 可以反向触发任务。
 > **不需要公网 callback URL**，长连接走 WebSocket 出站。
 
 ## 1. 在飞书开放平台建一个自建应用
@@ -9,7 +9,7 @@
 
 填：
 
-- 应用名称：随便起，譬如 `quadtodo`
+- 应用名称：随便起，譬如 `agentquad`
 - 描述、图标：可选
 
 创建完进入应用后台，**凭证与基础信息** 页能看到：
@@ -27,7 +27,7 @@
 |---|---|
 | `im:message:send_as_bot` | 以应用身份发消息（必填） |
 | `im:message` | 接收 / 读取消息（事件订阅必填） |
-| `im:message.reaction` 或 `im:message:reaction` | 表情回应（quadtodo 用来标记任务状态） |
+| `im:message.reaction` 或 `im:message:reaction` | 表情回应（AgentQuad 用来标记任务状态） |
 | `im:chat` | 获取群信息、判断是否话题群 |
 | `im:resource` | 接收图片附件（任务里需要图片时） |
 
@@ -60,7 +60,7 @@
 
 ## 4. 建话题群并把 bot 加进去
 
-> quadtodo 默认要求"话题群 / thread group"，普通群发出去的消息没法做线程隔离。
+> AgentQuad 默认要求"话题群 / thread group"，普通群发出去的消息没法做线程隔离。
 
 在飞书客户端：
 
@@ -74,7 +74,7 @@
 
 **方法 A：在群里 @bot 发条消息**
 
-quadtodo 启动后会打 log：
+AgentQuad 启动后会打 log：
 
 ```
 [lark-event] receive_v1 chat=oc_xxxxxxxxxxxxxxxxxxxx user=ou_xxx text=...
@@ -114,7 +114,7 @@ quadtodo 启动后会打 log：
 到飞书话题群里 @bot 发：
 
 ```
-@quadtodo 帮我做：写一个 nodejs hello world demo
+@agentquad 帮我做：写一个 nodejs hello world demo
 ```
 
 预期：
@@ -141,19 +141,19 @@ quadtodo 启动后会打 log：
 排查命令：
 
 ```bash
-quadtodo doctor                        # lark 段应全 ✓
-tail -100 ~/.quadtodo/logs/quadtodo.log | grep -E '\[lark'
+agentquad doctor                        # lark 段应全 ✓
+tail -100 ~/.agentquad/logs/agentquad.log | grep -E '\[lark'
 ```
 
 ---
 
 ## 字段速查
 
-`~/.quadtodo/config.json` 的 `lark` 段：
+`~/.agentquad/config.json` 的 `lark` 段：
 
 | 字段 | 含义 |
 |---|---|
-| `enabled` | 启用 quadtodo 自己的 Lark 长连接 |
+| `enabled` | 启用 AgentQuad 自己的 Lark 长连接 |
 | `appId` | 飞书自建应用 App ID（`cli_xxx`） |
 | `appSecret` | 飞书自建应用 App Secret |
 | `chatId` | 目标话题群的 chat_id（`oc_xxx`） |
