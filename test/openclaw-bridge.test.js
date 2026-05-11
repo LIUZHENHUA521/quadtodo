@@ -349,6 +349,38 @@ describe('openclaw-bridge.postText', () => {
     expect(sendCalls).toEqual([])  // 不再 fallback
   })
 
+  it('postText still routes to lark when openclaw.enabled=false (lark / openclaw are independent gates)', async () => {
+    // 回归：早期 postText 在第一行就 if (!isEnabled()) return disabled，
+    // 导致 openclaw.enabled=false（用户只用飞书、不用微信 CLI）时，
+    // Claude Code Stop hook 触发后 lark 分支根本走不到，飞书永远收不到 AI 回复。
+    const sent = []
+    const bridge = createOpenClawBridge({
+      getConfig: () => ({
+        openclaw: { enabled: false },          // ← 关键：openclaw CLI 关闭
+        lark: { enabled: true, chatId: 'oc_1' },
+      }),
+      spawnFn: spy({ stdout: '{}' }),
+      logger: { warn() {}, info() {} },
+      larkBot: {
+        replyInThread: async (args) => {
+          sent.push(args)
+          return { ok: true, payload: { messageId: 'om_reply' } }
+        },
+      },
+    })
+    bridge.registerSessionRoute('s-lark-no-oc', {
+      channel: 'lark',
+      targetUserId: 'oc_1',
+      threadId: 'omt_1',
+      rootMessageId: 'om_root',
+    })
+    const r = await bridge.postText({ sessionId: 's-lark-no-oc', message: 'AI output' })
+    expect(r.ok).toBe(true)
+    expect(r.reason).toBeUndefined()
+    expect(sent).toEqual([{ rootMessageId: 'om_root', text: 'AI output' }])
+    expect(calls).toHaveLength(0)             // 不应 spawn openclaw CLI
+  })
+
   it('postText refuses lark route without rootMessageId', async () => {
     const sent = []
     const bridge = createOpenClawBridge({

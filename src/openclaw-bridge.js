@@ -215,7 +215,6 @@ export function createOpenClawBridge({
    * 失败原因可能是：disabled / rate_limited / misconfigured / cli_failed / timeout
    */
   async function postText({ sessionId, target, message, channel, account, replyToId, attachment = null, replyMarkup = null } = {}) {
-    if (!isEnabled()) return { ok: false, reason: 'disabled' }
     if (!message || typeof message !== 'string') return { ok: false, reason: 'message_required' }
     if (!rateLimitOk()) return { ok: false, reason: 'rate_limited' }
 
@@ -329,6 +328,12 @@ export function createOpenClawBridge({
         logger.warn?.(`[openclaw-bridge] telegram fast-path: token missing — falling back to CLI`)
       }
     }
+
+    // openclaw CLI fallback path: 这一段是 spawn `openclaw message send`（微信渠道），
+    // 必须由 openclaw.enabled gating。lark / telegram 上面已直接 return，不会落到这里。
+    // 历史上这个 gate 在函数顶部，导致 openclaw.enabled=false 时 lark 也被静默拒掉
+    // （hook 触发后 bridge 直接返回 disabled，飞书永远收不到 AI 回复）。
+    if (!isEnabled()) return { ok: false, reason: 'disabled' }
 
     const args = [
       'message', 'send',
