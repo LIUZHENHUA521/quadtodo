@@ -586,4 +586,40 @@ describe('PtyManager', () => {
     ])
     expect(pm.has('s-pending')).toBe(false)
   })
+
+  describe('PtyManager.getNativeId', () => {
+    it('returns preset claude native id immediately after create() (before startWithSize)', () => {
+      const factory = makeFakePty()
+      const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+      pm.create({ sessionId: 'ai-test-1', tool: 'claude', prompt: 'hi', cwd: process.cwd() })
+      const id = pm.getNativeId('ai-test-1')
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    })
+
+    it('returns resumeNativeId for resume sessions', () => {
+      const factory = makeFakePty()
+      const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+      pm.create({
+        sessionId: 'ai-test-2',
+        tool: 'claude',
+        prompt: null,
+        cwd: process.cwd(),
+        resumeNativeId: 'abcdef12-3456-7890-abcd-ef1234567890',
+      })
+      expect(pm.getNativeId('ai-test-2')).toBe('abcdef12-3456-7890-abcd-ef1234567890')
+    })
+
+    it('returns null for codex new session (no preset)', () => {
+      const factory = makeFakePty()
+      const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+      pm.create({ sessionId: 'ai-test-3', tool: 'codex', prompt: 'hi', cwd: process.cwd() })
+      expect(pm.getNativeId('ai-test-3')).toBe(null)
+    })
+
+    it('returns null for unknown sessionId', () => {
+      const factory = makeFakePty()
+      const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+      expect(pm.getNativeId('does-not-exist')).toBe(null)
+    })
+  })
 })

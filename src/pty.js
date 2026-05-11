@@ -379,6 +379,11 @@ export class PtyManager extends EventEmitter {
     return [...this.sessions.keys()]
   }
 
+  /** 返回 session 已知的 native id（claude 预置 / resume 沿用）；codex 新会话探测前为 null。 */
+  getNativeId(sessionId) {
+    return this.sessions.get(sessionId)?.nativeId || null
+  }
+
   /** 返回当前所有活跃 PTY 的 { sessionId, pid, tool }，供 pidusage 采样用 */
   getPids() {
     const out = []
