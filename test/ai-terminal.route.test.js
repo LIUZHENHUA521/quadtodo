@@ -1149,6 +1149,103 @@ describe('routes/ai-terminal', () => {
     }
   })
 
+  describe('init handshake', () => {
+    function makeWs() {
+      const sent = []
+      return {
+        OPEN: 1,
+        readyState: 1,
+        send: (data) => sent.push(JSON.parse(data)),
+        close: () => {},
+        sent,
+      }
+    }
+
+    it('init triggers startWithSize once and marks session spawned', async () => {
+      const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+      const r = await request(ctx.app).post('/api/ai-terminal/exec').send({
+        todoId: todo.id, prompt: 'hello', tool: 'claude',
+      })
+      const sessionId = r.body.sessionId
+      // pty.create was called; pty.startWithSize was NOT
+      expect(ctx.pty.created).toHaveLength(1)
+      expect(ctx.pty.startedWithSize).toHaveLength(0)
+
+      const ws = makeWs()
+      ctx.ait.addBrowser(sessionId, ws)
+      ctx.ait.handleBrowserMessage(sessionId, { type: 'init', cols: 120, rows: 30 }, ws)
+
+      expect(ctx.pty.startedWithSize).toHaveLength(1)
+      expect(ctx.pty.startedWithSize[0]).toEqual({ sessionId, cols: 120, rows: 30 })
+    })
+
+    it('init with invalid size (cols<30) is ignored', async () => {
+      const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+      const r = await request(ctx.app).post('/api/ai-terminal/exec').send({
+        todoId: todo.id, prompt: 'hello', tool: 'claude',
+      })
+      const sessionId = r.body.sessionId
+      const ws = makeWs()
+      ctx.ait.addBrowser(sessionId, ws)
+      ctx.ait.handleBrowserMessage(sessionId, { type: 'init', cols: 0, rows: 0 }, ws)
+      expect(ctx.pty.startedWithSize).toHaveLength(0)
+    })
+
+    it('repeated init does not re-spawn — subsequent init equivalent to resize', async () => {
+      const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+      const r = await request(ctx.app).post('/api/ai-terminal/exec').send({
+        todoId: todo.id, prompt: 'hello', tool: 'claude',
+      })
+      const sessionId = r.body.sessionId
+      const ws = makeWs()
+      ctx.ait.addBrowser(sessionId, ws)
+      ctx.ait.handleBrowserMessage(sessionId, { type: 'init', cols: 120, rows: 30 }, ws)
+      ctx.ait.handleBrowserMessage(sessionId, { type: 'init', cols: 100, rows: 25 }, ws)
+
+      expect(ctx.pty.startedWithSize).toHaveLength(1)
+      expect(ctx.pty.resizes).toContainEqual({ id: sessionId, cols: 100, rows: 25 })
+    })
+
+    it('5s spawn fallback fires when no init arrives', async () => {
+      vi.useFakeTimers()
+      try {
+        const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+        const r = await request(ctx.app).post('/api/ai-terminal/exec').send({
+          todoId: todo.id, prompt: 'hello', tool: 'claude',
+        })
+        const sessionId = r.body.sessionId
+        expect(ctx.pty.startedWithSize).toHaveLength(0)
+        await vi.advanceTimersByTimeAsync(5001)
+        expect(ctx.pty.startedWithSize).toHaveLength(1)
+        expect(ctx.pty.startedWithSize[0]).toEqual({ sessionId, cols: 80, rows: 24 })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('init after fallback already fired — only resizes, does not re-spawn', async () => {
+      vi.useFakeTimers()
+      try {
+        const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+        const r = await request(ctx.app).post('/api/ai-terminal/exec').send({
+          todoId: todo.id, prompt: 'hello', tool: 'claude',
+        })
+        const sessionId = r.body.sessionId
+        await vi.advanceTimersByTimeAsync(5001) // fallback fires → startWithSize(80, 24)
+        expect(ctx.pty.startedWithSize).toHaveLength(1)
+
+        const ws = makeWs()
+        ctx.ait.addBrowser(sessionId, ws)
+        ctx.ait.handleBrowserMessage(sessionId, { type: 'init', cols: 120, rows: 30 }, ws)
+
+        expect(ctx.pty.startedWithSize).toHaveLength(1) // still 1, no re-spawn
+        expect(ctx.pty.resizes).toContainEqual({ id: sessionId, cols: 120, rows: 30 })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
   describe('dashboard routes', () => {
     it('GET /sessions lists active sessions with todo metadata', async () => {
       const todo = ctx.db.createTodo({ title: 'Hello', quadrant: 2 })

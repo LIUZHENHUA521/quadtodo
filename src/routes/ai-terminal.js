@@ -805,6 +805,35 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       // 直到下一次 Stop。
       if (session && isPendingClearingInput(msg.data)) session.awaitingReply = false
       pty.write(sessionId, msg.data)
+    } else if (msg.type === 'init') {
+      const cols = Number(msg.cols)
+      const rows = Number(msg.rows)
+      const session = sessions.get(sessionId)
+      if (!session) return
+      if (!isValidResizeSize(cols, rows)) return
+      if (!session.spawned) {
+        // WS init won the race — cancel the 5s fallback timer and spawn at the
+        // real cols/rows the frontend just measured.
+        if (session.spawnFallbackTimer) {
+          clearTimeout(session.spawnFallbackTimer)
+          session.spawnFallbackTimer = null
+        }
+        try {
+          pty.startWithSize(sessionId, clampPtyCols(cols), rows)
+          session.spawned = true
+          session.lastAppliedCols = clampPtyCols(cols)
+          session.lastAppliedRows = rows
+        } catch (e) {
+          console.warn(`[ai-terminal] startWithSize failed for ${sessionId}: ${e.message}`)
+          return
+        }
+      }
+      // Register this WS's size into the aggregation map either way (covers
+      // both the spawned-by-this-init case and the spawned-earlier reconnect case).
+      if (ws && session.browsers.has(ws)) {
+        ws.__quadtodoSize = { cols, rows }
+        applyAggregatedResize(session)
+      }
     } else if (msg.type === 'resize') {
       const cols = Number(msg.cols)
       const rows = Number(msg.rows)
