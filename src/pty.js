@@ -542,6 +542,9 @@ export class PtyManager extends EventEmitter {
         env,
       })
     } catch (error) {
+      // ptyFactory failed → session record is stranded (no proc → no onExit to clean it up).
+      // Remove it explicitly so callers can retry / start a new session with the same id.
+      this.sessions.delete(sessionId)
       error.message = `PTY spawn failed for ${tool} (bin=${toolCfg.bin}, cwd=${effectiveCwd}, args=${JSON.stringify(args)}): ${error.message}`
       throw error
     }
@@ -645,7 +648,7 @@ export class PtyManager extends EventEmitter {
     })
 
     // size-first 路径：spawn 时已经是真实尺寸，prompt 不再依赖 resize 触发，
-    // 直接按 promptDelayMs（默认 ~300ms）发送即可。
+    // 直接按 promptDelayMs（构造器默认 2000ms，可被测试 / 调用方覆盖）发送即可。
     if (session.pendingPrompt) {
       session.promptTimer = setTimeout(() => {
         if (session.pendingPrompt) {
@@ -796,7 +799,16 @@ export class PtyManager extends EventEmitter {
     if (this.sidecar && s.tool === 'codex' && s.nativeId) {
       try { this.sidecar.clear(s.nativeId) } catch { /* ignore */ }
     }
-    try { s.proc.kill() } catch { /* ignore */ }
-    // cleanup happens in onExit
+    if (s.proc) {
+      try { s.proc.kill() } catch { /* ignore */ }
+      // cleanup of this.sessions entry happens in onExit
+    } else {
+      // Not-yet-spawned session (create() called but startWithSize() not yet, or it failed):
+      // no proc to kill, no onExit will fire — clean up timers/watchers and delete now.
+      if (s.promptTimer) { try { clearTimeout(s.promptTimer) } catch { /* ignore */ } s.promptTimer = null }
+      if (s.detectTimer) { try { clearInterval(s.detectTimer) } catch { /* ignore */ } s.detectTimer = null }
+      if (s.fsWatcher) { try { s.fsWatcher.close() } catch { /* ignore */ } s.fsWatcher = null }
+      this.sessions.delete(sessionId)
+    }
   }
 }

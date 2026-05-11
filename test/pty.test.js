@@ -554,4 +554,23 @@ describe('PtyManager', () => {
     expect(factory.created[0]._opts.cols).toBe(80)
     expect(factory.created[0]._opts.rows).toBe(24)
   })
+
+  it('startWithSize() failure deletes the stranded session record', () => {
+    const factory = () => { throw new Error('boom') }
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    pm.create({ sessionId: 's-fail', tool: 'claude', prompt: null, cwd: '/tmp' })
+    expect(pm.has('s-fail')).toBe(true)
+    expect(() => pm.startWithSize('s-fail', 80, 24)).toThrow(/PTY spawn failed/)
+    expect(pm.has('s-fail')).toBe(false)
+  })
+
+  it('stop() on a created-but-not-spawned session removes it from the map', () => {
+    const factory = makeFakePty()
+    const pm = new PtyManager({ tools: tools(), ptyFactory: factory })
+    pm.create({ sessionId: 's-pending', tool: 'claude', prompt: null, cwd: '/tmp' })
+    expect(pm.has('s-pending')).toBe(true)
+    pm.stop('s-pending')
+    expect(pm.has('s-pending')).toBe(false)
+    expect(factory.created).toHaveLength(0) // no PTY was ever spawned
+  })
 })
