@@ -173,7 +173,10 @@ export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId,
       const r = await previewTranscript(f.id, 0, PREVIEW_PAGE_SIZE)
       setPreviewTurns(r.turns)
       setPreviewTotal(r.totalTurns)
-    } catch (e) { message.error((e as Error).message) }
+    } catch (e) {
+      message.error((e as Error).message)
+      setPreviewFile(null)
+    }
     finally { setPreviewLoading(false) }
   }
 
@@ -367,37 +370,43 @@ export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId,
       >
         <Spin spinning={previewLoading}>
           <div style={{ maxHeight: 480, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {previewTurns.map((t, i) => {
-              const expanded = expandedTurns.has(i)
-              const overflowed = t.content.length > TURN_COLLAPSE_CHARS
-              const display = !expanded && overflowed ? t.content.slice(0, TURN_COLLAPSE_CHARS) : t.content
-              const { color: borderColor, tagColor } = roleStyle(t.role)
-              return (
-                <div key={i} style={{ borderLeft: `3px solid ${borderColor}`, padding: '4px 8px' }}>
-                  <Tag color={tagColor}>{t.role}</Tag>
-                  <pre style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0', fontSize: 12 }}>
-                    {display}
-                    {!expanded && overflowed && '…'}
-                  </pre>
-                  {overflowed && (
-                    <Button
-                      size="small"
-                      type="link"
-                      style={{ padding: 0, marginTop: 2, fontSize: 12 }}
-                      onClick={() => toggleTurnExpand(i)}
-                    >
-                      {expanded ? '收起' : `展开（${t.content.length - TURN_COLLAPSE_CHARS} 字隐藏）`}
+            {!previewLoading && previewTurns.length === 0 ? (
+              <Empty description="该会话暂无可展示内容" />
+            ) : (
+              <>
+                {previewTurns.map((t, i) => {
+                  const expanded = expandedTurns.has(i)
+                  const overflowed = t.content.length > TURN_COLLAPSE_CHARS
+                  const display = !expanded && overflowed ? t.content.slice(0, TURN_COLLAPSE_CHARS) : t.content
+                  const { color: borderColor, tagColor } = roleStyle(t.role)
+                  return (
+                    <div key={i} style={{ borderLeft: `3px solid ${borderColor}`, padding: '4px 8px' }}>
+                      <Tag color={tagColor}>{t.role}</Tag>
+                      <pre style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0', fontSize: 12 }}>
+                        {display}
+                        {!expanded && overflowed && '…'}
+                      </pre>
+                      {overflowed && (
+                        <Button
+                          size="small"
+                          type="link"
+                          style={{ padding: 0, marginTop: 2, fontSize: 12 }}
+                          onClick={() => toggleTurnExpand(i)}
+                        >
+                          {expanded ? '收起' : `展开（${t.content.length - TURN_COLLAPSE_CHARS} 字隐藏）`}
+                        </Button>
+                      )}
+                    </div>
+                  )
+                })}
+                {previewTotal > previewTurns.length && (
+                  <div style={{ textAlign: 'center', padding: 8 }}>
+                    <Button size="small" loading={previewLoadingMore} onClick={loadMorePreview}>
+                      加载更多 {Math.min(PREVIEW_PAGE_SIZE, previewTotal - previewTurns.length)} 条
                     </Button>
-                  )}
-                </div>
-              )
-            })}
-            {previewTotal > previewTurns.length && (
-              <div style={{ textAlign: 'center', padding: 8 }}>
-                <Button size="small" loading={previewLoadingMore} onClick={loadMorePreview}>
-                  加载更多 {Math.min(PREVIEW_PAGE_SIZE, previewTotal - previewTurns.length)} 条
-                </Button>
-              </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </Spin>
