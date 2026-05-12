@@ -10,19 +10,17 @@ import {
   ClockCircleOutlined, SearchOutlined,
   PlayCircleOutlined, SettingOutlined, CopyOutlined,
   CodeOutlined, DesktopOutlined, SendOutlined, EditOutlined,
-  DownOutlined, RightOutlined,
   FileTextOutlined, ExportOutlined,
   BookOutlined, LineChartOutlined, TrophyOutlined, BranchesOutlined,
-  MenuOutlined, MoreOutlined, WarningOutlined, SwapOutlined,
+  MenuOutlined, MoreOutlined, WarningOutlined,
 } from '@ant-design/icons'
 import { useIsMobile } from './hooks/useIsMobile'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
   useSensor, useSensors, DragOverlay, DragStartEvent,
-  DragEndEvent, useDroppable,
+  DragEndEvent,
 } from '@dnd-kit/core'
-import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import dayjs from 'dayjs'
 import {
   listTodos, createTodo, updateTodo, deleteTodo,
@@ -58,39 +56,16 @@ import {
 import { getTranscriptStats, listPipelineTemplates, listPipelineRunsForTodo, startPipelineRun, PipelineTemplate, PipelineRun } from './api'
 import PipelineRunDrawer from './pipeline/PipelineRunDrawer'
 import AttentionRail from './dock/AttentionRail'
-import { ActivitySparkline } from './components/ActivitySparkline'
-import { useUnreadStore, isSessionUnread } from './store/unreadStore'
+import { useUnreadStore } from './store/unreadStore'
 import { useDrawerStackStore } from './store/drawerStackStore'
 import { useDrawerStack } from './hooks/useDrawerStack'
 import { useDispatchStore } from './store/dispatchStore'
 import { TopbarDispatch } from './components/TopbarDispatch'
-import { QuadrantBoard } from './components/QuadrantBoard'
+import { QuadrantBoard, QuadrantZone, QUADRANT_CONFIG } from './components/QuadrantBoard'
+import { SortableTodoCard } from './components/TodoCard'
 import './TodoManage.css'
 
 const { TextArea } = Input
-
-// ─── 常量 ───
-
-const QUADRANT_CONFIG = [
-  { q: 1 as Quadrant, label: '重要且紧急', priority: 'P0', color: '#ff4d4f', bgBadge: 'count-badge-1' },
-  { q: 2 as Quadrant, label: '重要不紧急', priority: 'P1', color: '#faad14', bgBadge: 'count-badge-2' },
-  { q: 3 as Quadrant, label: '紧急不重要', priority: 'P2', color: '#1677ff', bgBadge: 'count-badge-3' },
-  { q: 4 as Quadrant, label: '不重要不紧急', priority: 'P3', color: '#52c41a', bgBadge: 'count-badge-4' },
-]
-
-function formatDate(ts: number | null) {
-  if (!ts) return ''
-  return dayjs(ts).format('MM-DD HH:mm')
-}
-
-function isOverdue(dueDate: number | null) {
-  return dueDate ? dueDate < Date.now() : false
-}
-
-function formatSessionTime(ts?: number | null) {
-  if (!ts) return ''
-  return dayjs(ts).format('MM/DD HH:mm')
-}
 
 // ─── Description parser: split text into text/image segments ───
 // Matches "@/abs/path.{png,jpg,jpeg,gif,webp}". The extension must NOT be
@@ -136,13 +111,6 @@ export function formatDueDate(ts: number | null | undefined): { label: string; o
   return { label: dayjs(ts).format('MM-DD HH:mm'), overdue: ts < Date.now() }
 }
 
-function toolDisplayName(tool: AiTool) {
-  if (tool === 'claude') return 'Claude Code'
-  if (tool === 'codex') return 'Codex'
-  if (tool === 'cursor') return 'Cursor'
-  return tool
-}
-
 function buildTodoPrompt(todo: Todo, templates: PromptTemplate[] = []) {
   const templatePrefix = renderAppliedTemplates(todo, templates)
   const base = `请完成以下待办任务:
@@ -155,7 +123,7 @@ function buildTodoPrompt(todo: Todo, templates: PromptTemplate[] = []) {
   return templatePrefix ? `${templatePrefix}\n\n---\n\n${base}` : base
 }
 
-function currentStatusLabel(status: Todo['status']) {
+export function currentStatusLabel(status: Todo['status']) {
   if (status === 'ai_running') return { text: '运行中', className: 'status-chip-running' }
   if (status === 'ai_pending') return { text: '待交互', className: 'status-chip-pending' }
   if (status === 'ai_done') return { text: '待验收', className: 'status-chip-done' }
@@ -163,7 +131,7 @@ function currentStatusLabel(status: Todo['status']) {
   return { text: '待办', className: 'status-chip-idle' }
 }
 
-function todoDndId(todo: Todo) {
+export function todoDndId(todo: Todo) {
   return todo.parentId ? `subtodo:${todo.id}` : todo.id
 }
 
@@ -174,516 +142,6 @@ function parseTodoDndId(id: string) {
   return { todoId: id, kind: 'todo' as const }
 }
 
-// ─── 可拖拽任务卡片 ───
-
-interface SortableTodoCardProps {
-  todo: Todo
-  children?: Todo[]
-  childHitIds?: Set<string>
-  isSubtodo?: boolean
-  onCreateSubtodo?: (todo: Todo) => void
-  onClick: (t: Todo) => void
-  onToggleDone: (t: Todo) => void
-  onAiExec: (todo: Todo, tool: AiTool, session?: Todo['aiSessions'][number]) => void
-  onDeleteAiSession: (todo: Todo, session: Todo['aiSessions'][number], currentSessionId?: string | null) => void
-  onUpdateSessionLabel: (todo: Todo, session: Todo['aiSessions'][number], label: string) => void
-  onDelete: (t: Todo) => void
-  onOpenTrae: (todo: Todo, editor?: 'trae-cn' | 'trae' | 'cursor') => void
-  onOpenTerminal: (todo: Todo) => void
-  onOpenNativeResume: (todo: Todo, session: Todo['aiSessions'][number]) => void
-  onCopyPrompt: (todo: Todo) => void
-  onExport: (todo: Todo) => void
-  isNarrow: boolean
-  onRequestFork: (todo: Todo, sessionId: string) => void
-  onRefresh: () => void
-  highlightTodoId?: string | null
-}
-
-// AI session 的"已结束"状态——只在这些状态下显示"未正常结束"标签，
-// 避免 running / pending_confirm 期间因为 nativeId 还没到位而误报。
-const TERMINAL_AI_STATUSES = new Set<string>(['done', 'failed', 'stopped'])
-
-function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false, onCreateSubtodo, onClick, onToggleDone, onAiExec, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, isNarrow, onRequestFork, onRefresh, highlightTodoId }: SortableTodoCardProps) {
-  const { message } = useAppMessages()
-  const [editingLabelSessionId, setEditingLabelSessionId] = useState<string | null>(null)
-  const [editingLabelText, setEditingLabelText] = useState('')
-  const [childrenExpanded, setChildrenExpanded] = useState(true)
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todoDndId(todo) })
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  }
-  const hasChildren = children.length > 0
-  const showChildren = hasChildren && (childrenExpanded || (!!childHitIds && childHitIds.size > 0))
-  const cardClassName = `todo-card quadrant-${todo.quadrant} ${isDragging ? 'dragging' : ''} ${todo.status === 'done' ? 'done' : ''} ${isSubtodo ? 'subtodo-card' : ''} ${highlightTodoId === todo.id ? 'attention-target-highlight' : ''}`
-  const sessionId = todo.aiSession?.sessionId
-  const historySessions = todo.aiSessions || []
-  const hasHistory = historySessions.length > 0
-  const statusChip = currentStatusLabel(todo.status)
-
-  const lastSeenMap = useUnreadStore(s => s.lastSeenAt)
-  const liveSessionsMap = useAiSessionStore(s => s.sessions)
-
-  const aiMenuItems = [
-    { key: 'start:claude', label: '▶ 启动 Claude' },
-    { key: 'start:codex', label: '▶ 启动 Codex' },
-    { key: 'start:cursor', label: '▶ 启动 Cursor' },
-  ]
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      className={cardClassName}
-      id={`todo-card-${todo.id}`}
-      data-todo-id={todo.id}
-    >
-      {todo.aiSession && (
-        <span className="todo-card-focus-hint">⌘ to focus</span>
-      )}
-      <div className="todo-card-shell">
-        <div
-          {...listeners}
-          className="todo-card-head"
-          onClick={(e) => {
-            e.stopPropagation()
-            if (todo.aiSession?.sessionId) {
-              useDispatchStore.getState().openFocus(todo.id, todo.aiSession.sessionId)
-            } else {
-              onClick(todo)
-            }
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={todo.status === 'done'}
-            onClick={(e) => e.stopPropagation()}
-            onChange={() => onToggleDone(todo)}
-            className="todo-card-checkbox"
-          />
-          <div className="todo-card-main">
-            <div className="todo-card-title-row">
-              <div className="todo-card-title">{todo.title}</div>
-              <span className={`todo-status-chip ${statusChip.className}`}>{statusChip.text}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="todo-card-footer">
-          <div className="todo-card-meta">
-            {todo.brainstorm && (
-              <span className="todo-meta-pill" style={{ background: '#fff7e6', color: '#d46b08', border: '1px solid #ffd591' }}>
-                脑爆
-              </span>
-            )}
-            {todo.workDir && (
-              <span className="todo-meta-pill" title={todo.workDir}>
-                目录 · {todo.workDir.split('/').filter(Boolean).slice(-1)[0] || todo.workDir}
-              </span>
-            )}
-            {todo.dueDate && (
-              <span className={`todo-meta-pill ${isOverdue(todo.dueDate) && todo.status !== 'done' ? 'overdue' : ''}`}>
-                <ClockCircleOutlined style={{ marginRight: 4 }} />
-                {formatDate(todo.dueDate)}
-              </span>
-            )}
-            {hasHistory && (
-              <span className="todo-meta-pill">
-                会话 {historySessions.length}
-              </span>
-            )}
-          </div>
-
-          {todo.aiSession && (
-            <div className="todo-ai-status-row" onClick={(e) => e.stopPropagation()}>
-              <span className="todo-ai-tag">{todo.aiSession.tool}</span>
-              <span className={`todo-ai-state todo-ai-state-${liveSessionsMap.get(todo.aiSession.sessionId)?.status ?? 'idle'}`}>
-                {(() => {
-                  const status = liveSessionsMap.get(todo.aiSession.sessionId)?.status
-                  if (status === 'running') return '● running'
-                  if (status === 'pending_confirm') return '⚠ pending confirm'
-                  if (status === 'done') return '✓ done'
-                  if (status === 'failed') return '✕ failed'
-                  if (status === 'stopped') return '○ stopped'
-                  return '○ idle'
-                })()}
-              </span>
-              <ActivitySparkline sessionId={todo.aiSession.sessionId} width={70} height={14} />
-            </div>
-          )}
-
-          <div className="todo-card-toolbar" onClick={(e) => e.stopPropagation()}>
-          <Tooltip title="复制标题和描述">
-            <Button size="small" icon={<CopyOutlined />} onClick={() => onCopyPrompt(todo)} className="todo-primary-action" />
-          </Tooltip>
-          <Dropdown
-            menu={{
-              items: [
-                { key: 'trae-cn', label: 'Trae CN' },
-                { key: 'trae', label: 'Trae' },
-                { key: 'cursor', label: 'Cursor' },
-              ],
-              onClick: ({ key }) => onOpenTrae(todo, key as 'trae-cn' | 'trae' | 'cursor'),
-            }}
-            trigger={['click']}
-          >
-            <Tooltip title="选择编辑器打开">
-              <Button size="small" icon={<CodeOutlined />} className="todo-primary-action" />
-            </Tooltip>
-          </Dropdown>
-          <Tooltip title="启动终端">
-            <Button size="small" icon={<DesktopOutlined />} onClick={() => onOpenTerminal(todo)} className="todo-primary-action" />
-          </Tooltip>
-          <Dropdown
-            menu={{
-              items: aiMenuItems,
-              onClick: ({ key }) => {
-                const [action, value] = key.split(':')
-                if (action === 'start') {
-                  onAiExec(todo, value as AiTool)
-                }
-              },
-            }}
-            trigger={['click']}
-          >
-            <Button size="small" icon={<PlayCircleOutlined />} className="todo-primary-action">AI 终端</Button>
-          </Dropdown>
-          {todo.aiSession?.sessionId && (
-            <Tooltip title="Open in Focus Mode (full-screen)">
-              <Button
-                size="small"
-                icon={<SwapOutlined />}
-                className="todo-primary-action"
-                onClick={() => {
-                  const sid = todo.aiSession?.sessionId
-                  if (sid) {
-                    useDispatchStore.getState().openFocus(todo.id, sid)
-                  }
-                }}
-              />
-            </Tooltip>
-          )}
-          {!isSubtodo && onCreateSubtodo && (
-            <Tooltip title="添加子待办">
-              <Button size="small" icon={<PlusOutlined />} onClick={() => onCreateSubtodo(todo)} className="todo-primary-action" />
-            </Tooltip>
-          )}
-          <Tooltip title="导出 Markdown / 推送到飞书">
-            <Button size="small" icon={<ExportOutlined />} onClick={() => onExport(todo)} className="todo-primary-action" />
-          </Tooltip>
-          <Popconfirm title="确认删除？" onConfirm={() => onDelete(todo)}>
-            <Button size="small" danger icon={<DeleteOutlined />} onClick={(e) => e.stopPropagation()} className="todo-danger-action" />
-          </Popconfirm>
-          </div>
-        </div>
-
-        {hasHistory && (
-          <div className="todo-history-box" onClick={(e) => e.stopPropagation()}>
-            <div className="todo-history-title">历史会话 ({historySessions.length})</div>
-            <div className="todo-history-list">
-              {historySessions.map((session) => {
-                const nativeSessionId = session.nativeSessionId || ''
-                const baseResumeCommand = session.tool === 'codex'
-                  ? `codex resume ${nativeSessionId}`
-                  : session.tool === 'cursor'
-                    ? `cursor-agent --resume ${nativeSessionId}`
-                    : `claude --resume ${nativeSessionId}`
-                // resume 命令必须在原 cwd 下执行，否则 ~/.claude/projects/<encoded-cwd>/ 找不到 jsonl
-                // 会立刻报 "No conversation found"。这里把 cd 拼进去，复制即可在任意终端运行。
-                const sessionCwd = session.cwd || todo.workDir || ''
-                const shellQuoted = sessionCwd
-                  ? `'${sessionCwd.replace(/'/g, `'\\''`)}'`
-                  : ''
-                const terminalCommand = sessionCwd
-                  ? `cd ${shellQuoted} && ${baseResumeCommand}`
-                  : baseResumeCommand
-                // 未读优先取 live session（in-memory，最新），其次 historical（持久化值）
-                const liveTurnDoneAt = liveSessionsMap.get(session.sessionId)?.lastTurnDoneAt ?? null
-                const turnDoneAt = liveTurnDoneAt || session.lastTurnDoneAt || null
-                const sessionUnread = isSessionUnread(turnDoneAt, lastSeenMap.get(session.sessionId))
-                return (
-                  <button
-                    key={session.sessionId}
-                    type="button"
-                    className="todo-history-item"
-                    onClick={() => {
-                      // 如果用户正在拖蓝选中里面的 session id / 命令文字，就别触发展开
-                      if (typeof window !== 'undefined' && window.getSelection()?.toString()) return
-                      useDispatchStore.getState().openFocus(todo.id, session.sessionId)
-                    }}
-                  >
-                    {sessionUnread && (
-                      <Tooltip title="此 AI 会话有新回复未读">
-                        <span
-                          className="todo-history-dock-dot is-unread"
-                          aria-label="此 AI 会话有新回复未读"
-                        />
-                      </Tooltip>
-                    )}
-                    <div className="todo-history-body">
-                      {editingLabelSessionId === session.sessionId ? (
-                        <div style={{ display: 'flex', gap: 4, marginBottom: 4 }} onClick={(e) => e.stopPropagation()}>
-                          <Input
-                            size="small"
-                            value={editingLabelText}
-                            onChange={(e) => setEditingLabelText(e.target.value)}
-                            onPressEnter={() => {
-                              onUpdateSessionLabel(todo, session, editingLabelText)
-                              setEditingLabelSessionId(null)
-                            }}
-                            onBlur={() => {
-                              onUpdateSessionLabel(todo, session, editingLabelText)
-                              setEditingLabelSessionId(null)
-                            }}
-                            placeholder="输入会话标题..."
-                            autoFocus
-                            style={{ flex: 1, fontSize: 11 }}
-                          />
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: session.label ? 2 : 0 }}>
-                          {session.label && (
-                            <span style={{ fontSize: 12, fontWeight: 600, color: '#333', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={session.label}>
-                              {session.label}
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            className="todo-history-link"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setEditingLabelSessionId(session.sessionId)
-                              setEditingLabelText(session.label || '')
-                            }}
-                            title="编辑标题"
-                            style={{ flexShrink: 0 }}
-                          >
-                            <EditOutlined style={{ fontSize: 10 }} />
-                          </button>
-                        </div>
-                      )}
-                      <div className="todo-history-headline">
-                        <span className="todo-history-tool">{toolDisplayName(session.tool)}</span>
-                        <span className="todo-history-time">{formatSessionTime(session.startedAt || session.completedAt)}</span>
-                        {!nativeSessionId && TERMINAL_AI_STATUSES.has(String(session.status)) && (
-                          <Tooltip title="该会话未正常结束，没有拿到原生 session ID，无法 resume/fork。请在 AI 完成后在终端里按 Ctrl+D 或 /exit 正常退出。">
-                            <Tag color="warning" style={{ marginLeft: 6 }}>未正常结束</Tag>
-                          </Tooltip>
-                        )}
-                        {nativeSessionId && !sessionCwd && (
-                          <Tooltip title="找不到此会话的原始 cwd，命令必须在创建该会话时所处的项目目录下执行，否则会报 'No conversation found'。">
-                            <Tag color="warning" style={{ marginLeft: 6 }}>缺少 cwd</Tag>
-                          </Tooltip>
-                        )}
-                      </div>
-                      {session.localResume?.openedAt && (
-                        <div style={{ marginTop: 4 }}>
-                          <Tag color="blue" style={{ marginInlineEnd: 0 }}>
-                            已本地继续 · {dayjs(session.localResume.openedAt).format('HH:mm')}
-                          </Tag>
-                        </div>
-                      )}
-                    </div>
-                    <div className="todo-history-actions">
-                      {nativeSessionId && (
-                        <>
-                          <button
-                            type="button"
-                            className="todo-history-link"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              navigator.clipboard?.writeText(terminalCommand).then(() => {
-                                message.success('启动命令已复制')
-                              }).catch(() => {
-                                message.error('复制失败')
-                              })
-                            }}
-                            title="复制启动命令"
-                          >
-                            <CopyOutlined />
-                          </button>
-                          <button
-                            type="button"
-                            className="todo-history-link"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              onAiExec(todo, session.tool, session)
-                            }}
-                            title="恢复该会话（重新挂载到 AI 终端）"
-                          >
-                            恢复
-                          </button>
-                          {session.nativeSessionId ? (
-                            <button
-                              type="button"
-                              className="todo-history-link"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                onOpenNativeResume(todo, session)
-                              }}
-                              title="在本地 Terminal 中 resume 当前 AI 会话"
-                            >
-                              本地继续
-                            </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="todo-history-link"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              onRequestFork(todo, session.sessionId)
-                            }}
-                            title="Fork：带摘要继续新对话"
-                          >
-                            Fork
-                          </button>
-                        </>
-                      )}
-                      <Popconfirm
-                        title="删除这条历史会话？"
-                        description="只删除 AgentQuad 中的记录，不影响 Claude/Codex 本地会话。"
-                        onConfirm={() => onDeleteAiSession(todo, session, sessionId)}
-                      >
-                        <button
-                          type="button"
-                          className="todo-history-delete"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          删除
-                        </button>
-                      </Popconfirm>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {!isSubtodo && hasChildren && (
-          <div className="subtodo-group" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              className="subtodo-group-toggle"
-              onClick={() => setChildrenExpanded(v => !v)}
-            >
-              {childrenExpanded ? <DownOutlined /> : <RightOutlined />}
-              <span>子待办 {children.length}</span>
-            </button>
-            {showChildren && (
-              <SortableContext items={children.map(child => todoDndId(child))} strategy={verticalListSortingStrategy}>
-                <div className="subtodo-list">
-                  {children.map(child => (
-                    <SortableTodoCard
-                      key={child.id}
-                      todo={child}
-                      isSubtodo
-                      onClick={onClick}
-                      onToggleDone={onToggleDone}
-                      onAiExec={onAiExec}
-                      onRequestFork={onRequestFork}
-                      onDeleteAiSession={onDeleteAiSession}
-                      onUpdateSessionLabel={onUpdateSessionLabel}
-                      onDelete={onDelete}
-                      onOpenTrae={onOpenTrae}
-                      onOpenTerminal={onOpenTerminal}
-                      onOpenNativeResume={onOpenNativeResume}
-                      onCopyPrompt={onCopyPrompt}
-                      onExport={onExport}
-                      isNarrow={isNarrow}
-                      onRefresh={onRefresh}
-                      highlightTodoId={highlightTodoId}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── 象限 Drop Zone ───
-
-interface QuadrantZoneProps {
-  config: typeof QUADRANT_CONFIG[0]
-  todos: Todo[]
-  childrenByParentId: Record<string, Todo[]>
-  childHitIdsByParentId: Record<string, Set<string>>
-  onCreateSubtodo: (todo: Todo) => void
-  onCardClick: (t: Todo) => void
-  onToggleDone: (t: Todo) => void
-  onAiExec: (todo: Todo, tool: AiTool, session?: Todo['aiSessions'][number]) => void
-  onDeleteAiSession: (todo: Todo, session: Todo['aiSessions'][number], currentSessionId?: string | null) => void
-  onUpdateSessionLabel: (todo: Todo, session: Todo['aiSessions'][number], label: string) => void
-  onDelete: (t: Todo) => void
-  onOpenTrae: (todo: Todo, editor?: 'trae-cn' | 'trae' | 'cursor') => void
-  onOpenTerminal: (todo: Todo) => void
-  onOpenNativeResume: (todo: Todo, session: Todo['aiSessions'][number]) => void
-  onCopyPrompt: (todo: Todo) => void
-  onExport: (todo: Todo) => void
-  style?: React.CSSProperties
-  isNarrow: boolean
-  onRequestFork: (todo: Todo, sessionId: string) => void
-  onRefresh: () => void
-  highlightTodoId?: string | null
-}
-
-function QuadrantZone({ config, todos, childrenByParentId, childHitIdsByParentId, onCreateSubtodo, onCardClick, onToggleDone, onAiExec, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, style, isNarrow, onRequestFork, onRefresh, highlightTodoId }: QuadrantZoneProps) {
-  const { setNodeRef, isOver } = useDroppable({ id: `quadrant-${config.q}` })
-
-  const header = (
-    <div className="todo-quadrant-header">
-      <span className={`priority-tag priority-tag-${config.priority}`}>{config.priority}</span>
-      <span className="quadrant-title">{config.label}</span>
-      <span className={`count-badge ${config.bgBadge}`}>{todos.length}</span>
-    </div>
-  )
-
-  const content = (
-    <SortableContext items={todos.map(t => todoDndId(t))} strategy={verticalListSortingStrategy}>
-      <div ref={setNodeRef} className="todo-quadrant-list" style={{ minHeight: 60 }}>
-        {todos.map((t) => (
-          <SortableTodoCard
-            key={t.id}
-            todo={t}
-            children={childrenByParentId[t.id] || []}
-            childHitIds={childHitIdsByParentId[t.id]}
-            onCreateSubtodo={onCreateSubtodo}
-            onClick={onCardClick}
-            onToggleDone={onToggleDone}
-            onAiExec={onAiExec}
-            onRequestFork={onRequestFork}
-            onDeleteAiSession={onDeleteAiSession}
-            onUpdateSessionLabel={onUpdateSessionLabel}
-            onDelete={onDelete}
-            onOpenTrae={onOpenTrae}
-            onOpenTerminal={onOpenTerminal}
-            onOpenNativeResume={onOpenNativeResume}
-            onCopyPrompt={onCopyPrompt}
-            onExport={onExport}
-            isNarrow={isNarrow}
-            onRefresh={onRefresh}
-            highlightTodoId={highlightTodoId}
-          />
-        ))}
-        {todos.length === 0 && (
-          <div className="todo-drop-placeholder">拖拽任务到此处</div>
-        )}
-      </div>
-    </SortableContext>
-  )
-
-  return (
-    <div className={`todo-quadrant ${isOver ? 'drag-over' : ''}`} style={style}>
-      {header}
-      {content}
-    </div>
-  )
-}
 
 // ─── 主页面 ───
 
