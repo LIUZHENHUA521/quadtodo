@@ -198,6 +198,18 @@
     padding: 4px 6px;
     font-size: 13px;
   }
+
+  /* ── SessionFocus（Focus Mode）overlay：移动端无 TopbarDispatch ── */
+  .session-focus {
+    inset: 0; /* 全屏，不需要留 TopbarDispatch 的空间 */
+  }
+  .focus-task-id {
+    display: none; /* 收缩水平空间，隐藏 ID 显示 */
+  }
+  .focus-subbar {
+    padding: 0 8px; /* 紧凑水平内边距 */
+    gap: 6px; /* 减少元素间距 */
+  }
 }
 
 /* ── AI 终端方向键浮层 ──
