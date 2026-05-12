@@ -194,6 +194,8 @@ body {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .todo-card-meta .overdue {
@@ -478,12 +480,20 @@ body {
   white-space: nowrap;
 }
 
+.todo-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
 .todo-card-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
   justify-content: flex-end;
-  padding-top: 2px;
+  flex-shrink: 0;
 }
 
 .todo-history-box {
@@ -664,6 +674,15 @@ body {
    加上 body 最小内容（Claude Code + 时间）≈155px、title 块 ≈100px、padding/gap ≈30px，
    row 布局至少要 ~535px 才能不裁切；为容纳后续可能继续变宽的 actions 留充足余量 */
 @container todo-card-shell (max-width: 720px) {
+  .todo-card-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .todo-card-toolbar {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
   .todo-history-box {
     flex-direction: column;
     /* 切换到 column 后，主轴变成纵向、cross-axis 变成横向；
@@ -703,13 +722,6 @@ body {
 
 .todo-primary-action {
   border-radius: 999px;
-}
-
-.todo-toolbar-tag {
-  margin: 0;
-  border-radius: 999px;
-  padding-inline: 8px;
-  font-size: 11px;
 }
 
 .todo-danger-action {

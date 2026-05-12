@@ -47,8 +47,11 @@
     "test:watch": "vitest",
     "telegram:setup-menu": "node scripts/setup-telegram-commands.js",
     "telegram:clear-menu": "node scripts/setup-telegram-commands.js --clear",
+    "setup": "npm install && npm --prefix web install",
     "build": "npm run ensure-web-deps && npm run build:web",
     "build:web": "cd web && npm run build",
+    "build:all": "npm run setup && npm run build",
+    "clean": "rm -rf node_modules web/node_modules dist-web web/dist",
     "ensure-web-deps": "node scripts/ensure-web-deps.js",
     "prepack": "npm run ensure-web-deps && npm run build:web",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true"

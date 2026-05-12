@@ -3,6 +3,7 @@ import express from 'express'
 import request from 'supertest'
 import { createTelegramConfigRouter } from '../src/routes/telegram-config.js'
 import { createProbeRegistry } from '../src/telegram-config-service.js'
+import * as telegramBot from '../src/telegram-bot.js'
 
 function makeApp({ getConfig, getTelegramBot, probeRegistry = null, fetchFn }) {
   const app = express()
@@ -108,6 +109,48 @@ describe('POST /api/config/telegram/test', () => {
     })
     const r = await request(app).post('/api/config/telegram/test').send({})
     expect(r.body).toMatchObject({ ok: false, errorReason: '401 Unauthorized' })
+  })
+
+  // 回归：之前默认走 Node 全局 fetch，导致国内/受限网络环境下用户在设置页点测试
+  // 一直看到 "fetch failed"。getProxyFetch() 会读 HTTPS_PROXY，跟真实 bot 一致。
+  it('uses proxy-aware fetch (telegramBot.getProxyFetch) when no fetchFn is injected', async () => {
+    const proxyFetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true, result: { id: 99, username: 'proxyBot', first_name: 'Proxy' } }),
+    }))
+    const spy = vi.spyOn(telegramBot, 'getProxyFetch').mockResolvedValue(proxyFetch)
+    try {
+      const app = makeApp({
+        getConfig: () => ({ telegram: { botToken: 'SAVED' } }),
+        getTelegramBot: () => null,
+        // 注意：故意不传 fetchFn
+      })
+      const r = await request(app).post('/api/config/telegram/test').send({})
+      expect(r.body).toMatchObject({ ok: true, botId: 99, botUsername: 'proxyBot', source: 'agentquad' })
+      expect(spy).toHaveBeenCalled()
+      expect(proxyFetch).toHaveBeenCalledTimes(1)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  // 回归：Node fetch 失败时 e.message 只有光秃秃的 "fetch failed"，
+  // 真正有用的网络原因藏在 e.cause.message。前端不能光看 "fetch failed" 没法排查。
+  it('surfaces underlying cause when fetch throws TypeError: fetch failed', async () => {
+    const fetchFn = vi.fn(async () => {
+      const err = new TypeError('fetch failed')
+      err.cause = new Error('Connect Timeout Error (attempted addresses: 1.2.3.4:443, timeout: 10000ms)')
+      throw err
+    })
+    const app = makeApp({
+      getConfig: () => ({ telegram: { botToken: 'X' } }),
+      getTelegramBot: () => null,
+      fetchFn,
+    })
+    const r = await request(app).post('/api/config/telegram/test').send({})
+    expect(r.body.ok).toBe(false)
+    expect(r.body.errorReason).toContain('fetch failed')
+    expect(r.body.errorReason).toContain('Connect Timeout')
   })
 })
 

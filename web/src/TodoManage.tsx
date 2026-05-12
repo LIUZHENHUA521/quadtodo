@@ -292,33 +292,35 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
               <div className="todo-card-title">{todo.title}</div>
               <span className={`todo-status-chip ${statusChip.className}`}>{statusChip.text}</span>
             </div>
-            <div className="todo-card-meta">
-              {todo.brainstorm && (
-                <span className="todo-meta-pill" style={{ background: '#fff7e6', color: '#d46b08', border: '1px solid #ffd591' }}>
-                  脑爆
-                </span>
-              )}
-              {todo.workDir && (
-                <span className="todo-meta-pill" title={todo.workDir}>
-                  目录 · {todo.workDir.split('/').filter(Boolean).slice(-1)[0] || todo.workDir}
-                </span>
-              )}
-              {todo.dueDate && (
-                <span className={`todo-meta-pill ${isOverdue(todo.dueDate) && todo.status !== 'done' ? 'overdue' : ''}`}>
-                  <ClockCircleOutlined style={{ marginRight: 4 }} />
-                  {formatDate(todo.dueDate)}
-                </span>
-              )}
-              {hasHistory && (
-                <span className="todo-meta-pill">
-                  会话 {historySessions.length}
-                </span>
-              )}
-            </div>
           </div>
         </div>
 
-        <div className="todo-card-toolbar" onClick={(e) => e.stopPropagation()}>
+        <div className="todo-card-footer">
+          <div className="todo-card-meta">
+            {todo.brainstorm && (
+              <span className="todo-meta-pill" style={{ background: '#fff7e6', color: '#d46b08', border: '1px solid #ffd591' }}>
+                脑爆
+              </span>
+            )}
+            {todo.workDir && (
+              <span className="todo-meta-pill" title={todo.workDir}>
+                目录 · {todo.workDir.split('/').filter(Boolean).slice(-1)[0] || todo.workDir}
+              </span>
+            )}
+            {todo.dueDate && (
+              <span className={`todo-meta-pill ${isOverdue(todo.dueDate) && todo.status !== 'done' ? 'overdue' : ''}`}>
+                <ClockCircleOutlined style={{ marginRight: 4 }} />
+                {formatDate(todo.dueDate)}
+              </span>
+            )}
+            {hasHistory && (
+              <span className="todo-meta-pill">
+                会话 {historySessions.length}
+              </span>
+            )}
+          </div>
+
+          <div className="todo-card-toolbar" onClick={(e) => e.stopPropagation()}>
           <Tooltip title="复制标题和描述">
             <Button size="small" icon={<CopyOutlined />} onClick={() => onCopyPrompt(todo)} className="todo-primary-action" />
           </Tooltip>
@@ -364,11 +366,6 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
           >
             <Button size="small" icon={<PlayCircleOutlined />} className="todo-primary-action">AI 终端</Button>
           </Dropdown>
-          {(todo.status === 'ai_running' || todo.status === 'ai_pending' || todo.status === 'ai_done') && (
-            <Tag className="todo-toolbar-tag" color={todo.status === 'ai_pending' ? 'error' : todo.status === 'ai_done' ? 'warning' : 'processing'}>
-              {todo.status === 'ai_pending' ? '待交互' : todo.status === 'ai_done' ? '待验收' : '运行中'}
-            </Tag>
-          )}
           {!isSubtodo && onCreateSubtodo && (
             <Tooltip title="添加子待办">
               <Button size="small" icon={<PlusOutlined />} onClick={() => onCreateSubtodo(todo)} className="todo-primary-action" />
@@ -380,6 +377,7 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
           <Popconfirm title="确认删除？" onConfirm={() => onDelete(todo)}>
             <Button size="small" danger icon={<DeleteOutlined />} onClick={(e) => e.stopPropagation()} className="todo-danger-action" />
           </Popconfirm>
+          </div>
         </div>
 
         {hasHistory && (

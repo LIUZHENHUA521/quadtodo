@@ -41,7 +41,7 @@ function readProxyUrl() {
  * 这样 Clash / 代理重启不再需要重启 AgentQuad。
  */
 const dispatcherCache = new Map()
-async function getProxyFetch() {
+export async function getProxyFetch() {
   const proxyUrl = readProxyUrl()
   const cached = dispatcherCache.get(proxyUrl)
   if (cached) return cached
@@ -870,5 +870,6 @@ export function readBotToken(getConfig) {
 
 export const __test__ = { readJsonFile, writeJsonFile }
 
+// 旧别名，给老测试用；新代码请直接用 getProxyFetch。
 export async function __getProxyFetch() { return getProxyFetch() }
 export function __resetProxyFetchCache() { dispatcherCache.clear() }

@@ -55,12 +55,16 @@ agentquad doctor
 
 ```bash
 cd agentquad
-npm install                 # 后端依赖 + node-pty 原生编译
-cd web && npm install       # 前端依赖
-cd ..
-npm run build               # 前端构建，产物在 dist-web/
-cd ..
+npm run build:all           # 一键装齐两层依赖 + 构建前端，产物在 dist-web/
 npm link                    # 全局链接 `agentquad` 命令
+```
+
+更细的脚本（按需用）：
+
+```bash
+npm run setup               # 只装依赖：根目录 + web/
+npm run build               # 只 build 前端（前提是 web/node_modules 已装好）
+npm run clean               # 删除 node_modules / dist-web / web/dist
 ```
 
 ## 快速开始
@@ -125,6 +129,10 @@ agentquad start
 | `agentquad config get <key>` | 读配置项 |
 | `agentquad config set <key> <value>` | 写配置项 |
 | `agentquad config list` | 打印整份配置 |
+| `agentquad hook status` | 查 Claude Code 里 AgentQuad hook 装没装 |
+| `agentquad hook install` | 安装 hook 到 `~/.claude/settings.json`（一般 `start` 会自动装） |
+| `agentquad hook uninstall [--no-marker]` | 删 AgentQuad 装的 hook；默认写 marker 让下次 `start` 不偷偷装回 |
+| `agentquad hook bootstrap` | 「删过又想恢复」：忽略 marker 强装回去 |
 
 ## 配置
 

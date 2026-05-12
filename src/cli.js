@@ -719,106 +719,135 @@ mcpCmd.command('status')
     }
   })
 
-// ─── openclaw 子命令组：hook 安装 / 卸载 / 状态 ─────────────────
+// ─── hook 操作共享 action（被顶层 `hook` 命令组和老的 `openclaw` 子命令复用）─────
+async function actInstallHook() {
+  const { installHooks } = await import('./openclaw-hook-installer.js')
+  try {
+    const out = installHooks()
+    console.log(`✓ installed ${out.added.join(', ')} hooks`)
+    console.log(`  settings: ${out.settingsPath}`)
+    if (out.backup) console.log(`  backup:   ${out.backup}`)
+    if (out.markerCleared) console.log(`  uninstall marker cleared`)
+    console.log('')
+    console.log('完成。新的 PTY 会话启动后会自动通过 hook 推送状态到微信。')
+    console.log('注意：现存的 PTY 会话（重启前已经在跑的）env 已固定，不受影响；')
+    console.log('     新 agentquad.start_ai_session 启动的 PTY 才会带 hook env。')
+  } catch (e) {
+    console.error(`install-hook failed: ${e.message}`)
+    if (e.code === 'malformed_settings') {
+      console.error(`  你的 ~/.claude/settings.json JSON 不合法，先修复再试。`)
+    }
+    if (e.code === 'hook_script_missing') {
+      console.error(`  hook 脚本缺失。跑 'agentquad hook bootstrap' 一键部署 + 安装。`)
+    }
+    process.exit(1)
+  }
+}
+
+async function actBootstrapHook() {
+  const { bootstrapHooks } = await import('./openclaw-hook-installer.js')
+  try {
+    const r = bootstrapHooks({ respectUninstallMarker: false })
+    if (r.skipped) {
+      if (r.reason === 'malformed_settings') {
+        console.error(`✗ bootstrap skipped: ${r.settingsPath} JSON 不合法，请先修复`)
+        process.exit(1)
+      }
+      console.log(`= bootstrap skipped: ${r.reason}`)
+      return
+    }
+    const sr = r.scriptResult
+    if (sr.action === 'installed') {
+      console.log(`✓ hook script installed (v${sr.version}) → ${sr.scriptPath}`)
+    } else if (sr.action === 'upgraded') {
+      console.log(`✓ hook script upgraded v${sr.previousVersion ?? 0} → v${sr.version}`)
+      if (sr.backup) console.log(`  backup: ${sr.backup}`)
+    } else {
+      console.log(`= hook script up-to-date (v${sr.version}) → ${sr.scriptPath}`)
+    }
+    if (r.alreadyInstalled) {
+      console.log(`= hooks already installed in ~/.claude/settings.json`)
+    } else if (r.hookResult) {
+      console.log(`✓ hooks installed: ${r.hookResult.added.join(', ')}`)
+      if (r.hookResult.backup) console.log(`  settings backup: ${r.hookResult.backup}`)
+    }
+    if (r.markerCleared) console.log(`  uninstall marker cleared`)
+  } catch (e) {
+    console.error(`bootstrap failed: ${e.message}`)
+    process.exit(1)
+  }
+}
+
+async function actUninstallHook(opts) {
+  const { uninstallHooks } = await import('./openclaw-hook-installer.js')
+  try {
+    const out = uninstallHooks({ writeUninstallMarker: opts.marker !== false })
+    if (out.removed.length === 0) {
+      console.log('= no AgentQuad hooks installed; nothing to remove')
+    } else {
+      console.log(`✓ removed AgentQuad hooks from ${out.settingsPath}`)
+      for (const r of out.removed) console.log(`   ${r.event}: -${r.removedCount}`)
+      if (out.backup) console.log(`  backup: ${out.backup}`)
+    }
+    if (out.markerWritten) {
+      console.log(`  marker written → 下次 'agentquad start' 不会自动装回；想恢复跑 'agentquad hook bootstrap'`)
+    }
+  } catch (e) {
+    console.error(`uninstall-hook failed: ${e.message}`)
+    process.exit(1)
+  }
+}
+
+async function actHookStatus() {
+  const { inspectHooks } = await import('./openclaw-hook-installer.js')
+  const r = inspectHooks()
+  const icon = r.installed ? '✓' : '✗'
+  console.log(`${icon} hooks installed: ${r.installed}`)
+  console.log(`  events: ${r.eventsInstalled.length ? r.eventsInstalled.join(', ') : '(none)'}`)
+  console.log(`  settings: ${r.settingsPath}`)
+  console.log(`  hook script: ${r.hookScriptPath} (${r.scriptExists ? 'exists' : 'MISSING'})`)
+  if (r.error) console.log(`  ⚠️  ${r.error}`)
+}
+
+// ─── 顶层 hook 子命令组（首选入口；发现性比埋在 openclaw 下好）──────
+const hookCmd = program.command('hook').description('管理 AgentQuad 在 ~/.claude/settings.json 里安装的 hook（装/删/查/恢复）')
+
+hookCmd.command('install')
+  .description('把 AgentQuad 的 3 个 hook（Stop/Notification/SessionEnd）合并写入 ~/.claude/settings.json')
+  .action(actInstallHook)
+
+hookCmd.command('uninstall')
+  .description('从 ~/.claude/settings.json 移除 AgentQuad 加的 hook entry，保留你其他 hook（默认写 .uninstalled marker，下次 start 不再自动装回）')
+  .option('--no-marker', '不写 .uninstalled marker（下次 agentquad start 会自动装回）')
+  .action(actUninstallHook)
+
+hookCmd.command('status')
+  .description('查看 AgentQuad hook 是否安装到 ~/.claude/settings.json')
+  .action(actHookStatus)
+
+hookCmd.command('bootstrap')
+  .description('一键部署 hook script + 安装 hooks（强制忽略 .uninstalled marker，用于"删过又想恢复"场景）')
+  .action(actBootstrapHook)
+
+// ─── openclaw 子命令组：保留旧路径以向后兼容；hook 操作建议改用 `agentquad hook *` ───
 const openclawCmd = program.command('openclaw').description('OpenClaw bridge: install/uninstall Claude Code hooks for proactive WeChat push')
 
 openclawCmd.command('install-hook')
-  .description('把 AgentQuad 的 3 个 hook（Stop/Notification/SessionEnd）合并写入 ~/.claude/settings.json')
-  .action(async () => {
-    const { installHooks } = await import('./openclaw-hook-installer.js')
-    try {
-      const out = installHooks()
-      console.log(`✓ installed ${out.added.join(', ')} hooks`)
-      console.log(`  settings: ${out.settingsPath}`)
-      if (out.backup) console.log(`  backup:   ${out.backup}`)
-      if (out.markerCleared) console.log(`  uninstall marker cleared`)
-      console.log('')
-      console.log('完成。新的 PTY 会话启动后会自动通过 hook 推送状态到微信。')
-      console.log('注意：现存的 PTY 会话（重启前已经在跑的）env 已固定，不受影响；')
-      console.log('     新 agentquad.start_ai_session 启动的 PTY 才会带 hook env。')
-    } catch (e) {
-      console.error(`install-hook failed: ${e.message}`)
-      if (e.code === 'malformed_settings') {
-        console.error(`  你的 ~/.claude/settings.json JSON 不合法，先修复再试。`)
-      }
-      if (e.code === 'hook_script_missing') {
-        console.error(`  hook 脚本缺失。跑 'agentquad openclaw bootstrap' 一键部署 + 安装。`)
-      }
-      process.exit(1)
-    }
-  })
+  .description('alias of `agentquad hook install`')
+  .action(actInstallHook)
 
 openclawCmd.command('bootstrap')
-  .description('一键部署 hook script + 安装 hooks（启动期 auto-install 同款逻辑，会清掉 uninstall marker）')
-  .action(async () => {
-    const { bootstrapHooks } = await import('./openclaw-hook-installer.js')
-    try {
-      const r = bootstrapHooks({ respectUninstallMarker: false })
-      if (r.skipped) {
-        if (r.reason === 'malformed_settings') {
-          console.error(`✗ bootstrap skipped: ${r.settingsPath} JSON 不合法，请先修复`)
-          process.exit(1)
-        }
-        console.log(`= bootstrap skipped: ${r.reason}`)
-        return
-      }
-      const sr = r.scriptResult
-      if (sr.action === 'installed') {
-        console.log(`✓ hook script installed (v${sr.version}) → ${sr.scriptPath}`)
-      } else if (sr.action === 'upgraded') {
-        console.log(`✓ hook script upgraded v${sr.previousVersion ?? 0} → v${sr.version}`)
-        if (sr.backup) console.log(`  backup: ${sr.backup}`)
-      } else {
-        console.log(`= hook script up-to-date (v${sr.version}) → ${sr.scriptPath}`)
-      }
-      if (r.alreadyInstalled) {
-        console.log(`= hooks already installed in ~/.claude/settings.json`)
-      } else if (r.hookResult) {
-        console.log(`✓ hooks installed: ${r.hookResult.added.join(', ')}`)
-        if (r.hookResult.backup) console.log(`  settings backup: ${r.hookResult.backup}`)
-      }
-      if (r.markerCleared) console.log(`  uninstall marker cleared`)
-    } catch (e) {
-      console.error(`bootstrap failed: ${e.message}`)
-      process.exit(1)
-    }
-  })
+  .description('alias of `agentquad hook bootstrap`')
+  .action(actBootstrapHook)
 
 openclawCmd.command('uninstall-hook')
-  .description('从 ~/.claude/settings.json 移除 AgentQuad 加的 hook entry，保留你其他 hook（默认会写 .uninstalled marker，下次 start 不再自动装回）')
+  .description('alias of `agentquad hook uninstall`')
   .option('--no-marker', '不写 .uninstalled marker（下次 agentquad start 会自动装回）')
-  .action(async (opts) => {
-    const { uninstallHooks } = await import('./openclaw-hook-installer.js')
-    try {
-      const out = uninstallHooks({ writeUninstallMarker: opts.marker !== false })
-      if (out.removed.length === 0) {
-        console.log('= no AgentQuad hooks installed; nothing to remove')
-      } else {
-        console.log(`✓ removed AgentQuad hooks from ${out.settingsPath}`)
-        for (const r of out.removed) console.log(`   ${r.event}: -${r.removedCount}`)
-        if (out.backup) console.log(`  backup: ${out.backup}`)
-      }
-      if (out.markerWritten) {
-        console.log(`  marker written → 下次 'agentquad start' 不会自动装回；想恢复跑 'agentquad openclaw bootstrap'`)
-      }
-    } catch (e) {
-      console.error(`uninstall-hook failed: ${e.message}`)
-      process.exit(1)
-    }
-  })
+  .action(actUninstallHook)
 
 openclawCmd.command('hook-status')
-  .description('查看 AgentQuad hook 是否安装到 ~/.claude/settings.json')
-  .action(async () => {
-    const { inspectHooks } = await import('./openclaw-hook-installer.js')
-    const r = inspectHooks()
-    const icon = r.installed ? '✓' : '✗'
-    console.log(`${icon} hooks installed: ${r.installed}`)
-    console.log(`  events: ${r.eventsInstalled.length ? r.eventsInstalled.join(', ') : '(none)'}`)
-    console.log(`  settings: ${r.settingsPath}`)
-    console.log(`  hook script: ${r.hookScriptPath} (${r.scriptExists ? 'exists' : 'MISSING'})`)
-    if (r.error) console.log(`  ⚠️  ${r.error}`)
-  })
+  .description('alias of `agentquad hook status`')
+  .action(actHookStatus)
 
 openclawCmd.command('inbound')
   .description('OpenClaw skill 单入口：转发一条用户消息到 AgentQuad wizard，stdout 是给用户的回复')

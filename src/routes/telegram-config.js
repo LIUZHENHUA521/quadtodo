@@ -11,7 +11,9 @@
  */
 import { Router } from 'express'
 import { isMaskedToken } from '../telegram-config-service.js'
-import { readBotTokenWithSource } from '../telegram-bot.js'
+import * as telegramBot from '../telegram-bot.js'
+
+const { readBotTokenWithSource } = telegramBot
 
 const TELEGRAM_API = 'https://api.telegram.org'
 
@@ -26,9 +28,25 @@ async function getMeWithToken(token, fetchFn) {
   return data.result
 }
 
-export function createTelegramConfigRouter({ getConfig, getTelegramBot, probeRegistry, fetchFn = fetch }) {
+// Node 的 undici fetch 失败时 e.message 只有光秃秃的 "fetch failed"，真正的网络
+// 原因藏在 e.cause.message。前端只展示 e.message 没法排查（用户截图就是这个症状）。
+function describeFetchError(e) {
+  const base = e?.message || 'unknown'
+  const causeMsg = e?.cause?.message
+  if (causeMsg && causeMsg !== base) return `${base}: ${causeMsg}`
+  return base
+}
+
+export function createTelegramConfigRouter({ getConfig, getTelegramBot, probeRegistry, fetchFn }) {
   if (typeof getConfig !== 'function') throw new Error('getConfig required')
   if (typeof getTelegramBot !== 'function') throw new Error('getTelegramBot required')
+
+  // 没注入 fetchFn 时按需取 proxy-aware fetcher，跟 telegram-bot.js 一致；
+  // 这样设置页"测试"按钮和 bot 长轮询走同一条出口，不会一个能连一个 fetch failed。
+  // 每次请求都 resolve 一遍：让 HTTPS_PROXY 改了之后不用重启 AgentQuad。
+  const resolveFetch = fetchFn
+    ? async () => fetchFn
+    : () => telegramBot.getProxyFetch()
 
   const router = Router()
 
@@ -37,7 +55,8 @@ export function createTelegramConfigRouter({ getConfig, getTelegramBot, probeReg
     const inputToken = typeof req.body?.botToken === 'string' ? req.body.botToken.trim() : ''
     if (inputToken && !isMaskedToken(inputToken)) {
       try {
-        const me = await getMeWithToken(inputToken, fetchFn)
+        const f = await resolveFetch()
+        const me = await getMeWithToken(inputToken, f)
         return res.json({
           ok: true,
           botId: me.id,
@@ -46,7 +65,7 @@ export function createTelegramConfigRouter({ getConfig, getTelegramBot, probeReg
           source: 'input',
         })
       } catch (e) {
-        return res.json({ ok: false, errorReason: e.message || 'unknown', source: 'input' })
+        return res.json({ ok: false, errorReason: describeFetchError(e), source: 'input' })
       }
     }
 
@@ -55,7 +74,8 @@ export function createTelegramConfigRouter({ getConfig, getTelegramBot, probeReg
       return res.json({ ok: false, errorReason: 'token_missing', source })
     }
     try {
-      const me = await getMeWithToken(token, fetchFn)
+      const f = await resolveFetch()
+      const me = await getMeWithToken(token, f)
       res.json({
         ok: true,
         botId: me.id,
@@ -64,7 +84,7 @@ export function createTelegramConfigRouter({ getConfig, getTelegramBot, probeReg
         source,
       })
     } catch (e) {
-      res.json({ ok: false, errorReason: e.message || 'unknown', source })
+      res.json({ ok: false, errorReason: describeFetchError(e), source })
     }
   })
 
