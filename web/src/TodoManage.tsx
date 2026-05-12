@@ -94,11 +94,14 @@ function formatSessionTime(ts?: number | null) {
 }
 
 // ─── Description parser: split text into text/image segments ───
-// Matches "@/abs/path.{png,jpg,jpeg,gif,webp}" where path starts with '/' and
-// ends at whitespace, end-of-string, or a CJK/ASCII punctuation. The matched
-// path is removed from the surrounding text so the chip-style preview replaces
-// the raw string in the rendered card.
-const DESC_IMAGE_RE = /@(\/[^\s@，。、；;]+?\.(?:png|jpe?g|gif|webp))(?=\s|$|[，。、；;])/gi
+// Matches "@/abs/path.{png,jpg,jpeg,gif,webp}". The extension must NOT be
+// followed by another word character (so .pngabc doesn't get swallowed), but
+// any other character is treated as a terminator — whitespace, CJK ideographs,
+// ASCII punctuation, end of string, or another @ starting the next path. This
+// keeps the parser robust for back-to-back paths and Chinese-flanked paths
+// alike. The matched path is removed from surrounding text so the chip-style
+// preview replaces the raw string in the rendered card.
+const DESC_IMAGE_RE = /@(\/[^\s@]+?\.(?:png|jpe?g|gif|webp))(?![A-Za-z0-9_])/gi
 
 export type DescSegment =
   | { type: 'text'; value: string }
