@@ -12,7 +12,8 @@ import { CanvasAddon } from '@xterm/addon-canvas'
 import '@xterm/xterm/css/xterm.css'
 import { getTerminalWsUrl, startAiExec, stopAiExec, openTraeCN, TodoStatus, ResumeSessionInput, EditorKind, ApiError } from './api'
 import { useTerminalTheme } from './hooks/useTerminalTheme'
-import { PRESET_LABELS, PRESET_ORDER, TerminalPresetName, TERMINAL_PRESETS, deriveChrome } from './terminalThemes'
+import { PRESET_LABELS, PRESET_ORDER, TerminalPresetName, TERMINAL_PRESETS, deriveChrome, getTokenDrivenTheme } from './terminalThemes'
+import { useTheme } from './design/ThemeProvider'
 import { useTerminalDockStore } from './store/terminalDockStore'
 import { decideNearBottomAction, NEAR_BOTTOM_LINES } from './AiTerminalMini.scrollSnap'
 import { useUnreadStore } from './store/unreadStore'
@@ -112,6 +113,7 @@ async function waitTerminalReady(container: HTMLDivElement): Promise<void> {
 export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeTarget, onSessionRecovered, onSessionSwitch, onClose, onDone, onStatusChange, fillHeight }: Props) {
   void onClose
   const { message } = useAppMessages()
+  const { mode } = useTheme()
   const { theme, preset, override, customPresets, setPreset, setOverride, resetOverride, saveCustomPreset, deleteCustomPreset } = useTerminalTheme()
   const themeRef = useRef(theme)
   useEffect(() => { themeRef.current = theme }, [theme])
@@ -998,6 +1000,19 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     const term = termRef.current
     if (term) term.options.theme = theme
   }, [theme])
+
+  // Re-apply token-driven xterm theme when design ThemeProvider mode flips
+  // (light <-> dark). xterm renders to canvas/WebGL, so CSS variables don't
+  // reach it — we MUST swap options.theme and force a refresh of the
+  // scrollback to repaint with the new colors.
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    term.options.theme = getTokenDrivenTheme(mode)
+    try {
+      term.refresh(0, term.rows - 1)
+    } catch { /* ignore: term may be torn down concurrently */ }
+  }, [mode])
 
   useEffect(() => {
     refitAttemptsRef.current = 0

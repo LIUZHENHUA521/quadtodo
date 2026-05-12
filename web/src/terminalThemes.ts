@@ -1,4 +1,5 @@
 import type { ITheme } from '@xterm/xterm'
+import { tokensByMode, type ThemeMode } from './design/tokens'
 
 export type TerminalPresetName =
   | 'default'
@@ -319,4 +320,22 @@ export function migratePreset(raw: string): { value: string; migrated: boolean }
   const mapped = LEGACY_PRESET_MIGRATION[raw]
   if (mapped) return { value: mapped, migrated: true }
   return { value: raw, migrated: false }
+}
+
+/**
+ * Build an xterm ITheme from active design tokens.
+ * Spread base preset first so its ANSI 16-color palette (ansiRed, etc) is preserved.
+ * Then override surface / foreground / cursor / selection from design tokens.
+ */
+export function getTokenDrivenTheme(mode: ThemeMode): ITheme {
+  const t = tokensByMode[mode]
+  return {
+    ...TERMINAL_PRESETS['default'],
+    background: t.surface[0],
+    foreground: t.text.primary,
+    cursor: t.accent.electric,
+    cursorAccent: t.surface[0],
+    selectionBackground: t.accent.electricSoft,
+    selectionForeground: t.text.primary,
+  }
 }
