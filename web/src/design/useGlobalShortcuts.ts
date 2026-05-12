@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useDispatchStore } from '../store/dispatchStore'
+import { useFocusStore } from '../store/focusStore'
 
 /**
  * Global keyboard shortcuts. MUST be mounted exactly once (call from main.tsx ThemedApp).
@@ -32,6 +33,12 @@ export function useGlobalShortcuts() {
       }
 
       if (e.key === 'Escape' && !isTypingInForm) {
+        // Priority: focus → palette → drawerStack handles drawers separately (their own listener)
+        const focusOpen = useFocusStore.getState().focusedTodoId !== null
+        if (focusOpen) {
+          useFocusStore.getState().clearFocus()
+          return
+        }
         closePalette()
       }
     }
