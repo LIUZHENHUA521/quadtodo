@@ -503,17 +503,20 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                         </div>
                       )}
                     </div>
-                    <div className="todo-history-actions" onClick={(e) => e.stopPropagation()}>
+                    <div className="todo-history-actions">
                       {nativeSessionId && (
                         <>
                           <button
                             type="button"
                             className="todo-history-link"
-                            onClick={() => navigator.clipboard?.writeText(terminalCommand).then(() => {
-                              message.success('启动命令已复制')
-                            }).catch(() => {
-                              message.error('复制失败')
-                            })}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              navigator.clipboard?.writeText(terminalCommand).then(() => {
+                                message.success('启动命令已复制')
+                              }).catch(() => {
+                                message.error('复制失败')
+                              })
+                            }}
                             title="复制启动命令"
                           >
                             <CopyOutlined />
@@ -521,7 +524,8 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                           <button
                             type="button"
                             className="todo-history-link"
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation()
                               if (isOpenInDock) {
                                 focusSessionInDock(session.sessionId)
                               } else {
@@ -536,7 +540,10 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                             <button
                               type="button"
                               className="todo-history-link"
-                              onClick={() => onOpenNativeResume(todo, session)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onOpenNativeResume(todo, session)
+                              }}
                               title="在本地 Terminal 中 resume 当前 AI 会话"
                             >
                               本地继续
@@ -545,7 +552,10 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                           <button
                             type="button"
                             className="todo-history-link"
-                            onClick={() => onRequestFork(todo, session.sessionId)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onRequestFork(todo, session.sessionId)
+                            }}
                             title="Fork：带摘要继续新对话"
                           >
                             Fork
@@ -560,6 +570,7 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
                         <button
                           type="button"
                           className="todo-history-delete"
+                          onClick={(e) => e.stopPropagation()}
                         >
                           删除
                         </button>
