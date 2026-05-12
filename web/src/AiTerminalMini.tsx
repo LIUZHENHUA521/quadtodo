@@ -4,7 +4,7 @@
 
 import React, { useEffect, useMemo, useRef, useCallback, useState } from 'react'
 import { Button, Tooltip, Tag, Dropdown, Modal, ColorPicker, Input, Divider, message } from 'antd'
-import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, CloseOutlined, VerticalAlignBottomOutlined, LockOutlined, UnlockOutlined, BgColorsOutlined, DeleteOutlined, UpOutlined, LeftOutlined, RightOutlined, DragOutlined } from '@ant-design/icons'
+import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, VerticalAlignBottomOutlined, LockOutlined, UnlockOutlined, BgColorsOutlined, DeleteOutlined, UpOutlined, LeftOutlined, RightOutlined, DragOutlined } from '@ant-design/icons'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { CanvasAddon } from '@xterm/addon-canvas'
@@ -1427,13 +1427,6 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
             style={{ color: '#888', fontSize: 12, width: 20, height: 20, minWidth: 20 }}
             onClick={toggleFullscreen}
-          />
-        </Tooltip>
-        <Tooltip title="关闭终端">
-          <Button type="text" size="small"
-            icon={<CloseOutlined />}
-            style={{ color: '#888', fontSize: 12, width: 20, height: 20, minWidth: 20 }}
-            onClick={onClose}
           />
         </Tooltip>
       </div>
