@@ -1,0 +1,10 @@
+.activity-sparkline {
+  color: var(--accent-electric);
+  display: inline-block;
+  vertical-align: middle;
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.activity-sparkline.is-idle {
+  color: var(--text-disabled);
+  opacity: 0.4;
+}
