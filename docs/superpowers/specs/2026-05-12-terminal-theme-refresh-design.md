@@ -40,7 +40,7 @@ tokyo-night-storm
 | foreground | `#e4e6f1` |
 | cursor | `#569cd6` |
 | cursorAccent | `#1a1a2e` |
-| selectionBackground | `#2d2f55` |
+| selectionBackground | `#264f78` |
 | selectionForeground | `#ffffff` |
 | black | `#2a2a44` |
 | red | `#f06292` |
@@ -148,7 +148,7 @@ tokyo-night-storm
 |---|---|---|
 | background | `#eff1f5` | Base |
 | foreground | `#4c4f69` | Text |
-| cursor | `#dc8a78` | Rosewater |
+| cursor | `#5c5f77` | Subtext1（覆盖官方 Rosewater，因官方值对 Latte bg 对比度 < 3:1，不满足验收 #3） |
 | cursorAccent | `#eff1f5` | Base |
 | selectionBackground | `#acb0be` | Surface2 |
 | selectionForeground | `#4c4f69` | Text |
