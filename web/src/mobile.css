@@ -278,3 +278,16 @@
     }
   }
 }
+
+/* ─── Todo detail drawer · mobile ───────────────────────────── */
+@media (max-width: 480px) {
+  .todo-detail-description__images {
+    grid-template-columns: 1fr;
+  }
+  .todo-detail-description__image .ant-image-img {
+    height: 200px;
+  }
+  .todo-detail-chip__value { max-width: 200px; }
+  .todo-detail-meta { gap: 6px; }
+  .todo-detail-chip { padding: 4px 8px; font-size: 11px; }
+}
