@@ -57,7 +57,6 @@ import {
 } from './replyHub'
 import { getTranscriptStats, listPipelineTemplates, listPipelineRunsForTodo, startPipelineRun, PipelineTemplate, PipelineRun } from './api'
 import PipelineRunDrawer from './pipeline/PipelineRunDrawer'
-import TerminalDock from './dock/TerminalDock'
 import AttentionRail from './dock/AttentionRail'
 import { useTerminalDockStore } from './store/terminalDockStore'
 import { useUnreadStore, isSessionUnread } from './store/unreadStore'
@@ -371,6 +370,22 @@ function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false,
           >
             <Button size="small" icon={<PlayCircleOutlined />} className="todo-primary-action">AI 终端</Button>
           </Dropdown>
+          {todo.aiSession?.sessionId && (
+            <Tooltip title="Open in Focus Mode (full-screen)">
+              <Button
+                size="small"
+                className="todo-primary-action"
+                onClick={() => {
+                  const sid = todo.aiSession?.sessionId
+                  if (sid) {
+                    useDispatchStore.getState().openFocus(todo.id, sid)
+                  }
+                }}
+              >
+                ⇆
+              </Button>
+            </Tooltip>
+          )}
           {!isSubtodo && onCreateSubtodo && (
             <Tooltip title="添加子待办">
               <Button size="small" icon={<PlusOutlined />} onClick={() => onCreateSubtodo(todo)} className="todo-primary-action" />
@@ -2499,13 +2514,6 @@ export default function TodoManage() {
         onClose={() => setWelcomeDismissed(true)}
       />
       </div>
-      <TerminalDock
-        resolveTabContext={resolveTabContext}
-        onSessionRecovered={handleDockSessionRecovered}
-        onSessionSwitch={handleDockSessionSwitch}
-        onDone={handleDockDone}
-        onFork={handleDockFork}
-      />
     </div>
   )
 }

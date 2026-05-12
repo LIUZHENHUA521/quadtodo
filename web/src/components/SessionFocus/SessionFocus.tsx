@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useFocusStore } from '../../store/focusStore'
 import { useAiSessionStore } from '../../store/aiSessionStore'
 import { FocusSubbar } from './FocusSubbar'
@@ -13,6 +14,21 @@ export function SessionFocus() {
   const clearFocus = useFocusStore((s) => s.clearFocus)
 
   const sessions = useAiSessionStore((s) => s.sessions)
+
+  // Nudge ResizeObservers (xterm fit, etc.) after the focus mode opens or
+  // after a tab switch. Without this, the Live xterm canvas can stay sized
+  // for its previously-hidden display:none parent and render narrow with
+  // empty space on the right. Defer to next-next frame so the new flex
+  // layout has actually applied before we measure.
+  useEffect(() => {
+    if (!focusedTodoId) return
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'))
+      })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [focusedTodoId, focusedTab])
 
   if (!focusedTodoId) return null
 
