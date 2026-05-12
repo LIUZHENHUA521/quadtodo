@@ -4,6 +4,7 @@ import {
   migratePreset,
   LEGACY_PRESET_MIGRATION,
 } from '../web/src/terminalThemes.ts'
+import { shouldPersistMigration } from '../web/src/hooks/useTerminalTheme.ts'
 
 describe('migratePreset', () => {
   it('dracula → catppuccin-mocha', () => {
@@ -39,5 +40,53 @@ describe('migratePreset', () => {
     expect(Object.keys(LEGACY_PRESET_MIGRATION).sort()).toEqual(
       ['dracula', 'one-dark', 'solarized-dark', 'solarized-light']
     )
+  })
+})
+
+describe('shouldPersistMigration', () => {
+  it('raw = null（无存储）→ 返回 null，不需要写回', () => {
+    expect(shouldPersistMigration(null)).toBeNull()
+  })
+
+  it('raw = "" → 返回 null', () => {
+    expect(shouldPersistMigration('')).toBeNull()
+  })
+
+  it('非法 JSON → 返回 null', () => {
+    expect(shouldPersistMigration('{not-json}')).toBeNull()
+  })
+
+  it('preset 已是新 key → 返回 null（不需要写回）', () => {
+    const raw = JSON.stringify({ preset: 'catppuccin-mocha', override: {} })
+    expect(shouldPersistMigration(raw)).toBeNull()
+  })
+
+  it('preset = "dracula" → 返回 { preset: "catppuccin-mocha", override: {} }', () => {
+    const raw = JSON.stringify({ preset: 'dracula', override: {} })
+    expect(shouldPersistMigration(raw)).toEqual({
+      preset: 'catppuccin-mocha',
+      override: {},
+    })
+  })
+
+  it('迁移时保留 override 字段', () => {
+    const raw = JSON.stringify({
+      preset: 'one-dark',
+      override: { background: '#123456' },
+    })
+    expect(shouldPersistMigration(raw)).toEqual({
+      preset: 'tokyo-night-storm',
+      override: { background: '#123456' },
+    })
+  })
+
+  it('preset 字段缺失 → 返回 null', () => {
+    const raw = JSON.stringify({ override: {} })
+    expect(shouldPersistMigration(raw)).toBeNull()
+  })
+
+  it('custom: 前缀 → 返回 null（不需要迁移）', () => {
+    const raw = JSON.stringify({ preset: 'custom:my-theme', override: {} })
+    expect(shouldPersistMigration(raw)).toBeNull()
   })
 })
