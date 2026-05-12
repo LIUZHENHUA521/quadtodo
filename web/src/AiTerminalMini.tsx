@@ -996,23 +996,32 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
 
   useEffect(() => { setSessionStatus(status) }, [status])
 
+  // Apply user-selected xterm preset. When the preset changes (or its colors are
+  // tweaked via overrides), re-stamp the terminal theme and force a canvas repaint.
   useEffect(() => {
     const term = termRef.current
-    if (term) term.options.theme = theme
+    if (!term) return
+    try {
+      term.options.theme = theme
+      term.refresh(0, term.rows - 1)
+    } catch { /* ignore: term may be torn down concurrently */ }
   }, [theme])
 
   // Re-apply token-driven xterm theme when design ThemeProvider mode flips
   // (light <-> dark). xterm renders to canvas/WebGL, so CSS variables don't
   // reach it — we MUST swap options.theme and force a refresh of the
   // scrollback to repaint with the new colors.
+  // Guard: skip when the user has explicitly chosen a non-default preset — we
+  // must not silently replace their selection on every ThemeToggle click.
   useEffect(() => {
+    if (preset !== 'default') return   // user has explicit preset, don't override
     const term = termRef.current
     if (!term) return
-    term.options.theme = getTokenDrivenTheme(mode)
     try {
+      term.options.theme = getTokenDrivenTheme(mode)
       term.refresh(0, term.rows - 1)
     } catch { /* ignore: term may be torn down concurrently */ }
-  }, [mode])
+  }, [preset, mode])
 
   useEffect(() => {
     refitAttemptsRef.current = 0
