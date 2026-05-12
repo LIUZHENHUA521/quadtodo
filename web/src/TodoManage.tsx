@@ -1673,6 +1673,12 @@ export default function TodoManage() {
 
   const activeTodo = activeId ? todos.find(t => t.id === activeId) : null
 
+  const closeDetail = () => {
+    setDetailOpen(false)
+    setDetailTodo(null)
+    setDetailRule(null)
+  }
+
   // ─── 渲染 ───
 
   return (
@@ -2140,7 +2146,7 @@ export default function TodoManage() {
       <Drawer
         title={detailTodo?.title || '待办详情'}
         open={detailOpen}
-        onClose={() => { setDetailOpen(false); setDetailTodo(null); setDetailRule(null) }}
+        onClose={closeDetail}
         width={720}
         rootClassName="todo-detail-drawer"
         extra={
@@ -2150,7 +2156,7 @@ export default function TodoManage() {
                 if (!detailTodo) return
                 await updateTodo(detailTodo.id, { status: 'done' })
                 message.success('已验收')
-                setDetailOpen(false)
+                closeDetail()
                 fetchTodos()
               }}>验收通过</Button>
             )}
@@ -2174,7 +2180,7 @@ export default function TodoManage() {
               </Button>
             )}
             {detailTodo && (
-              <Button size="small" icon={<EditOutlined />} onClick={() => { setDetailOpen(false); handleEdit(detailTodo) }}>编辑</Button>
+              <Button size="small" icon={<EditOutlined />} onClick={() => { closeDetail(); handleEdit(detailTodo) }}>编辑</Button>
             )}
           </Space>
         }
@@ -2194,7 +2200,7 @@ export default function TodoManage() {
           const hasText = textValue.length > 0
           const hasImage = imageSegments.length > 0
 
-          const handleChipClick = () => { setDetailOpen(false); handleEdit(detailTodo) }
+          const handleChipClick = () => { closeDetail(); handleEdit(detailTodo) }
 
           return (
             <div className="todo-detail">
