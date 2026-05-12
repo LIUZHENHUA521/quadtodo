@@ -19,6 +19,7 @@ import { ThemeProvider, useTheme } from './design/ThemeProvider'
 import { getAntdTheme } from './design/antd-theme'
 import { useGlobalShortcuts } from './design/useGlobalShortcuts'
 import { CommandPalette } from './components/CommandPalette'
+import { SessionFocus } from './components/SessionFocus'
 
 dayjs.locale('zh-cn')
 
@@ -30,6 +31,7 @@ function ThemedApp() {
       <AntdApp message={{ maxCount: 3 }}>
         <TodoManage />
         <CommandPalette />
+        <SessionFocus />
       </AntdApp>
     </ConfigProvider>
   )
