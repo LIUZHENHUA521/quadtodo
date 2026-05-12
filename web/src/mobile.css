@@ -22,6 +22,7 @@
     margin: 0 -8px;
     padding: 8px 8px 4px;
     padding-top: calc(8px + env(safe-area-inset-top));
+    top: 0; /* TopbarDispatch is not rendered on mobile */
   }
 
   /* ── 四象限主视图：竖向堆叠 ── */
