@@ -10,7 +10,7 @@ import {
   PlayCircleOutlined, SettingOutlined, CopyOutlined,
   CodeOutlined, DesktopOutlined, SendOutlined, EditOutlined,
   DownOutlined, RightOutlined,
-  DashboardOutlined, FileTextOutlined, ExportOutlined,
+  FileTextOutlined, ExportOutlined,
   BookOutlined, LineChartOutlined, TrophyOutlined, BranchesOutlined,
   MenuOutlined, MoreOutlined, WarningOutlined,
 } from '@ant-design/icons'
@@ -45,17 +45,11 @@ import WikiDrawer from './WikiDrawer'
 import ExportDialog from './ExportDialog'
 import TemplateDrawer from './TemplateDrawer'
 import ForkDialog from './ForkDialog'
-import DashboardDrawer from './dashboard/DashboardDrawer'
 import ReportDrawer from './ReportDrawer'
 import TranscriptSearchDrawer from './transcripts/TranscriptSearchDrawer'
 import { useAiSessionStore } from './store/aiSessionStore'
 import {
-  AttentionItem,
-  buildAttentionItems,
   buildUnreadSessionItems,
-  parseSeenReplySessionIds,
-  SEEN_REPLY_STORAGE_KEY,
-  serializeSeenReplySessionIds,
   type UnreadSessionItem,
 } from './replyHub'
 import { getTranscriptStats, listPipelineTemplates, listPipelineRunsForTodo, startPipelineRun, PipelineTemplate, PipelineRun } from './api'
@@ -836,7 +830,6 @@ export default function TodoManage() {
   const [statsOpen, setStatsOpen] = useState(false)
   const [wikiOpen, setWikiOpen] = useState(false)
   const [templateDrawerOpen, setTemplateDrawerOpen] = useState(false)
-  const [dashboardOpen, setDashboardOpen] = useState(false)
   const [transcriptDrawerOpen, setTranscriptDrawerOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [toolMissing, setToolMissing] = useState<null | { tool: string; bin: string; fix: string }>(null)
@@ -850,10 +843,6 @@ export default function TodoManage() {
   const [workDirLoading, setWorkDirLoading] = useState(false)
   const [pickingWorkDir, setPickingWorkDir] = useState(false)
 
-  const [seenReplySessionIds, setSeenReplySessionIds] = useState<Set<string>>(() => {
-    try { return parseSeenReplySessionIds(localStorage.getItem(SEEN_REPLY_STORAGE_KEY)) }
-    catch { return new Set() }
-  })
   const [highlightTodoId, setHighlightTodoId] = useState<string | null>(null)
   const [pendingJumpTodoId, setPendingJumpTodoId] = useState<string | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -888,7 +877,6 @@ export default function TodoManage() {
   useDrawerStack('wiki', wikiOpen, () => setWikiOpen(false))
   useDrawerStack('report', reportOpen, () => setReportOpen(false))
   useDrawerStack('template', templateDrawerOpen, () => setTemplateDrawerOpen(false))
-  useDrawerStack('dashboard', dashboardOpen, () => setDashboardOpen(false))
   useDrawerStack('transcript', transcriptDrawerOpen, () => setTranscriptDrawerOpen(false))
   useDrawerStack('pipeline', pipelineDrawerOpen, () => setPipelineDrawerOpen(false))
 
@@ -906,11 +894,6 @@ export default function TodoManage() {
   }, [setLiveSessions])
 
   const liveSessionsMap = useAiSessionStore(s => s.sessions)
-  const attentionItems = useMemo(() => buildAttentionItems({
-    todos,
-    liveSessions: [...liveSessionsMap.values()],
-    seenSessionIds: seenReplySessionIds,
-  }), [todos, liveSessionsMap, seenReplySessionIds])
   const lastSeenMap = useUnreadStore(s => s.lastSeenAt)
   const unreadItems = useMemo(() => buildUnreadSessionItems({
     todos,
@@ -936,37 +919,7 @@ export default function TodoManage() {
     dockActivate(todo.id, sessionId, todo.title)
   }, [dockActivate])
 
-  const handleDashboardOpenTerminal = useCallback((_sessionId: string, todoId: string) => {
-    setDashboardOpen(false)
-    const todo = todos.find(x => x.id === todoId)
-    if (todo) handleOpenTerminalInDock(todo, _sessionId)
-  }, [todos, handleOpenTerminalInDock])
-
-  const handleDashboardStop = useCallback(async (sessionId: string) => {
-    try {
-      await stopAiExec(sessionId)
-      message.success('已发送停止')
-    } catch (e) {
-      message.error((e as Error).message)
-    }
-  }, [])
-
-  const persistSeenReplySessionIds = useCallback((next: Set<string>) => {
-    setSeenReplySessionIds(next)
-    try { localStorage.setItem(SEEN_REPLY_STORAGE_KEY, serializeSeenReplySessionIds(next)) }
-    catch { /* localStorage may be unavailable in private contexts */ }
-  }, [])
-
-  const handleMarkAttentionSeen = useCallback((sessionId: string) => {
-    persistSeenReplySessionIds(new Set([...seenReplySessionIds, sessionId]))
-  }, [persistSeenReplySessionIds, seenReplySessionIds])
-
-  const handleClearReviewAttention = useCallback((sessionIds: string[]) => {
-    persistSeenReplySessionIds(new Set([...seenReplySessionIds, ...sessionIds]))
-  }, [persistSeenReplySessionIds, seenReplySessionIds])
-
-  const handleOpenAttentionItem = useCallback((item: AttentionItem | UnreadSessionItem) => {
-    setDashboardOpen(false)
+  const handleOpenAttentionItem = useCallback((item: UnreadSessionItem) => {
     setKeyword('')
     setFilterStatus('todo')
     const todo = todos.find(t => t.id === item.todoId)
@@ -1686,7 +1639,6 @@ export default function TodoManage() {
       <AttentionRail
         items={unreadItems}
         onActivate={handleOpenAttentionItem}
-        onOpenDashboard={() => setDashboardOpen(true)}
       />
       <div className="todo-manage__main" style={{ padding: '0 16px 16px' }}>
       <div className="todo-sticky-header">
@@ -1726,12 +1678,6 @@ export default function TodoManage() {
           >菜单</Button>
         ) : (
           <>
-            <Button
-              icon={<DashboardOutlined />}
-              size="small"
-              onClick={() => setDashboardOpen(true)}
-              title="AI 工作面板"
-            >AI 面板</Button>
             <Button
               icon={<SearchOutlined />}
               size="small"
@@ -2417,11 +2363,6 @@ export default function TodoManage() {
       >
         <div className="mobile-menu-actions">
           <Button
-            icon={<DashboardOutlined />}
-            onClick={() => { setMobileMenuOpen(false); setDashboardOpen(true) }}
-            block
-          >AI 面板</Button>
-          <Button
             icon={<SearchOutlined />}
             onClick={() => { setMobileMenuOpen(false); setTranscriptDrawerOpen(true) }}
             block
@@ -2467,16 +2408,6 @@ export default function TodoManage() {
         open={templateDrawerOpen}
         onClose={() => setTemplateDrawerOpen(false)}
         onChanged={refreshTemplates}
-      />
-      <DashboardDrawer
-        open={dashboardOpen}
-        onClose={() => setDashboardOpen(false)}
-        attentionItems={attentionItems}
-        onOpenAttentionItem={handleOpenAttentionItem}
-        onMarkAttentionSeen={handleMarkAttentionSeen}
-        onClearReviewAttention={handleClearReviewAttention}
-        onOpenTerminal={handleDashboardOpenTerminal}
-        onStop={handleDashboardStop}
       />
       <TranscriptSearchDrawer
         open={transcriptDrawerOpen}
