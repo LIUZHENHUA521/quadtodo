@@ -44,6 +44,8 @@ import TelegramSyncButton from './TelegramSyncButton'
 import WikiDrawer from './WikiDrawer'
 import ExportDialog from './ExportDialog'
 import TemplateDrawer from './TemplateDrawer'
+import { WelcomeModal } from './onboarding/WelcomeModal'
+import { useWelcomeDismissed } from './onboarding/useWelcomeDismissed'
 import ForkDialog from './ForkDialog'
 import ReportDrawer from './ReportDrawer'
 import TranscriptSearchDrawer from './transcripts/TranscriptSearchDrawer'
@@ -717,6 +719,7 @@ function QuadrantZone({ config, todos, childrenByParentId, childHitIdsByParentId
 export default function TodoManage() {
   // 数据
   const [todos, setTodos] = useState<Todo[]>([])
+  const [welcomeDismissed, setWelcomeDismissed] = useWelcomeDismissed()
   const [loading, setLoading] = useState(false)
   const [lastFetchedFilter, setLastFetchedFilter] = useState<'todo' | 'done' | ''>('todo')
   const [templates, setTemplates] = useState<PromptTemplate[]>([])
@@ -2484,6 +2487,10 @@ export default function TodoManage() {
           </>
         )}
       </Modal>
+      <WelcomeModal
+        open={!welcomeDismissed}
+        onClose={() => setWelcomeDismissed(true)}
+      />
       </div>
       <TerminalDock
         resolveTabContext={resolveTabContext}
