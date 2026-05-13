@@ -4,6 +4,7 @@ import { MinusCircleOutlined, PlusOutlined, BookOutlined } from '@ant-design/ico
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { markdownComponents } from './markdownComponents'
 import { getStatus, getConfig, updateConfig, AppConfig, pickDirectory, ToolDiagnostic, testTelegram, testLark, type ProbeHit, type DispatchChannelConfig } from './api'
 import { TelegramProbeModal } from './TelegramProbeModal'
 import telegramSetupMd from '../../docs/TELEGRAM-setup.md?raw'
@@ -738,7 +739,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
                 lineHeight: 1.65,
               }}
             >
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{markdown}</ReactMarkdown>
             </div>
           ),
         },

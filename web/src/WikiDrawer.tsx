@@ -4,6 +4,7 @@ import { useAppMessages } from './design/useAppMessages'
 import { FolderOpenOutlined, SyncOutlined, FileTextOutlined, BookOutlined } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { markdownComponents } from './markdownComponents'
 import dayjs from 'dayjs'
 import {
   getWikiStatus, getWikiPending, getWikiTree, getWikiFile, runWiki,
@@ -206,7 +207,7 @@ export default function WikiDrawer({
             <Spin />
           ) : (
             <div className="wiki-content-md">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{content}</ReactMarkdown>
             </div>
           )}
         </div>
