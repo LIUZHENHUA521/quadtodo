@@ -249,6 +249,14 @@ const en = {
       runInTerminal: 'Run in terminal:',
       copyCommand: 'Copy command',
     },
+    prompt: {
+      header: 'Please complete the following todo:',
+      titleLabel: 'Title',
+      descLabel: 'Description',
+      descEmpty: 'None',
+      hintUnderstand: 'First understand the requirement and current project context, then start working.',
+      hintAfter: 'When done, share a summary of changes, verification results, and any items that still need my confirmation.',
+    },
     message: {
       attachUploaded: 'Attached: {{name}}',
       updated: 'Updated',

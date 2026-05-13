@@ -117,15 +117,15 @@ export function formatDueDate(ts: number | null | undefined): { label: string | 
   return { label: dayjs(ts).format('MM-DD HH:mm'), overdue: ts < Date.now() }
 }
 
-function buildTodoPrompt(todo: Todo, templates: PromptTemplate[] = []) {
+function buildTodoPrompt(todo: Todo, templates: PromptTemplate[] = [], t: (k: any, o?: any) => string) {
   const templatePrefix = renderAppliedTemplates(todo, templates)
-  const base = `请完成以下待办任务:
+  const base = `${t('todo:prompt.header')}
 
-标题: ${todo.title}
-描述: ${todo.description || '无'}
+${t('todo:prompt.titleLabel')}: ${todo.title}
+${t('todo:prompt.descLabel')}: ${todo.description || t('todo:prompt.descEmpty')}
 
-请先理解需求和当前项目上下文，再开始执行。
-完成后请给出变更摘要、验证结果，以及仍需我确认的事项。`
+${t('todo:prompt.hintUnderstand')}
+${t('todo:prompt.hintAfter')}`
   return templatePrefix ? `${templatePrefix}\n\n---\n\n${base}` : base
 }
 
@@ -801,7 +801,7 @@ export default function TodoManage() {
 
   const handleAiExec = useCallback(async (todo: Todo, tool: AiTool, session?: Todo['aiSessions'][number]) => {
     try {
-      const prompt = session?.prompt || buildTodoPrompt(todo, templates)
+      const prompt = session?.prompt || buildTodoPrompt(todo, templates, t)
       // 读取用户上次选择的托管模式（持久化在 localStorage），
       // 这样新启动/恢复会话时能直接通过原生 CLI 标志生效，不依赖运行时的正则兜底。
       let permissionMode: string | null = null
@@ -1031,7 +1031,7 @@ export default function TodoManage() {
   }, [fetchTodos, t])
 
   const handleCopyPrompt = useCallback((todo: Todo) => {
-    const text = buildTodoPrompt(todo, templates)
+    const text = buildTodoPrompt(todo, templates, t)
     navigator.clipboard.writeText(text).then(
       () => message.success(t('todo:message.copied')),
       () => message.error(t('errors:copyFailed')),

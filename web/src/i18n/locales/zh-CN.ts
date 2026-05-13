@@ -246,6 +246,14 @@ const zh = {
       runInTerminal: '请在终端运行：',
       copyCommand: '复制命令',
     },
+    prompt: {
+      header: '请完成以下待办任务:',
+      titleLabel: '标题',
+      descLabel: '描述',
+      descEmpty: '无',
+      hintUnderstand: '请先理解需求和当前项目上下文，再开始执行。',
+      hintAfter: '完成后请给出变更摘要、验证结果，以及仍需我确认的事项。',
+    },
     message: {
       attachUploaded: '已 attach: {{name}}',
       updated: '已更新',
