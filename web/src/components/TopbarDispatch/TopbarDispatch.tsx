@@ -6,8 +6,12 @@ import { ThemeToggle } from '../ThemeToggle'
 import { useDispatchStore } from '../../store/dispatchStore'
 import { useDispatchStats } from '../../design/useDispatchStats'
 import { useAiSessionStore } from '../../store/aiSessionStore'
+import { useUnreadStore, isSessionUnread } from '../../store/unreadStore'
+import { deriveAiState } from '../../design/aiPresentationState'
 import type { UnreadSessionItem } from '../../replyHub'
 import './TopbarDispatch.css'
+
+const IDLE_TOOLTIP_LIMIT = 8
 
 export interface TopbarDispatchProps {
   unreadItems: UnreadSessionItem[]
@@ -15,22 +19,21 @@ export interface TopbarDispatchProps {
 }
 
 export function TopbarDispatch({ unreadItems, onJump }: TopbarDispatchProps) {
-  const { activeCount, tokenSumLabel } = useDispatchStats()
+  const { runningCount, idleCount } = useDispatchStats()
   const openDrawer = useDispatchStore((s) => s.openDrawer)
   const togglePalette = useDispatchStore((s) => s.togglePalette)
   const [pendingOpen, setPendingOpen] = useState(false)
 
   const sessions = useAiSessionStore((s) => s.sessions)
-  const activeList: { id: string; title: string; tool: string; status: string }[] = []
+  const lastSeenMap = useUnreadStore((s) => s.lastSeenAt)
+  const runningList: { id: string; title: string; tool: string }[] = []
+  const idleList: { id: string; title: string; tool: string }[] = []
   sessions.forEach((session) => {
-    if (session.status === 'running') {
-      activeList.push({
-        id: session.sessionId,
-        title: session.todoTitle,
-        tool: session.tool,
-        status: session.status,
-      })
-    }
+    const unread = isSessionUnread(session.lastTurnDoneAt, lastSeenMap.get(session.sessionId))
+    const state = deriveAiState(session.status, unread)
+    const entry = { id: session.sessionId, title: session.todoTitle, tool: session.tool }
+    if (state === 'running') runningList.push(entry)
+    else if (state === 'idle') idleList.push(entry)
   })
 
   const pendingCount = unreadItems.length
@@ -45,32 +48,30 @@ export function TopbarDispatch({ unreadItems, onJump }: TopbarDispatchProps) {
       <div className="topbar-tooltip-empty">No pending</div>
     ) : (
       <>
-        <div className="topbar-tooltip-title">待处理 ({pendingCount})</div>
+        <div className="topbar-tooltip-title">待确认 ({pendingCount})</div>
         <div className="topbar-pending-list">
-          {unreadItems.map((item) => {
-            const isPending = item.reason === 'pending_confirm'
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className="topbar-tooltip-row topbar-pending-row"
-                onClick={() => handlePickItem(item)}
-                data-testid="topbar-pending-row"
-              >
-                <span
-                  className="topbar-tooltip-dot"
-                  style={{ background: isPending ? 'var(--ai-pending-confirm)' : 'var(--ai-error)' }}
-                />
-                <span className="topbar-tooltip-name">{item.todoTitle}</span>
-                <span className="topbar-tooltip-meta">
-                  {item.tool} · {isPending ? '待批准' : '未读'}
-                </span>
-              </button>
-            )
-          })}
+          {unreadItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="topbar-tooltip-row topbar-pending-row"
+              onClick={() => handlePickItem(item)}
+              data-testid="topbar-pending-row"
+            >
+              <span
+                className="topbar-tooltip-dot"
+                style={{ background: 'var(--ai-pending-confirm)' }}
+              />
+              <span className="topbar-tooltip-name">{item.todoTitle}</span>
+              <span className="topbar-tooltip-meta">{item.tool} · 未读</span>
+            </button>
+          ))}
         </div>
       </>
     )
+
+  const idleListVisible = idleList.slice(0, IDLE_TOOLTIP_LIMIT)
+  const idleRemainder = idleList.length - idleListVisible.length
 
   return (
     <div className="topbar-dispatch">
@@ -82,16 +83,16 @@ export function TopbarDispatch({ unreadItems, onJump }: TopbarDispatchProps) {
       <StatPill
         icon="pulse-dot"
         iconColor="var(--ai-running)"
-        value={activeCount}
-        label="active"
-        data-testid="stat-active"
+        value={runningCount}
+        label="running"
+        data-testid="stat-running"
         tooltip={
-          activeList.length === 0 ? (
-            <div className="topbar-tooltip-empty">No active sessions</div>
+          runningList.length === 0 ? (
+            <div className="topbar-tooltip-empty">No running sessions</div>
           ) : (
             <>
-              <div className="topbar-tooltip-title">Active sessions ({activeList.length})</div>
-              {activeList.map((s) => (
+              <div className="topbar-tooltip-title">Running sessions ({runningList.length})</div>
+              {runningList.map((s) => (
                 <div key={s.id} className="topbar-tooltip-row">
                   <span className="topbar-tooltip-dot" style={{ background: 'var(--ai-running)' }} />
                   <span className="topbar-tooltip-name">{s.title}</span>
@@ -104,18 +105,31 @@ export function TopbarDispatch({ unreadItems, onJump }: TopbarDispatchProps) {
       />
 
       <StatPill
-        icon="arrow"
-        value={tokenSumLabel}
-        label="tok"
-        data-testid="stat-tokens"
+        icon="pulse-dot"
+        iconColor="var(--ai-idle)"
+        value={idleCount}
+        label="idle"
+        data-testid="stat-idle"
         tooltip={
-          <>
-            <div className="topbar-tooltip-title">Token usage</div>
-            <div className="topbar-tooltip-row">
-              <span className="topbar-tooltip-name">Total across active sessions</span>
-              <span className="topbar-tooltip-meta">{tokenSumLabel}</span>
-            </div>
-          </>
+          idleList.length === 0 ? (
+            <div className="topbar-tooltip-empty">No idle sessions</div>
+          ) : (
+            <>
+              <div className="topbar-tooltip-title">Idle sessions ({idleList.length})</div>
+              {idleListVisible.map((s) => (
+                <div key={s.id} className="topbar-tooltip-row">
+                  <span className="topbar-tooltip-dot" style={{ background: 'var(--ai-idle)' }} />
+                  <span className="topbar-tooltip-name">{s.title}</span>
+                  <span className="topbar-tooltip-meta">{s.tool}</span>
+                </div>
+              ))}
+              {idleRemainder > 0 && (
+                <div className="topbar-tooltip-row">
+                  <span className="topbar-tooltip-meta">还有 {idleRemainder} 条</span>
+                </div>
+              )}
+            </>
+          )
         }
       />
 
@@ -133,7 +147,7 @@ export function TopbarDispatch({ unreadItems, onJump }: TopbarDispatchProps) {
             icon="pulse-dot"
             iconColor="var(--ai-pending-confirm)"
             value={pendingCount}
-            label="pending"
+            label="待确认"
             data-testid="stat-pending"
             onClick={() => setPendingOpen((v) => !v)}
           />
