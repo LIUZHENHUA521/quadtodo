@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Drawer, Button, Space, List, Tag, Modal, Form, Input, Popconfirm, Empty, Tooltip, Typography,
 } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { useAppMessages } from './design/useAppMessages'
 import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, EyeOutlined } from '@ant-design/icons'
 import {
@@ -13,22 +14,6 @@ import { renderTemplate } from './promptRender'
 const { TextArea } = Input
 const { Paragraph, Text } = Typography
 
-const EXAMPLE_VARS: Record<string, string> = {
-  title: '示例待办标题',
-  description: '示例待办描述',
-  workDir: '/Users/demo/project',
-  quadrant: 'Q1（重要且紧急）',
-  dueDate: '2026-04-20',
-}
-
-const VARIABLE_HINTS = [
-  { key: 'title', label: '待办标题' },
-  { key: 'description', label: '待办描述' },
-  { key: 'workDir', label: '工作目录' },
-  { key: 'quadrant', label: '象限' },
-  { key: 'dueDate', label: '截止日期' },
-]
-
 interface Props {
   open: boolean
   onClose: () => void
@@ -36,7 +21,24 @@ interface Props {
 }
 
 export default function TemplateDrawer({ open, onClose, onChanged }: Props) {
+  const { t } = useTranslation(['settings'])
   const { message } = useAppMessages()
+
+  const EXAMPLE_VARS: Record<string, string> = {
+    title: t('settings:template.example.title'),
+    description: t('settings:template.example.description'),
+    workDir: '/Users/demo/project',
+    quadrant: t('settings:template.example.quadrant'),
+    dueDate: '2026-04-20',
+  }
+
+  const VARIABLE_HINTS = [
+    { key: 'title', label: t('settings:template.variable.title') },
+    { key: 'description', label: t('settings:template.variable.description') },
+    { key: 'workDir', label: t('settings:template.variable.workDir') },
+    { key: 'quadrant', label: t('settings:template.variable.quadrant') },
+    { key: 'dueDate', label: t('settings:template.variable.dueDate') },
+  ]
   const [list, setList] = useState<PromptTemplate[]>([])
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState<PromptTemplate | null>(null)
@@ -49,11 +51,11 @@ export default function TemplateDrawer({ open, onClose, onChanged }: Props) {
     try {
       setList(await listTemplates())
     } catch (e: any) {
-      message.error(e?.message || '加载失败')
+      message.error(e?.message || t('settings:template.loadFailed'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => { if (open) refresh() }, [open, refresh])
 
@@ -72,29 +74,29 @@ export default function TemplateDrawer({ open, onClose, onChanged }: Props) {
     setEditorOpen(true)
   }
 
-  const handleCopy = async (t: PromptTemplate) => {
+  const handleCopy = async (tpl: PromptTemplate) => {
     try {
       await createTemplate({
-        name: `${t.name} (副本)`,
-        description: t.description,
-        content: t.content,
+        name: t('settings:template.copySuffix', { name: tpl.name }),
+        description: tpl.description,
+        content: tpl.content,
       })
-      message.success('已复制为我的模板')
+      message.success(t('settings:template.copiedOk'))
       refresh()
       onChanged?.()
     } catch (e: any) {
-      message.error(e?.message || '复制失败')
+      message.error(e?.message || t('settings:template.copyFailed'))
     }
   }
 
-  const handleDelete = async (t: PromptTemplate) => {
+  const handleDelete = async (tpl: PromptTemplate) => {
     try {
-      await deleteTemplate(t.id)
-      message.success('已删除')
+      await deleteTemplate(tpl.id)
+      message.success(t('settings:template.deletedOk'))
       refresh()
       onChanged?.()
     } catch (e: any) {
-      message.error(e?.message || '删除失败')
+      message.error(e?.message || t('settings:template.deleteFailed'))
     }
   }
 
@@ -103,17 +105,17 @@ export default function TemplateDrawer({ open, onClose, onChanged }: Props) {
       const values = await form.validateFields()
       if (editing) {
         await updateTemplate(editing.id, values)
-        message.success('已保存')
+        message.success(t('settings:template.savedOk'))
       } else {
         await createTemplate(values)
-        message.success('已创建')
+        message.success(t('settings:template.createdOk'))
       }
       setEditorOpen(false)
       refresh()
       onChanged?.()
     } catch (e: any) {
       if (e?.errorFields) return
-      message.error(e?.message || '保存失败')
+      message.error(e?.message || t('settings:template.saveFailed'))
     }
   }
 
@@ -128,30 +130,30 @@ export default function TemplateDrawer({ open, onClose, onChanged }: Props) {
   return (
     <>
       <Drawer
-        title="Prompt 模板库"
+        title={t('settings:template.drawerTitle')}
         open={open}
         onClose={onClose}
         width={560}
-        extra={<Button type="primary" icon={<PlusOutlined />} onClick={handleNew}>新建模板</Button>}
+        extra={<Button type="primary" icon={<PlusOutlined />} onClick={handleNew}>{t('settings:template.newTemplate')}</Button>}
       >
         {list.length === 0 && !loading ? (
-          <Empty description="暂无模板" />
+          <Empty description={t('settings:template.emptyList')} />
         ) : (
           <List
             loading={loading}
             dataSource={list}
-            renderItem={t => (
+            renderItem={tpl => (
               <List.Item
                 actions={[
-                  <Tooltip title="复制为我的模板" key="copy">
-                    <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => handleCopy(t)} />
+                  <Tooltip title={t('settings:template.copyForMe')} key="copy">
+                    <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => handleCopy(tpl)} />
                   </Tooltip>,
-                  <Tooltip title={t.builtin ? '内置模板不可编辑，可复制后修改' : '编辑'} key="edit">
-                    <Button type="text" size="small" icon={<EditOutlined />} disabled={t.builtin} onClick={() => handleEdit(t)} />
+                  <Tooltip title={tpl.builtin ? t('settings:template.builtinTooltipEdit') : t('settings:template.editTooltip')} key="edit">
+                    <Button type="text" size="small" icon={<EditOutlined />} disabled={tpl.builtin} onClick={() => handleEdit(tpl)} />
                   </Tooltip>,
-                  <Popconfirm key="del" title="确认删除？" disabled={t.builtin} onConfirm={() => handleDelete(t)}>
-                    <Tooltip title={t.builtin ? '内置模板不可删除' : '删除'}>
-                      <Button type="text" size="small" danger icon={<DeleteOutlined />} disabled={t.builtin} />
+                  <Popconfirm key="del" title={t('settings:template.deleteConfirm')} disabled={tpl.builtin} onConfirm={() => handleDelete(tpl)}>
+                    <Tooltip title={tpl.builtin ? t('settings:template.builtinTooltipDelete') : t('settings:template.deleteTooltip')}>
+                      <Button type="text" size="small" danger icon={<DeleteOutlined />} disabled={tpl.builtin} />
                     </Tooltip>
                   </Popconfirm>,
                 ]}
@@ -159,15 +161,15 @@ export default function TemplateDrawer({ open, onClose, onChanged }: Props) {
                 <List.Item.Meta
                   title={
                     <Space>
-                      <span>{t.name}</span>
-                      {t.builtin && <Tag color="blue">内置</Tag>}
+                      <span>{tpl.name}</span>
+                      {tpl.builtin && <Tag color="blue">{t('settings:template.builtinTag')}</Tag>}
                     </Space>
                   }
                   description={
                     <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                      {t.description && <Text type="secondary">{t.description}</Text>}
+                      {tpl.description && <Text type="secondary">{tpl.description}</Text>}
                       <Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ margin: 0, fontSize: 12 }}>
-                        {t.content}
+                        {tpl.content}
                       </Paragraph>
                     </Space>
                   }
@@ -179,22 +181,22 @@ export default function TemplateDrawer({ open, onClose, onChanged }: Props) {
       </Drawer>
 
       <Modal
-        title={editing ? `编辑模板：${editing.name}` : '新建模板'}
+        title={editing ? t('settings:template.editTitle', { name: editing.name }) : t('settings:template.newTitle')}
         open={editorOpen}
         onCancel={() => setEditorOpen(false)}
         onOk={handleSave}
         width={720}
-        okText="保存"
-        cancelText="取消"
+        okText={t('settings:template.okText')}
+        cancelText={t('settings:template.cancelText')}
       >
         <Form form={form} layout="vertical" size="small" onValuesChange={(_, all) => setPreviewContent(all.content || '')}>
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
-            <Input placeholder="如：Bug 修复" />
+          <Form.Item name="name" label={t('settings:template.nameLabel')} rules={[{ required: true, message: t('settings:template.nameRequired') }]}>
+            <Input placeholder={t('settings:template.namePlaceholder')} />
           </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input placeholder="简短说明此模板的用途（可选）" />
+          <Form.Item name="description" label={t('settings:template.descLabel')}>
+            <Input placeholder={t('settings:template.descPlaceholder')} />
           </Form.Item>
-          <Form.Item label="可用变量（点击插入）">
+          <Form.Item label={t('settings:template.variablesLabel')}>
             <Space wrap>
               {VARIABLE_HINTS.map(v => (
                 <Tag key={v.key} style={{ cursor: 'pointer' }} onClick={() => insertVar(v.key)}>
@@ -203,16 +205,16 @@ export default function TemplateDrawer({ open, onClose, onChanged }: Props) {
               ))}
             </Space>
           </Form.Item>
-          <Form.Item name="content" label="模板内容" rules={[{ required: true, message: '请输入内容' }]}>
-            <TextArea rows={8} placeholder="可使用 {{title}} {{description}} {{workDir}} {{quadrant}} {{dueDate}} 占位符" />
+          <Form.Item name="content" label={t('settings:template.contentLabel')} rules={[{ required: true, message: t('settings:template.contentRequired') }]}>
+            <TextArea rows={8} placeholder={t('settings:template.contentPlaceholder', { t: '{{title}}', d: '{{description}}', w: '{{workDir}}', q: '{{quadrant}}', u: '{{dueDate}}' })} />
           </Form.Item>
-          <Form.Item label={<Space><EyeOutlined />预览（使用示例变量填充）</Space>}>
+          <Form.Item label={<Space><EyeOutlined />{t('settings:template.previewLabel')}</Space>}>
             <div style={{
               padding: 8, borderRadius: 4, background: '#fafafa',
               border: '1px solid #f0f0f0', whiteSpace: 'pre-wrap',
               fontSize: 12, maxHeight: 200, overflow: 'auto',
             }}>
-              {previewRendered || <Text type="secondary">（空）</Text>}
+              {previewRendered || <Text type="secondary">{t('settings:template.previewEmpty')}</Text>}
             </div>
           </Form.Item>
         </Form>

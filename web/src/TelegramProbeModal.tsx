@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Modal, Table, Tag, Empty, Typography } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { useAppMessages } from './design/useAppMessages'
 import { startProbeChatId, stopProbeChatId, subscribeProbeChatId, type ProbeHit } from './api'
 
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function TelegramProbeModal({ open, onClose, onPick }: Props) {
+  const { t } = useTranslation(['settings'])
   const { message } = useAppMessages()
   const [hits, setHits] = useState<ProbeHit[]>([])
   const [expiresAt, setExpiresAt] = useState<number | null>(null)
@@ -64,30 +66,27 @@ export function TelegramProbeModal({ open, onClose, onPick }: Props) {
 
   return (
     <Modal
-      title="抓 supergroup ID"
+      title={t('settings:telegramProbe.title')}
       open={open}
       onCancel={onClose}
       footer={null}
       width={680}
     >
       <div style={{ marginBottom: 12 }}>
-        <Text type="secondary">
-          请到目标 Telegram 群里发条任意消息（@bot 或随便发都行）。
-          收到的所有 chat 都会列在下面，点选你要的那一行 → 自动填回 supergroupId。
-        </Text>
+        <Text type="secondary">{t('settings:telegramProbe.hint')}</Text>
       </div>
 
       {error ? (
-        <div style={{ color: 'var(--ai-error)' }}>启动失败：{error}</div>
+        <div style={{ color: 'var(--ai-error)' }}>{t('settings:telegramProbe.startFailed', { msg: error })}</div>
       ) : (
         <>
           <div style={{ marginBottom: 8 }}>
             {expiresAt ? (
-              <Tag color="processing">监听中… 还有 {secondsLeft}s</Tag>
+              <Tag color="processing">{t('settings:telegramProbe.watchingLeft', { seconds: secondsLeft })}</Tag>
             ) : (
-              <Tag color="default">已结束</Tag>
+              <Tag color="default">{t('settings:telegramProbe.ended')}</Tag>
             )}
-            <Text type="secondary" style={{ marginLeft: 8 }}>已收到 {dedupedHits.length} 个 chat</Text>
+            <Text type="secondary" style={{ marginLeft: 8 }}>{t('settings:telegramProbe.receivedHits', { count: dedupedHits.length })}</Text>
           </div>
 
           <Table<ProbeHit>
@@ -96,18 +95,18 @@ export function TelegramProbeModal({ open, onClose, onPick }: Props) {
             dataSource={dedupedHits}
             pagination={false}
             scroll={{ y: 320 }}
-            locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没收到消息，到群里 @bot 发一条试试" /> }}
+            locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('settings:telegramProbe.emptyText')} /> }}
             columns={[
               { title: 'chatId', dataIndex: 'chatId', width: 160 },
-              { title: '类型', dataIndex: 'chatType', width: 90 },
-              { title: '群名/用户', dataIndex: 'chatTitle', width: 140, render: (v: string | null) => v || '—' },
-              { title: '发送人', dataIndex: 'fromUsername', width: 120, render: (v: string | null, row: ProbeHit) => v ? `@${v}` : (row.fromUserId || '—') },
-              { title: '消息预览', dataIndex: 'textPreview', render: (v: string | null) => v || '—' },
+              { title: t('settings:telegramProbe.col.type'), dataIndex: 'chatType', width: 90 },
+              { title: t('settings:telegramProbe.col.chatTitle'), dataIndex: 'chatTitle', width: 140, render: (v: string | null) => v || '—' },
+              { title: t('settings:telegramProbe.col.from'), dataIndex: 'fromUsername', width: 120, render: (v: string | null, row: ProbeHit) => v ? `@${v}` : (row.fromUserId || '—') },
+              { title: t('settings:telegramProbe.col.preview'), dataIndex: 'textPreview', render: (v: string | null) => v || '—' },
             ]}
             onRow={(record) => ({
               onClick: () => {
                 onPick(record)
-                message.success(`已选择 ${record.chatId}`)
+                message.success(t('settings:telegramProbe.picked', { chatId: record.chatId }))
                 onClose()
               },
               style: { cursor: 'pointer' },

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Segmented, DatePicker, Card, Table, Collapse, Button, Empty, Spin } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { useAppMessages } from '../../design/useAppMessages'
 import { Line, Pie } from '@ant-design/charts'
 import dayjs, { Dayjs } from 'dayjs'
@@ -45,6 +46,7 @@ const fmtCost = (c: Cost) => `$${c.usd.toFixed(2)} / ¥${c.cny.toFixed(1)}`
  * Designed to live inside a Tabs item; only fetches data when `active` is true.
  */
 export function StatsPanel({ active }: { active: boolean }) {
+  const { t } = useTranslation(['settings'])
   const { message } = useAppMessages()
   const [range, setRange] = useState<Range>('week')
   const [custom, setCustom] = useState<[Dayjs, Dayjs] | undefined>()
@@ -66,7 +68,7 @@ export function StatsPanel({ active }: { active: boolean }) {
     const r = await fetch(`/api/stats/report.md?since=${since}&until=${until}`)
     const md = await r.text()
     await navigator.clipboard.writeText(md)
-    message.success('已复制 Markdown')
+    message.success(t('settings:stats.copiedMd'))
   }
   function downloadMd() {
     window.open(`/api/stats/report.md?since=${since}&until=${until}`, '_blank')
@@ -79,74 +81,75 @@ export function StatsPanel({ active }: { active: boolean }) {
           value={range}
           onChange={v => setRange(v as Range)}
           options={[
-            { label: '本周', value: 'week' },
-            { label: '本月', value: 'month' },
-            { label: '近 30 天', value: '30d' },
-            { label: '自定义', value: 'custom' },
+            { label: t('settings:stats.range.week'), value: 'week' },
+            { label: t('settings:stats.range.month'), value: 'month' },
+            { label: t('settings:stats.range.thirtyDays'), value: '30d' },
+            { label: t('settings:stats.range.custom'), value: 'custom' },
           ]}
         />
         {range === 'custom' && (
           <DatePicker.RangePicker onChange={v => v && setCustom(v as [Dayjs, Dayjs])} />
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          <Button onClick={copyMd}>📋 复制 Markdown</Button>
-          <Button onClick={downloadMd}>💾 下载 .md</Button>
+          <Button onClick={copyMd}>{t('settings:stats.copyMd')}</Button>
+          <Button onClick={downloadMd}>{t('settings:stats.downloadMd')}</Button>
         </div>
       </div>
 
       {loading && <Spin />}
-      {!loading && !report && <Empty description="无数据" />}
+      {!loading && !report && <Empty description={t('settings:stats.emptyNoData')} />}
       {!loading && report && <ReportBody report={report} />}
     </div>
   )
 }
 
 function ReportBody({ report }: { report: Report }) {
+  const { t } = useTranslation(['settings'])
   const { summary, topTodos, byQuadrant, byModel, timeline } = report
   if (summary.sessionCount === 0) {
-    return <Empty description="该时段没有绑定到 todo 的 AI 会话，先去跑几个 AI 任务吧～" />
+    return <Empty description={t('settings:stats.emptyNoSession')} />
   }
   const lineData = timeline.flatMap(e => [
-    { date: new Date(e.t).toISOString().slice(0, 10), type: '活跃', value: e.activeMs / 3600_000 },
-    { date: new Date(e.t).toISOString().slice(0, 10), type: '墙钟', value: e.wallClockMs / 3600_000 },
+    { date: new Date(e.t).toISOString().slice(0, 10), type: t('settings:stats.legend.active'), value: e.activeMs / 3600_000 },
+    { date: new Date(e.t).toISOString().slice(0, 10), type: t('settings:stats.legend.wallClock'), value: e.wallClockMs / 3600_000 },
   ])
   const pieData = byQuadrant.map(q => ({ type: `Q${q.key}`, value: q.activeMs }))
 
   return (
     <>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-        <Card size="small" title="AI 活跃时长"><h2>{fmtHours(summary.activeMs)}</h2><small>墙钟 {fmtHours(summary.wallClockMs)}</small></Card>
-        <Card size="small" title="Token 消耗"><h2>{fmtTok(summary.tokens.total || 0)}</h2><small>cache 命中 {fmtTok(summary.tokens.cacheRead)}</small></Card>
-        <Card size="small" title="估算成本"><h2>{fmtCost(summary.cost)}</h2><small>按当前价目表</small></Card>
-        <Card size="small" title="会话 / 任务"><h2>{summary.sessionCount} / {summary.todoCount}</h2><small>未关联 {summary.unboundSessionCount}</small></Card>
+        <Card size="small" title={t('settings:stats.card.activeDuration')}><h2>{fmtHours(summary.activeMs)}</h2><small>{t('settings:stats.card.wallClockSub', { value: fmtHours(summary.wallClockMs) })}</small></Card>
+        <Card size="small" title={t('settings:stats.card.tokenUsage')}><h2>{fmtTok(summary.tokens.total || 0)}</h2><small>{t('settings:stats.card.cacheHit', { value: fmtTok(summary.tokens.cacheRead) })}</small></Card>
+        <Card size="small" title={t('settings:stats.card.cost')}><h2>{fmtCost(summary.cost)}</h2><small>{t('settings:stats.card.costSub')}</small></Card>
+        <Card size="small" title={t('settings:stats.card.sessionTodo')}><h2>{summary.sessionCount} / {summary.todoCount}</h2><small>{t('settings:stats.card.unbound', { count: summary.unboundSessionCount })}</small></Card>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12, margin: '16px 0' }}>
-        <Card size="small" title="时长趋势"><Line data={lineData} xField="date" yField="value" seriesField="type" height={220} axis={{ y: { labelFormatter: fmtChartHours } }} tooltip={{ items: [{ channel: 'y', valueFormatter: fmtChartHours }] }} /></Card>
-        <Card size="small" title="象限占比（活跃时长）"><Pie data={pieData} angleField="value" colorField="type" height={220} /></Card>
+        <Card size="small" title={t('settings:stats.card.durationTrend')}><Line data={lineData} xField="date" yField="value" seriesField="type" height={220} axis={{ y: { labelFormatter: fmtChartHours } }} tooltip={{ items: [{ channel: 'y', valueFormatter: fmtChartHours }] }} /></Card>
+        <Card size="small" title={t('settings:stats.card.quadrantPie')}><Pie data={pieData} angleField="value" colorField="type" height={220} /></Card>
       </div>
 
-      <Card size="small" title="Top 10 任务" style={{ marginBottom: 12 }}>
+      <Card size="small" title={t('settings:stats.card.topTodos')} style={{ marginBottom: 12 }}>
         <Table<TopTodo>
           dataSource={topTodos}
           rowKey="todoId"
           pagination={false}
           scroll={{ x: 'max-content' }}
           columns={[
-            { title: '#', render: (_, __, i) => i + 1, width: 40 },
-            { title: '任务', dataIndex: 'title', width: 240, ellipsis: true },
-            { title: '象限', dataIndex: 'quadrant', width: 60 },
-            { title: '活跃', render: r => fmtHours(r.activeMs), width: 70 },
-            { title: '墙钟', render: r => fmtHours(r.wallClockMs), width: 70 },
-            { title: 'Token', render: r => fmtTok(r.tokens.input + r.tokens.output), width: 80 },
-            { title: '成本', render: r => fmtCost(r.cost), width: 120 },
-            { title: '会话', dataIndex: 'sessionCount', width: 50 },
+            { title: t('settings:stats.col.index'), render: (_, __, i) => i + 1, width: 40 },
+            { title: t('settings:stats.col.task'), dataIndex: 'title', width: 240, ellipsis: true },
+            { title: t('settings:stats.col.quadrant'), dataIndex: 'quadrant', width: 60 },
+            { title: t('settings:stats.col.active'), render: r => fmtHours(r.activeMs), width: 70 },
+            { title: t('settings:stats.col.wallClock'), render: r => fmtHours(r.wallClockMs), width: 70 },
+            { title: t('settings:stats.col.token'), render: r => fmtTok(r.tokens.input + r.tokens.output), width: 80 },
+            { title: t('settings:stats.col.cost'), render: r => fmtCost(r.cost), width: 120 },
+            { title: t('settings:stats.col.session'), dataIndex: 'sessionCount', width: 50 },
           ]}
         />
       </Card>
 
       <Collapse items={[{
-        key: 'models', label: '按模型',
+        key: 'models', label: t('settings:stats.card.byModel'),
         children: (
           <Table
             dataSource={byModel}
@@ -154,10 +157,10 @@ function ReportBody({ report }: { report: Report }) {
             pagination={false}
             scroll={{ x: 'max-content' }}
             columns={[
-              { title: '模型', dataIndex: 'key', width: 260, ellipsis: true },
-              { title: '会话', dataIndex: 'sessions', width: 60 },
-              { title: 'Token', render: (r: any) => fmtTok(r.tokens.input + r.tokens.output), width: 90 },
-              { title: '成本', render: (r: any) => fmtCost(r.cost), width: 120 },
+              { title: t('settings:stats.col.model'), dataIndex: 'key', width: 260, ellipsis: true },
+              { title: t('settings:stats.col.session'), dataIndex: 'sessions', width: 60 },
+              { title: t('settings:stats.col.token'), render: (r: any) => fmtTok(r.tokens.input + r.tokens.output), width: 90 },
+              { title: t('settings:stats.col.cost'), render: (r: any) => fmtCost(r.cost), width: 120 },
             ]}
           />
         )

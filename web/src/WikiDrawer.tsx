@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Drawer, Button, Checkbox, Empty, Spin, Space, Tag, Alert } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { useAppMessages } from './design/useAppMessages'
 import { FolderOpenOutlined, SyncOutlined, FileTextOutlined, BookOutlined } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
@@ -54,6 +55,7 @@ function TreeSection({
 export default function WikiDrawer({
   open, onClose,
 }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation(['wiki'])
   const { message, modal } = useAppMessages()
   const [status, setStatus] = useState<WikiStatus | null>(null)
   const [pending, setPending] = useState<WikiPendingTodo[]>([])
@@ -73,7 +75,7 @@ export default function WikiDrawer({
       const [s, p, t] = await Promise.all([getWikiStatus(), getWikiPending(), getWikiTree()])
       setStatus(s); setPending(p); setTree(t)
     } catch (e: any) {
-      message.error(`加载 wiki 失败：${e.message}`)
+      message.error(t('wiki:loadFailed', { msg: e.message }))
     } finally { setLoadingTree(false) }
   }, [])
 
@@ -85,26 +87,26 @@ export default function WikiDrawer({
     setLoadingContent(true)
     getWikiFile(activePath)
       .then((c) => { if (!cancelled) setContent(c) })
-      .catch((e) => { if (!cancelled) { message.error(`读取文件失败：${e.message}`); setContent('') } })
+      .catch((e) => { if (!cancelled) { message.error(t('wiki:readFileFailed', { msg: e.message })); setContent('') } })
       .finally(() => { if (!cancelled) setLoadingContent(false) })
     return () => { cancelled = true }
   }, [activePath])
 
   const handleRun = async (dryRun: boolean) => {
     if (selected.size === 0) {
-      message.warning('先勾选要沉淀的 todo')
+      message.warning(t('wiki:needPick'))
       return
     }
     const ids = [...selected]
-    const label = dryRun ? '只生成 sources' : '沉淀选中'
+    const label = dryRun ? t('wiki:labelRunDry') : t('wiki:labelRunFull')
     setRunning(true)
     try {
       const res = await runWiki({ todoIds: ids, dryRun })
-      message.success(`${label} 完成：写了 ${res.sourcesWritten} 个 source，exit ${res.exitCode}`)
+      message.success(t('wiki:runOk', { label, written: res.sourcesWritten, exit: res.exitCode }))
       setSelected(new Set())
       await refresh()
     } catch (e: any) {
-      message.error(`${label} 失败：${e.message}`)
+      message.error(t('wiki:runFail', { label, msg: e.message }))
     } finally { setRunning(false) }
   }
 
@@ -121,25 +123,32 @@ export default function WikiDrawer({
     try {
       await openWikiDir()
     } catch (e: any) {
-      message.error(`打开目录失败：${e.message}`)
+      message.error(t('wiki:openDirFailed', { msg: e.message }))
     }
   }
 
+  const lastRunStatusText = status?.lastRun
+    ? (status.lastRun.error
+      ? ` · ${t('wiki:lastRunStatus.failed')}`
+      : status.lastRun.dry_run
+        ? ` · ${t('wiki:lastRunStatus.dryRun')}`
+        : ` · ${t('wiki:lastRunStatus.success')}`)
+    : ''
   const lastRunLabel = status?.lastRun
-    ? `上次沉淀：${dayjs(status.lastRun.started_at).format('MM-DD HH:mm')}${status.lastRun.error ? ' · 失败' : status.lastRun.dry_run ? ' · dry-run' : ' · 成功'}`
-    : '从未沉淀'
+    ? t('wiki:lastRun', { time: `${dayjs(status.lastRun.started_at).format('MM-DD HH:mm')}${lastRunStatusText}` })
+    : t('wiki:lastRunNever')
 
   return (
     <Drawer
-      title={<span><BookOutlined style={{ marginRight: 6 }} />记忆（Wiki）</span>}
+      title={<span><BookOutlined style={{ marginRight: 6 }} />{t('wiki:drawerTitle')}</span>}
       open={open}
       onClose={onClose}
       width={1100}
       extra={
         <Space>
           <Tag>{lastRunLabel}</Tag>
-          <Button icon={<SyncOutlined />} onClick={refresh} loading={loadingTree}>刷新</Button>
-          <Button icon={<FolderOpenOutlined />} onClick={openInFinder}>打开目录</Button>
+          <Button icon={<SyncOutlined />} onClick={refresh} loading={loadingTree}>{t('wiki:refresh')}</Button>
+          <Button icon={<FolderOpenOutlined />} onClick={openInFinder}>{t('wiki:openDir')}</Button>
         </Space>
       }
     >
@@ -147,25 +156,25 @@ export default function WikiDrawer({
         <Alert
           style={{ marginBottom: 12 }}
           type="error" showIcon
-          message="wiki 目录已存在但不是 git 仓库"
-          description={`为避免覆盖现有内容，自动初始化被拒绝。请进入 ${status.wikiDir} 处理（移走或 git init）`}
+          message={t('wiki:alertNotGitTitle')}
+          description={t('wiki:alertNotGitDesc', { dir: status.wikiDir })}
         />
       )}
       {status?.initState === 'git-failed' && (
-        <Alert style={{ marginBottom: 12 }} type="warning" showIcon message="git init 失败" description="wiki 可用但没有 git 保护，误删无法回滚" />
+        <Alert style={{ marginBottom: 12 }} type="warning" showIcon message={t('wiki:alertGitFailedTitle')} description={t('wiki:alertGitFailedDesc')} />
       )}
 
       <div className="wiki-pending-section">
         <div className="wiki-pending-title">
-          未沉淀 done todo（{pending.length}）
+          {t('wiki:pendingTitle', { count: pending.length })}
           {pending.length > 0 && (
             <Button size="small" type="link" onClick={toggleAll}>
-              {selected.size === pending.length ? '清空' : '全选'}
+              {selected.size === pending.length ? t('wiki:clearAll') : t('wiki:selectAll')}
             </Button>
           )}
         </div>
         {pending.length === 0 ? (
-          <Empty description="全部 done todo 都已沉淀" imageStyle={{ height: 40 }} />
+          <Empty description={t('wiki:emptyPending')} imageStyle={{ height: 40 }} />
         ) : (
           pending.map((p) => (
             <div key={p.id} className="wiki-pending-row">
@@ -180,15 +189,15 @@ export default function WikiDrawer({
         )}
         <Space style={{ marginTop: 8 }}>
           <Button type="primary" disabled={selected.size === 0} loading={running} onClick={() => handleRun(false)}>
-            沉淀选中（{selected.size}）
+            {t('wiki:runSelected', { count: selected.size })}
           </Button>
           <Button disabled={selected.size === 0} loading={running} onClick={() => {
             modal.confirm({
-              title: '只生成 sources（不调 LLM）',
-              content: '用于预览素材规模；不会更新 topics/projects，选中 todo 仍显示在未沉淀列表。',
+              title: t('wiki:dryRunConfirmTitle'),
+              content: t('wiki:dryRunConfirmContent'),
               onOk: () => handleRun(true),
             })
-          }}>只生成 sources（预览）</Button>
+          }}>{t('wiki:runDryOnly')}</Button>
         </Space>
       </div>
 
@@ -196,16 +205,16 @@ export default function WikiDrawer({
         <div className="wiki-tree-pane">
           {loadingTree ? <Spin /> : (
             <>
-              <TreeSection title="顶层" files={groups.topLevel} active={activePath} onPick={setActivePath} />
-              <TreeSection title="topics" files={groups.topics} active={activePath} onPick={setActivePath} />
-              <TreeSection title="projects" files={groups.projects} active={activePath} onPick={setActivePath} />
-              <TreeSection title="sources" files={groups.sources} active={activePath} onPick={setActivePath} />
+              <TreeSection title={t('wiki:treeSection.topLevel')} files={groups.topLevel} active={activePath} onPick={setActivePath} />
+              <TreeSection title={t('wiki:treeSection.topics')} files={groups.topics} active={activePath} onPick={setActivePath} />
+              <TreeSection title={t('wiki:treeSection.projects')} files={groups.projects} active={activePath} onPick={setActivePath} />
+              <TreeSection title={t('wiki:treeSection.sources')} files={groups.sources} active={activePath} onPick={setActivePath} />
             </>
           )}
         </div>
         <div className="wiki-content-pane">
           {!activePath ? (
-            <div className="wiki-content-empty">选择左侧文件查看</div>
+            <div className="wiki-content-empty">{t('wiki:contentEmpty')}</div>
           ) : loadingContent ? (
             <Spin />
           ) : (

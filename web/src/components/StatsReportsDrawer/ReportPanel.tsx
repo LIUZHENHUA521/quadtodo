@@ -1,34 +1,39 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Segmented, DatePicker, Empty, Spin, Tag } from 'antd'
+import { useTranslation } from 'react-i18next'
 import dayjs, { Dayjs } from 'dayjs'
 import { getDoneReport, DoneReport, Todo, Quadrant } from '../../api'
 import './ReportPanel.css'
 
 type RangeKey = 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom'
 
-const QUADRANT_CONFIG: { q: Quadrant; label: string; color: string }[] = [
-  { q: 1, label: 'Q1 · 重要且紧急', color: '#ff4d4f' },
-  { q: 2, label: 'Q2 · 重要不紧急', color: '#faad14' },
-  { q: 3, label: 'Q3 · 紧急不重要', color: '#1677ff' },
-  { q: 4, label: 'Q4 · 不重要不紧急', color: '#52c41a' },
+const QUADRANT_CONFIG: { q: Quadrant; color: string }[] = [
+  { q: 1, color: '#ff4d4f' },
+  { q: 2, color: '#faad14' },
+  { q: 3, color: '#1677ff' },
+  { q: 4, color: '#52c41a' },
 ]
 const QUAD_META = new Map(QUADRANT_CONFIG.map(c => [c.q, c]))
 
-function resolveRange(key: RangeKey, custom?: [Dayjs, Dayjs]): { since: number; until: number; title: string } {
+function resolveRange(
+  key: RangeKey,
+  custom: [Dayjs, Dayjs] | undefined,
+  labels: Record<'today' | 'yesterday' | 'thisWeek' | 'lastWeek', string>,
+): { since: number; until: number; title: string } {
   const now = dayjs()
   if (key === 'today') {
-    return { since: now.startOf('day').valueOf(), until: now.endOf('day').valueOf() + 1, title: '今日' }
+    return { since: now.startOf('day').valueOf(), until: now.endOf('day').valueOf() + 1, title: labels.today }
   }
   if (key === 'yesterday') {
     const y = now.subtract(1, 'day')
-    return { since: y.startOf('day').valueOf(), until: y.endOf('day').valueOf() + 1, title: '昨日' }
+    return { since: y.startOf('day').valueOf(), until: y.endOf('day').valueOf() + 1, title: labels.yesterday }
   }
   if (key === 'thisWeek') {
-    return { since: now.startOf('week').valueOf(), until: now.endOf('week').valueOf() + 1, title: '本周' }
+    return { since: now.startOf('week').valueOf(), until: now.endOf('week').valueOf() + 1, title: labels.thisWeek }
   }
   if (key === 'lastWeek') {
     const lw = now.subtract(1, 'week')
-    return { since: lw.startOf('week').valueOf(), until: lw.endOf('week').valueOf() + 1, title: '上周' }
+    return { since: lw.startOf('week').valueOf(), until: lw.endOf('week').valueOf() + 1, title: labels.lastWeek }
   }
   if (custom && custom.length === 2) {
     return {
@@ -37,7 +42,7 @@ function resolveRange(key: RangeKey, custom?: [Dayjs, Dayjs]): { since: number; 
       title: `${custom[0].format('MM-DD')} ~ ${custom[1].format('MM-DD')}`,
     }
   }
-  return { since: now.startOf('day').valueOf(), until: now.endOf('day').valueOf() + 1, title: '今日' }
+  return { since: now.startOf('day').valueOf(), until: now.endOf('day').valueOf() + 1, title: labels.today }
 }
 
 function localDateKey(ts: number) {
@@ -60,12 +65,15 @@ function computeStreak(countsByDate: Map<string, number>): number {
 }
 
 // 最近 7 天热力条（含今天）
-function buildHeatmap(countsByDate: Map<string, number>): { date: string; count: number; label: string }[] {
+function buildHeatmap(
+  countsByDate: Map<string, number>,
+  heatLabels: { today: string; yesterday: string },
+): { date: string; count: number; label: string }[] {
   const days: { date: string; count: number; label: string }[] = []
   for (let i = 6; i >= 0; i--) {
     const d = dayjs().subtract(i, 'day')
     const key = d.format('YYYY-MM-DD')
-    const label = i === 0 ? '今' : i === 1 ? '昨' : d.format('M/D')
+    const label = i === 0 ? heatLabels.today : i === 1 ? heatLabels.yesterday : d.format('M/D')
     days.push({ date: key, count: countsByDate.get(key) || 0, label })
   }
   return days
@@ -89,7 +97,7 @@ interface DayGroup {
   total: number
 }
 
-function groupByDay(list: Todo[]): DayGroup[] {
+function groupByDay(list: Todo[], dayLabels: { today: (d: string) => string; yesterday: (d: string) => string }): DayGroup[] {
   const byDate = new Map<string, Todo[]>()
   for (const t of list) {
     if (!t.completedAt) continue
@@ -128,7 +136,7 @@ function groupByDay(list: Todo[]): DayGroup[] {
     }
     const today = dayjs().format('YYYY-MM-DD')
     const yesterday = dayjs().subtract(1, 'day').format('YYYY-MM-DD')
-    const label = date === today ? `今天 ${date}` : date === yesterday ? `昨天 ${date}` : date
+    const label = date === today ? dayLabels.today(date) : date === yesterday ? dayLabels.yesterday(date) : date
     groups.push({ date, label, parents, childrenByParent, orphanSubtasks, countsByQuadrant, total: dayTodos.length })
   }
   return groups
@@ -150,11 +158,12 @@ function TodoRow({ todo, indent }: { todo: Todo; indent?: boolean }) {
 }
 
 function DayBlock({ group }: { group: DayGroup }) {
+  const { t } = useTranslation(['settings'])
   return (
     <div className="report-day-block">
       <div className="report-day-head">
         <span className="report-day-label">{group.label}</span>
-        <span className="report-day-count">完成 <b>{group.total}</b> 件</span>
+        <span className="report-day-count">{t('settings:report.dayDone')} <b>{group.total}</b> {t('settings:report.dayDoneSuffix')}</span>
         <div style={{ flex: 1 }} />
         <div className="report-day-quad-counts">
           {QUADRANT_CONFIG.map(c => {
@@ -186,12 +195,28 @@ function DayBlock({ group }: { group: DayGroup }) {
 }
 
 function ReportBody({ active, rangeKey, custom }: { active: boolean; rangeKey: RangeKey; custom?: [Dayjs, Dayjs] }) {
+  const { t } = useTranslation(['settings'])
   const [loading, setLoading] = useState(false)
   const [report, setReport] = useState<DoneReport | null>(null)
   const [heatReport, setHeatReport] = useState<DoneReport | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const { since, until, title } = useMemo(() => resolveRange(rangeKey, custom), [rangeKey, custom])
+  const rangeLabels = useMemo(() => ({
+    today: t('settings:report.range.today'),
+    yesterday: t('settings:report.range.yesterday'),
+    thisWeek: t('settings:report.range.thisWeek'),
+    lastWeek: t('settings:report.range.lastWeek'),
+  }), [t])
+  const heatLabels = useMemo(() => ({
+    today: t('settings:report.heat.today'),
+    yesterday: t('settings:report.heat.yesterday'),
+  }), [t])
+  const dayLabels = useMemo(() => ({
+    today: (date: string) => t('settings:report.dayLabel.today', { date }),
+    yesterday: (date: string) => t('settings:report.dayLabel.yesterday', { date }),
+  }), [t])
+
+  const { since, until, title } = useMemo(() => resolveRange(rangeKey, custom, rangeLabels), [rangeKey, custom, rangeLabels])
 
   useEffect(() => {
     if (!active) return
@@ -210,7 +235,7 @@ function ReportBody({ active, rangeKey, custom }: { active: boolean; rangeKey: R
         setReport(main)
         setHeatReport(heat)
       })
-      .catch(e => { if (!cancelled) setError(e?.message || '加载失败') })
+      .catch(e => { if (!cancelled) setError(e?.message || t('settings:report.loadFailedShort')) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [active, since, until])
@@ -224,9 +249,9 @@ function ReportBody({ active, rangeKey, custom }: { active: boolean; rangeKey: R
   }, [heatReport])
 
   const streak = useMemo(() => computeStreak(countsByDate), [countsByDate])
-  const heat = useMemo(() => buildHeatmap(countsByDate), [countsByDate])
+  const heat = useMemo(() => buildHeatmap(countsByDate, heatLabels), [countsByDate, heatLabels])
 
-  const dayGroups = useMemo(() => (report ? groupByDay(report.list) : []), [report])
+  const dayGroups = useMemo(() => (report ? groupByDay(report.list, dayLabels) : []), [report, dayLabels])
   const todayStr = dayjs().format('YYYY-MM-DD')
   const todayCount = countsByDate.get(todayStr) || 0
 
@@ -235,15 +260,15 @@ function ReportBody({ active, rangeKey, custom }: { active: boolean; rangeKey: R
       <div className="report-hero">
         <div className="report-hero-main">
           <div className="report-hero-today">
-            今天已完成 <span className="report-hero-num">{todayCount}</span> 件事 🎉
+            {t('settings:report.heroToday')} <span className="report-hero-num">{todayCount}</span> {t('settings:report.heroSuffix')}
           </div>
           {streak >= 3 && (
-            <div className="report-streak-badge">🔥 连续 {streak} 天</div>
+            <div className="report-streak-badge">{t('settings:report.streak', { count: streak })}</div>
           )}
         </div>
         <div className="report-heatmap">
           {heat.map(cell => (
-            <div key={cell.date} className="report-heat-cell" title={`${cell.date} · 完成 ${cell.count} 件`}>
+            <div key={cell.date} className="report-heat-cell" title={t('settings:report.heatTooltip', { date: cell.date, count: cell.count })}>
               <div className={`report-heat-square report-heat-l${heatLevel(cell.count)}`}>
                 {cell.count > 0 ? cell.count : ''}
               </div>
@@ -255,20 +280,20 @@ function ReportBody({ active, rangeKey, custom }: { active: boolean; rangeKey: R
 
       <div className="report-range-summary">
         <span>{title}</span>
-        <span className="report-range-sep">·</span>
-        <span>完成 <b>{report?.total ?? 0}</b> 件</span>
+        <span className="report-range-sep">{t('settings:report.sep')}</span>
+        <span>{t('settings:report.rangeDoneCount')} <b>{report?.total ?? 0}</b> {t('settings:report.rangeDoneSuffix')}</span>
         {report && report.missedCount > 0 && (
           <>
-            <span className="report-range-sep">·</span>
-            <span className="report-missed-note">过期 {report.missedCount} 条</span>
+            <span className="report-range-sep">{t('settings:report.sep')}</span>
+            <span className="report-missed-note">{t('settings:report.missed', { count: report.missedCount })}</span>
           </>
         )}
       </div>
 
       {loading && <div className="report-loading"><Spin /></div>}
-      {error && !loading && <Empty description={`加载失败：${error}`} />}
+      {error && !loading && <Empty description={t('settings:report.loadFailed', { msg: error })} />}
       {!loading && !error && dayGroups.length === 0 && (
-        <Empty description="这段时间还没打勾——去完成点什么吧 💪" />
+        <Empty description={t('settings:report.emptyDays')} />
       )}
       {!loading && !error && dayGroups.length > 0 && (
         <div className="report-days">
@@ -284,6 +309,7 @@ function ReportBody({ active, rangeKey, custom }: { active: boolean; rangeKey: R
  * Mounted inside Tabs; only fetches data when `active` is true.
  */
 export function ReportPanel({ active }: { active: boolean }) {
+  const { t } = useTranslation(['settings'])
   const [rangeKey, setRangeKey] = useState<RangeKey>('today')
   const [custom, setCustom] = useState<[Dayjs, Dayjs] | undefined>()
 
@@ -293,11 +319,11 @@ export function ReportPanel({ active }: { active: boolean }) {
         value={rangeKey}
         onChange={v => setRangeKey(v as RangeKey)}
         options={[
-          { label: '今日', value: 'today' },
-          { label: '昨日', value: 'yesterday' },
-          { label: '本周', value: 'thisWeek' },
-          { label: '上周', value: 'lastWeek' },
-          { label: '自定义', value: 'custom' },
+          { label: t('settings:report.range.today'), value: 'today' },
+          { label: t('settings:report.range.yesterday'), value: 'yesterday' },
+          { label: t('settings:report.range.thisWeek'), value: 'thisWeek' },
+          { label: t('settings:report.range.lastWeek'), value: 'lastWeek' },
+          { label: t('settings:report.range.custom'), value: 'custom' },
         ]}
       />
       {rangeKey === 'custom' && (

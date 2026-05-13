@@ -1,4 +1,5 @@
 import { Drawer, Alert, Typography, Form, Input, InputNumber, Button, Radio, Space, Tag, Switch, Collapse, Tabs, Segmented } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { useAppMessages } from './design/useAppMessages'
 import { MinusCircleOutlined, PlusOutlined, BookOutlined } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
@@ -72,9 +73,9 @@ function isMaskedToken(value: unknown): boolean {
   return typeof value === 'string' && value.startsWith('tg_***')
 }
 
-function telegramSourceLabel(source: 'agentquad' | 'missing' | 'input'): string {
-  if (source === 'input') return '当前输入，保存后生效'
-  if (source === 'agentquad') return 'AgentQuad'
+function telegramSourceLabel(source: 'agentquad' | 'missing' | 'input', t: (k: string) => string): string {
+  if (source === 'input') return t('settings:telegram.sourceInput')
+  if (source === 'agentquad') return t('settings:telegram.sourceAgentquadShort')
   return 'missing'
 }
 
@@ -82,9 +83,9 @@ function isMaskedLarkSecret(value: unknown): boolean {
   return typeof value === 'string' && value.startsWith('lark_***')
 }
 
-function larkSourceLabel(source: 'agentquad' | 'missing' | 'input'): string {
-  if (source === 'input') return '当前输入，保存后生效'
-  if (source === 'agentquad') return 'AgentQuad'
+function larkSourceLabel(source: 'agentquad' | 'missing' | 'input', t: (k: string) => string): string {
+  if (source === 'input') return t('settings:telegram.sourceInput')
+  if (source === 'agentquad') return t('settings:telegram.sourceAgentquadShort')
   return 'missing'
 }
 
@@ -96,6 +97,7 @@ const TOOL_LABEL: Record<ToolKey, string> = {
 }
 
 export default function SettingsDrawer({ open, onClose }: Props) {
+  const { t } = useTranslation(['settings'])
   const { message } = useAppMessages()
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [toolDiagnostics, setToolDiagnostics] = useState<Record<ToolKey, ToolDiagnostic> | null>(null)
@@ -350,10 +352,10 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           ...rate,
         })),
       })
-      message.success('设置已保存。默认目录和工具对新会话立即生效，端口需重启后生效。')
+      message.success(t('settings:saveOk'))
     } catch (e: any) {
       if (e?.errorFields) return
-      message.error(e?.message || '保存失败')
+      message.error(e?.message || t('settings:saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -364,12 +366,12 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       setPickingDefaultCwd(true)
       const result = await pickDirectory({
         defaultPath: form.getFieldValue('defaultCwd') || config?.defaultCwd,
-        prompt: '选择默认启动目录',
+        prompt: t('settings:general.pickDirPrompt'),
       })
       if (result.cancelled || !result.path) return
       form.setFieldValue('defaultCwd', result.path)
     } catch (e: any) {
-      message.error(e?.message || '选择目录失败')
+      message.error(e?.message || t('settings:pickDirFailed'))
     } finally {
       setPickingDefaultCwd(false)
     }
@@ -404,9 +406,9 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       setToolDiagnostics(result.toolDiagnostics)
       form.setFieldValue(`${tool}Command`, joinCommandLine(result.config.tools[tool].command, result.config.tools[tool].args))
       form.setFieldValue(`${tool}Bin`, result.config.tools[tool].bin)
-      message.success(`${tool} 已重新检测`)
+      message.success(t('settings:tools.redetectOk', { tool }))
     } catch (e: any) {
-      message.error(e?.message || '重新检测失败')
+      message.error(e?.message || t('settings:tools.redetectFailed'))
     }
   }
 
@@ -414,12 +416,12 @@ export default function SettingsDrawer({ open, onClose }: Props) {
     const meta = toolDiagnostics?.[tool]
     if (!meta) return null
     const sourceText = meta.source === 'env'
-      ? '环境变量覆盖'
+      ? t('settings:tools.source.env')
       : meta.source === 'config'
-        ? '手动配置'
+        ? t('settings:tools.source.config')
         : meta.source === 'auto-detected'
-          ? '自动检测'
-          : '未检测到'
+          ? t('settings:tools.source.autoDetected')
+          : t('settings:tools.source.missing')
     const sourceColor = meta.source === 'missing'
       ? 'error'
       : meta.source === 'auto-detected'
@@ -432,16 +434,16 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       <div style={{ marginTop: 8 }}>
         <Space size={[8, 8]} wrap>
           <Tag color={sourceColor}>{sourceText}</Tag>
-          <Button size="small" onClick={() => handleRedetectTool(tool)}>重新检测</Button>
+          <Button size="small" onClick={() => handleRedetectTool(tool)}>{t('settings:tools.redetect')}</Button>
         </Space>
         {!meta.missing && (
           <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
-            当前启动命令：<Text code>{meta.command}</Text>
+            {t('settings:tools.currentCommand')}<Text code>{meta.command}</Text>
           </div>
         )}
         {!meta.missing && (
           <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
-            当前有效路径：<Text code>{meta.bin}</Text>
+            {t('settings:tools.currentBin')}<Text code>{meta.bin}</Text>
           </div>
         )}
         {meta.missing && meta.installHint && (
@@ -449,7 +451,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
             style={{ marginTop: 8 }}
             type="warning"
             showIcon
-            message={`未检测到 ${tool}，可先安装：`}
+            message={t('settings:tools.missingHint', { tool })}
             description={<Text code>{meta.installHint}</Text>}
           />
         )}
@@ -464,26 +466,26 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       claude: {
         cmd: 'claude',
         bin: '/Users/liuzhenhua/.nvm/versions/node/v20.19.5/bin/claude',
-        extra: '默认是 claude，如果公司内封装成 claude-w，可以在这里修改。',
+        extra: t('settings:tools.extra.claude'),
       },
       codex: {
         cmd: 'codex',
         bin: '/Users/liuzhenhua/.nvm/versions/node/v20.19.5/bin/codex',
-        extra: '默认是 codex，如果公司内封装成 codex-w，可以在这里修改。',
+        extra: t('settings:tools.extra.codex'),
       },
       cursor: {
         cmd: 'cursor-agent',
         bin: '/Users/liuzhenhua/.local/bin/cursor-agent',
-        extra: '默认是 cursor-agent；新会话会先跑 `cursor-agent create-chat` 拿 chatId 再用 --resume 进入交互。',
+        extra: t('settings:tools.extra.cursor'),
       },
     }
     const p = placeholder[tool]
     return (
       <>
-        <Form.Item name={cmdField} label="启动命令" extra={p.extra}>
+        <Form.Item name={cmdField} label={t('settings:tools.cmdLabel')} extra={p.extra}>
           <Input placeholder={p.cmd} />
         </Form.Item>
-        <Form.Item name={binField} label="二进制路径">
+        <Form.Item name={binField} label={t('settings:tools.binLabel')}>
           <Input placeholder={p.bin} />
         </Form.Item>
         {renderToolMeta(tool)}
@@ -493,23 +495,23 @@ export default function SettingsDrawer({ open, onClose }: Props) {
 
   const runTab = (
     <>
-      <div className="settings-section-title">启动</div>
+      <div className="settings-section-title">{t('settings:section.startup')}</div>
 
       <Form.Item
-        label="默认启动目录"
-        extra="新开的 AI 会话会默认在这个目录里启动。保存后立即对新会话生效。"
+        label={t('settings:general.defaultCwdLabel')}
+        extra={t('settings:general.defaultCwdExtra')}
       >
         <Space.Compact block>
-          <Form.Item name="defaultCwd" noStyle rules={[{ required: true, message: '请输入默认启动目录' }]}>
-            <Input allowClear placeholder="/Users/liuzhenhua/Desktop/code/crazyCombo" />
+          <Form.Item name="defaultCwd" noStyle rules={[{ required: true, message: t('settings:general.defaultCwdRequired') }]}>
+            <Input allowClear placeholder={t('settings:general.defaultCwdPlaceholder')} />
           </Form.Item>
-          <Button loading={pickingDefaultCwd} onClick={handlePickDefaultCwd}>选择目录</Button>
+          <Button loading={pickingDefaultCwd} onClick={handlePickDefaultCwd}>{t('settings:general.pickDir')}</Button>
         </Space.Compact>
       </Form.Item>
 
       <Form.Item
-        label="终端链接打开编辑器"
-        extra="终端中的文件路径点击时会使用该编辑器打开；也是卡片「代码」按钮的默认项。"
+        label={t('settings:general.linkEditorLabel')}
+        extra={t('settings:general.linkEditorExtra')}
       >
         <Radio.Group
           value={linkEditor}
@@ -526,13 +528,13 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         </Radio.Group>
       </Form.Item>
 
-      <div className="settings-section-title">服务</div>
+      <div className="settings-section-title">{t('settings:section.service')}</div>
 
       <Form.Item
         name="port"
-        label="服务端口"
-        rules={[{ required: true, message: '请输入服务端口' }]}
-        extra="端口会保存到配置文件，重启 AgentQuad 后生效。"
+        label={t('settings:general.portLabel')}
+        rules={[{ required: true, message: t('settings:general.portRequired') }]}
+        extra={t('settings:general.portExtra')}
       >
         <InputNumber min={1} max={65535} style={{ width: 160 }} />
       </Form.Item>
@@ -550,7 +552,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
     return (
       <div style={{ marginTop: 8 }}>
         {entries.length === 0 && (
-          <Text type="secondary" style={{ fontSize: 12 }}>（暂无 {field} 覆盖）</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('settings:dispatch.emptyOverride', { field })}</Text>
         )}
         {entries.map(([k, v]) => (
           <Space key={k} style={{ display: 'flex', marginBottom: 6 }}>
@@ -558,7 +560,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
               style={{ width: 200 }}
               value={k}
               disabled
-              addonBefore={field === 'perUser' ? '用户 id' : '会话 id'}
+              addonBefore={field === 'perUser' ? t('settings:dispatch.userIdAddon') : t('settings:dispatch.chatIdAddon')}
             />
             <Radio.Group
               size="small"
@@ -626,7 +628,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
               if (input) input.value = ''
             }}
           >
-            添加
+            {t('settings:dispatch.add')}
           </Button>
         </Space.Compact>
       </div>
@@ -635,8 +637,8 @@ export default function SettingsDrawer({ open, onClose }: Props) {
 
   const dispatchSection = (
     <Form.Item
-      label="按渠道分发工具"
-      extra="可针对 Lark / Telegram / Web 分别设默认工具，并对特定用户 / 会话覆盖。优先级：override > perUser > perChat > 渠道默认 > 全局 defaultTool。"
+      label={t('settings:dispatch.label')}
+      extra={t('settings:dispatch.extra')}
     >
       <Collapse
         ghost
@@ -645,7 +647,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           label: <span style={{ fontWeight: 500 }}>{channel}</span>,
           children: (
             <>
-              <Form.Item label="渠道默认工具" style={{ marginBottom: 8 }}>
+              <Form.Item label={t('settings:dispatch.channelDefaultLabel')} style={{ marginBottom: 8 }}>
                 <Radio.Group
                   value={dispatchDraft[channel]?.default || 'claude'}
                   onChange={(e) => {
@@ -664,18 +666,18 @@ export default function SettingsDrawer({ open, onClose }: Props) {
                 </Radio.Group>
               </Form.Item>
               {channel === 'lark' && (
-                <Form.Item label="按用户覆盖（perUser，open_id → 工具）" style={{ marginBottom: 8 }}>
-                  {renderPerKeyEditor('lark', 'perUser', '输入 open_id 后回车 / 添加')}
+                <Form.Item label={t('settings:dispatch.perUserLabel')} style={{ marginBottom: 8 }}>
+                  {renderPerKeyEditor('lark', 'perUser', t('settings:dispatch.perUserPlaceholder'))}
                 </Form.Item>
               )}
               {channel === 'telegram' && (
-                <Form.Item label="按会话覆盖（perChat，chat_id → 工具）" style={{ marginBottom: 8 }}>
-                  {renderPerKeyEditor('telegram', 'perChat', '输入 chat_id 后回车 / 添加')}
+                <Form.Item label={t('settings:dispatch.perChatLabel')} style={{ marginBottom: 8 }}>
+                  {renderPerKeyEditor('telegram', 'perChat', t('settings:dispatch.perChatPlaceholder'))}
                 </Form.Item>
               )}
               {channel === 'web' && (
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  Web 端可在创建会话时显式传 tool 字段覆盖；如未传则取 web 渠道默认。
+                  {t('settings:dispatch.webHint')}
                 </Text>
               )}
             </>
@@ -689,9 +691,9 @@ export default function SettingsDrawer({ open, onClose }: Props) {
     <>
       <Form.Item
         name="defaultTool"
-        label="默认工具"
-        extra="新开会话时默认启动的 AI 工具。"
-        rules={[{ required: true, message: '请选择默认工具' }]}
+        label={t('settings:tools.defaultToolLabel')}
+        extra={t('settings:tools.defaultToolExtra')}
+        rules={[{ required: true, message: t('settings:tools.defaultToolRequired') }]}
       >
         <Radio.Group>
           <Radio.Button value="claude">Claude</Radio.Button>
@@ -702,7 +704,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
 
       {dispatchSection}
 
-      <Form.Item label="查看工具配置">
+      <Form.Item label={t('settings:tools.viewToolLabel')}>
         <Segmented
           value={viewingTool}
           onChange={(v) => setViewingTool(v as ToolKey)}
@@ -727,7 +729,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           label: (
             <span style={{ fontWeight: 500 }}>
               <BookOutlined style={{ marginRight: 6 }} />
-              配置教程（不熟悉的话点开看）
+              {t('settings:setupGuideLabel')}
             </span>
           ),
           children: (
