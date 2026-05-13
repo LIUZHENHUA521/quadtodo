@@ -1,14 +1,15 @@
-import { Drawer, Descriptions, Alert, Typography, Form, Input, InputNumber, Button, Radio, Space, Tag, Switch, Collapse, Tabs, Segmented } from 'antd'
+import { Drawer, Alert, Typography, Form, Input, InputNumber, Button, Radio, Space, Tag, Switch, Collapse, Tabs, Segmented } from 'antd'
 import { useAppMessages } from './design/useAppMessages'
 import { MinusCircleOutlined, PlusOutlined, BookOutlined } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { markdownComponents } from './markdownComponents'
-import { getStatus, getConfig, updateConfig, AppConfig, pickDirectory, ToolDiagnostic, testTelegram, testLark, type ProbeHit, type DispatchChannelConfig } from './api'
+import { getConfig, updateConfig, AppConfig, pickDirectory, ToolDiagnostic, testTelegram, testLark, type ProbeHit, type DispatchChannelConfig } from './api'
 import { TelegramProbeModal } from './TelegramProbeModal'
 import telegramSetupMd from '../../docs/TELEGRAM-setup.md?raw'
 import larkSetupMd from '../../docs/LARK.md?raw'
+import './SettingsDrawer.css'
 
 const { Paragraph, Text } = Typography
 
@@ -96,7 +97,6 @@ const TOOL_LABEL: Record<ToolKey, string> = {
 
 export default function SettingsDrawer({ open, onClose }: Props) {
   const { message } = useAppMessages()
-  const [status, setStatus] = useState<{ version: string; activeSessions: number } | null>(null)
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [toolDiagnostics, setToolDiagnostics] = useState<Record<ToolKey, ToolDiagnostic> | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -163,9 +163,8 @@ export default function SettingsDrawer({ open, onClose }: Props) {
 
   useEffect(() => {
     if (!open) return
-    Promise.all([getStatus(), getConfig()])
-      .then(([s, result]) => {
-        setStatus(s)
+    getConfig()
+      .then((result) => {
         setConfig(result.config)
         setToolDiagnostics(result.toolDiagnostics)
         form.setFieldsValue({
@@ -1172,11 +1171,6 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       }
     >
       {err && <Alert type="error" message={err} style={{ marginBottom: 16 }} />}
-
-      <Descriptions column={1} bordered size="small" style={{ marginBottom: 16 }}>
-        <Descriptions.Item label="版本">{status?.version ?? '-'}</Descriptions.Item>
-        <Descriptions.Item label="活跃 AI 会话数">{status?.activeSessions ?? '-'}</Descriptions.Item>
-      </Descriptions>
 
       <Form form={form} layout="vertical">
         <Tabs
