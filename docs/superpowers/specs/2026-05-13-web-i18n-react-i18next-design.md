@@ -56,7 +56,7 @@ web/src/
 | namespace | 覆盖范围 | 关键 key 示例 |
 |---|---|---|
 | `common` | 通用按钮、状态词、确认/取消 | `common.confirm`、`common.cancel`、`common.restore`、`common.todo`、`common.done`、`common.running`、`common.idle` |
-| `palette` | CommandPalette 全部 | `palette.placeholder`、`palette.groups.quickActions`、`palette.actions.createTodo`、`palette.actions.startAi` |
+| `palette` | CommandPalette 全部 | `palette.placeholder`、`palette.groups.quickActions`、`palette.actions.createTodo`、`palette.actions.startAi`、`palette.a11y.commandPalette`（aria label）、`palette.empty.noResults` |
 | `topbar` | TopbarDispatch、StatPill、StageTagChip、ThemeToggle | `topbar.stats.unread`、`topbar.theme.toggle` |
 | `todo` | TodoManage、TodoCard、看板筛选、四象限 | `todo.create`、`todo.delete`、`todo.restoredAs`、`todo.quadrant.q1` |
 | `session` | SessionFocus、FocusSubbar、AiTerminalMini、AI 会话相关 | `session.start`、`session.tool.claude`、`session.awaitingReply` |
@@ -168,18 +168,25 @@ todo: {
 }
 ```
 
-### 6.5 不强制翻译的内容
+### 6.5 不强制翻译的内容（与范围内对照）
 - 注释（`// 这里是 xxx`）保留
 - `console.log` / `console.error` 保留
 - 单元测试断言中的中文字符串保留（除非该断言对应的 UI 文案改动）
 - 调试用 `debugger` / `throw new Error('xxx')` 保留
+- **键盘快捷键提示**：CommandPalette 中的 `<kbd>esc</kbd>`、`Create new todo` 右侧 `<span className="cmdk-meta">N</span>` 等按键名保留英文（国际通用）
+- **a11y label / aria-label**：本期纳入范围。`<Command label="Command Palette">` 这类不可见的辅助技术标签也通过 `t()` 访问，namespace 内放在 `palette.a11y.commandPalette` 之类子段中
 
-### 6.6 收尾扫描命令
+### 6.6 cmdk fuzzy 搜索与 i18n 的协同
+- `cmdk` 的 `Command.Item` 的 `value` 字段（CommandPalette 中如 `value={`todo-${t.id}-${label}`}`）当前嵌入了 `label` 文本用于模糊匹配。
+- i18n 化后 `label = t(...)` 会自动随当前语言变化 —— 用中文输入搜中文 label、英文输入搜英文 label 都能命中，**这是设计上的预期行为，不需要额外适配**。
+- 若日后真的需要"输入中文也能命中英文文案"或反过来，需另设 alias 字段，不在本期范围。
+
+### 6.7 收尾扫描命令
 
 ```bash
-# 扫描残留中文字面量（仅 jsx/tsx 中的字符串，排除注释）
+# 扫描残留 CJK 字面量（覆盖基本中文 + CJK 扩展A + 全角标点）
 cd web/src
-grep -rEn "['\"\`][一-龥][^'\"\`]{0,80}['\"\`]" \
+grep -rEnP "['\"\`][\x{4e00}-\x{9fff}\x{3400}-\x{4dbf}\x{3000}-\x{303f}\x{ff00}-\x{ffef}][^'\"\`]{0,80}['\"\`]" \
   --include="*.tsx" --include="*.ts" \
   --exclude-dir=i18n \
   | grep -v '^\s*//' \
@@ -189,6 +196,8 @@ wc -l /tmp/i18n-residue.txt
 ```
 
 预期 ≤ 20 行（注释里嵌的、调试日志、`new Error()` 等可以接受）。
+
+> 注：若环境不支持 `-P`（Perl regex），可降级为 `grep -rEn "['\"\`][一-龥…「」（）！？]"`，覆盖度略低但可用。
 
 ## 7. 测试策略
 
