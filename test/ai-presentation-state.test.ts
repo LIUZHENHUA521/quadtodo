@@ -29,6 +29,15 @@ describe('deriveAiState', () => {
     expect(deriveAiState(undefined, false)).toBe('idle')
     expect(deriveAiState(null, false)).toBe('idle')
   })
+
+  it('treats running+awaitingReply as not-running (PTY alive but stop hook fired)', () => {
+    // cursor/claude/codex 共同语义：PTY 还活着但一轮已结束，等用户下一条输入
+    expect(deriveAiState('running', false, true)).toBe('idle')
+    expect(deriveAiState('running', true, true)).toBe('pending')
+    // 默认 awaitingReply=false 保留原 running 语义
+    expect(deriveAiState('running', false, false)).toBe('running')
+    expect(deriveAiState('running', false)).toBe('running')
+  })
 })
 
 describe('isClosedAiStatus', () => {

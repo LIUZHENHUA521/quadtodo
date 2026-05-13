@@ -44,7 +44,7 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
   const idleList: SessionRowEntry[] = []
   sessions.forEach((session) => {
     const unread = isSessionUnread(session.lastTurnDoneAt, lastSeenMap.get(session.sessionId))
-    const state = deriveAiState(session.status, unread)
+    const state = deriveAiState(session.status, unread, session.awaitingReply ?? false)
     const entry: SessionRowEntry = {
       id: session.sessionId,
       todoId: session.todoId,

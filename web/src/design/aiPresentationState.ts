@@ -3,12 +3,18 @@ import type { AiStatus } from '../api'
 export type AiPresentationState = 'running' | 'pending' | 'idle'
 
 /**
- * 单一来源：把后端 AiStatus + 前端 unread 推导成 3 态展示态。
+ * 单一来源：把后端 AiStatus + unread + awaitingReply 推导成 3 态展示态。
  *
  * 规则：
- *   - status === 'running'  →  running（claude 正在执行）
- *   - 否则 unread === true  →  pending（claude 回复了，用户没看）
- *   - 其它一切             →  idle
+ *   - status === 'running' 且 PTY 未收到 turn_done（awaitingReply=false）→ running
+ *   - status === 'running' 但 stop hook 已 fire（awaitingReply=true）  →  unread 时 pending，否则 idle
+ *   - 其它非 running 状态 + unread                                     →  pending
+ *   - 其它一切                                                          →  idle
+ *
+ * awaitingReply 的存在是为了覆盖 claude/codex/cursor 都有的"PTY 还活着但一轮已结束"语义：
+ * status 只在 PTY 退出时才离开 'running'，但 stop hook 在每轮结束就 fire，
+ * markSessionAwaitingReply(true) 把 awaitingReply 翻 true；用户敲 Enter / Ctrl+C
+ * 提交下一条时再翻回 false（见 src/routes/ai-terminal.js 的 isPendingClearingInput）。
  *
  * 注意：status === 'pending_confirm' 不再是 pending 的充分条件；
  * 用户看过后即归 idle，直到后端把 status 推回 running。
@@ -16,8 +22,9 @@ export type AiPresentationState = 'running' | 'pending' | 'idle'
 export function deriveAiState(
   status: AiStatus | undefined | null,
   unread: boolean,
+  awaitingReply: boolean = false,
 ): AiPresentationState {
-  if (status === 'running') return 'running'
+  if (status === 'running' && !awaitingReply) return 'running'
   if (unread) return 'pending'
   return 'idle'
 }

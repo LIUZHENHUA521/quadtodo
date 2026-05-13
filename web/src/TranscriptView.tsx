@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Input, Button, Spin, Tag, Empty, Tooltip, Mentions, Popconfirm } from 'antd'
 import { useAppMessages } from './design/useAppMessages'
 import {
@@ -485,9 +485,11 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   //   1. displayedTurns.length 增加 → 强制滚到底（mainstream chat UX：ChatGPT/Claude.ai 都这样）
   //      并把 isAtBottomRef 拨回 true（视为"用户想跟"）。
   //   2. liveOutput 变化（流式输出）→ 仅在 isAtBottomRef.current = true 时滚（保留用户阅读旧消息的位置）。
-  // 双 rAF 等当前 commit 后的 layout 完成；120ms setTimeout 兜底等 markdown/hljs 同步阻塞渲染。
+  //
+  // 用 useLayoutEffect：在浏览器 paint 之前同步钉底，避免长会话首次进入时用户看见"从顶部慢慢滚下来"。
+  // 之后的双 rAF + 120ms setTimeout 仍保留，用来兜底等 markdown/hljs/图片异步撑高后的再次粘底。
   const lastTurnCountRef = useRef(0)
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
     const prevLen = lastTurnCountRef.current
@@ -497,14 +499,17 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     // 用户在读历史 + 仅 liveOutput 在变 → 不打扰
     if (!newTurnAdded && !isAtBottomRef.current) return
 
+    // 同步钉底（paint 前）—— 第一帧用户就看到底部
+    el.scrollTop = el.scrollHeight
+    if (newTurnAdded) {
+      isAtBottomRef.current = true
+      setUnreadCount(0)
+    }
+
     const doScroll = () => {
       const node = scrollRef.current
       if (!node) return
       node.scrollTop = node.scrollHeight
-      if (newTurnAdded) {
-        isAtBottomRef.current = true
-        setUnreadCount(0)
-      }
     }
     let raf2 = 0
     const raf1 = requestAnimationFrame(() => {
@@ -746,7 +751,11 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   // live session 比 fetched data.session 新；data.session 在 transcript fetch 那一刻
   // 是 snapshot，可能没赶上后续 running → done 切换。live 优先，data 兜底（fetch 完成
   // 但 live store 还没 poll 到的边角窗口）。
-  const transcriptState = deriveAiState(transcriptLiveSession?.status ?? data?.session?.status, transcriptUnread)
+  const transcriptState = deriveAiState(
+    transcriptLiveSession?.status ?? data?.session?.status,
+    transcriptUnread,
+    transcriptLiveSession?.awaitingReply ?? false,
+  )
   const statusMeta = sessionStatusMeta(transcriptState)
 
   const wrapperClassName = [

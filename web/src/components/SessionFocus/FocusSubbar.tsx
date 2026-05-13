@@ -23,7 +23,7 @@ export function FocusSubbar({ session, fallbackStatus, onClose }: Props) {
     session?.sessionId ? s.lastSeenAt.get(session.sessionId) : undefined,
   )
   const unread = isSessionUnread(session?.lastTurnDoneAt, lastSeen)
-  const state = deriveAiState(session?.status ?? fallbackStatus, unread)
+  const state = deriveAiState(session?.status ?? fallbackStatus, unread, session?.awaitingReply ?? false)
   const statusLabel = AI_STATE_PILL_LABEL[state]
 
   const quadColor =

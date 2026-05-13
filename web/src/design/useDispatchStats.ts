@@ -24,7 +24,7 @@ export function useDispatchStats(): DispatchStats {
     let idleCount = 0
     sessions.forEach((session) => {
       const unread = isSessionUnread(session.lastTurnDoneAt, lastSeenMap.get(session.sessionId))
-      const state = deriveAiState(session.status, unread)
+      const state = deriveAiState(session.status, unread, session.awaitingReply ?? false)
       if (state === 'running') runningCount += 1
       else if (state === 'pending') pendingCount += 1
       else if (!isClosedAiStatus(session.status)) idleCount += 1

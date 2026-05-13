@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Command } from 'cmdk'
 import { useDispatchStore } from '../../store/dispatchStore'
 import { useTheme } from '../../design/ThemeProvider'
 import { useAiSessionStore } from '../../store/aiSessionStore'
+import { listTodos, updateTodo, type Todo } from '../../api'
+import { useAppMessages } from '../../design/useAppMessages'
 import './CommandPalette.css'
 
 type Page = 'default' | 'aiPicker'
@@ -16,15 +18,24 @@ interface TodoEntry {
   quad?: number | string
 }
 
+/** Max items to show in the "Jump to todo" group when the search box is empty.
+ *  cmdk's fuzzy filter still scans the full set once the user types. */
+const JUMP_LIST_EMPTY_LIMIT = 20
+
 export function CommandPalette() {
   const open = useDispatchStore((s) => s.palette)
   const closePalette = useDispatchStore((s) => s.closePalette)
   const openDrawer = useDispatchStore((s) => s.openDrawer)
   const { toggle: toggleTheme } = useTheme()
+  const { message } = useAppMessages()
 
   const [page, setPage] = useState<Page>('default')
   const [aiTool, setAiTool] = useState<'claude' | 'codex' | 'cursor'>('claude')
   const [search, setSearch] = useState('')
+
+  // All todos (including done) — lazy-fetched each time the palette opens so the
+  // "Jump to todo" group can surface completed items the main board has filtered out.
+  const [allTodos, setAllTodos] = useState<Todo[]>([])
 
   // Reset to default page each time the palette opens
   useEffect(() => {
@@ -34,7 +45,58 @@ export function CommandPalette() {
     }
   }, [open])
 
+  // Lazy fetch full todo list (todo + ai_done + done; server already excludes missed)
+  // whenever the palette opens. Discarded on close.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    listTodos({}).then((list) => {
+      if (!cancelled) setAllTodos(list)
+    }).catch(() => { /* silent — UI degrades to session-based list */ })
+    return () => { cancelled = true }
+  }, [open])
+
   const sessions = useAiSessionStore((s) => s.sessions)
+
+  // Parent-title lookup so subtask items can render "↳父标题 / 子标题".
+  const parentTitleById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const t of allTodos) if (!t.parentId) map.set(t.id, t.title)
+    return map
+  }, [allTodos])
+
+  // List used by the "Jump to todo" group. When search box is empty, cap at
+  // JUMP_LIST_EMPTY_LIMIT by updatedAt desc; once the user types, cmdk's fuzzy
+  // filter handles the full set.
+  const jumpListTodos = useMemo(() => {
+    if (search.trim()) return allTodos
+    return [...allTodos]
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      .slice(0, JUMP_LIST_EMPTY_LIMIT)
+  }, [allTodos, search])
+
+  function jumpToTodo(t: Todo) {
+    // Done items live outside the default 'todo' board filter — widen to 'all'
+    // so TodoManage can render the target card and scrollIntoView works.
+    if (t.status === 'done') {
+      useDispatchStore.getState().setBoardFilter('all')
+    }
+    useDispatchStore.getState().setJumpTo(t.id)
+    closePalette()
+  }
+
+  async function restoreTodo(t: Todo) {
+    closePalette()
+    try {
+      await updateTodo(t.id, { status: 'todo' })
+      useDispatchStore.getState().setBoardFilter('todo')
+      useDispatchStore.getState().signal('refreshTodos')
+      useDispatchStore.getState().setJumpTo(t.id)
+      message.success('已恢复为待办')
+    } catch (e: any) {
+      message.error(e?.message || '恢复失败')
+    }
+  }
 
   // Build a deduplicated list of todos from active/recent sessions.
   // SessionMeta extends LiveSession so all fields are typed directly.
@@ -117,22 +179,38 @@ export function CommandPalette() {
                 </Command.Item>
               </Command.Group>
 
-              {todos.length > 0 && (
+              {jumpListTodos.length > 0 && (
                 <Command.Group heading="Jump to todo">
-                  {todos.map((t) => (
-                    <Command.Item
-                      key={t.id}
-                      value={`todo-${t.id}-${t.title}`}
-                      onSelect={() => {
-                        useDispatchStore.getState().setJumpTo(t.id)
-                        closePalette()
-                      }}
-                    >
-                      <span className="cmdk-icon" style={{ color: 'var(--accent-electric)' }}>›</span>
-                      <span>{t.title}</span>
-                      {t.tool && <span className="cmdk-meta">{t.tool}</span>}
-                    </Command.Item>
-                  ))}
+                  {jumpListTodos.flatMap((t) => {
+                    const isDone = t.status === 'done'
+                    const parentTitle = t.parentId ? parentTitleById.get(t.parentId) : null
+                    const label = parentTitle ? `↳ ${parentTitle} / ${t.title}` : t.title
+                    const jumpItem = (
+                      <Command.Item
+                        key={`todo-${t.id}`}
+                        value={`todo-${t.id}-${label}`}
+                        onSelect={() => jumpToTodo(t)}
+                      >
+                        <span className="cmdk-icon" style={{ color: 'var(--accent-electric)' }}>
+                          {isDone ? '↗' : '›'}
+                        </span>
+                        <span>{label}</span>
+                        {isDone && <span className="cmdk-meta">已完成</span>}
+                      </Command.Item>
+                    )
+                    if (!isDone) return [jumpItem]
+                    return [
+                      jumpItem,
+                      <Command.Item
+                        key={`restore-${t.id}`}
+                        value={`restore-${t.id}-${label}`}
+                        onSelect={() => restoreTodo(t)}
+                      >
+                        <span className="cmdk-icon">↺</span>
+                        <span>恢复到待办：{label}</span>
+                      </Command.Item>,
+                    ]
+                  })}
                 </Command.Group>
               )}
 

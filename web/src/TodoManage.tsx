@@ -315,6 +315,7 @@ export default function TodoManage() {
   const setJumpTo = useDispatchStore((s) => s.setJumpTo)
   const newTodoSignal = useDispatchStore((s) => s.signals.newTodo === true)
   const recoverSignal = useDispatchStore((s) => s.signals.recover === true)
+  const refreshTodosSignal = useDispatchStore((s) => s.signals.refreshTodos === true)
   const consumeSignal = useDispatchStore((s) => s.consumeSignal)
 
   useEffect(() => {
@@ -324,9 +325,20 @@ export default function TodoManage() {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       el.classList.add('todo-card-flash')
       window.setTimeout(() => el.classList.remove('todo-card-flash'), 1200)
+      setJumpTo(null)
+      return
+    }
+    // Card isn't in the DOM — the board filter is hiding it (e.g. ⌘K jumped to a
+    // done todo while filter is 'todo'). Widen to 'all' and let this effect retry
+    // once the refetched list renders. Bail out if we're already on 'all'/'done'
+    // and still can't find it, to avoid an infinite loop.
+    if (lastFetchedFilter !== filterStatus) return
+    if (filterStatus === 'todo') {
+      setFilterStatus('')
+      return
     }
     setJumpTo(null)
-  }, [jumpToTodoId, setJumpTo])
+  }, [jumpToTodoId, todos, filterStatus, lastFetchedFilter, setJumpTo])
 
   useEffect(() => {
     if (!newTodoSignal) return
@@ -488,6 +500,14 @@ export default function TodoManage() {
   }, [todos, keyword])
 
   useEffect(() => { fetchTodos() }, [fetchTodos])
+
+  // CommandPalette's "恢复到待办" mutates a todo via the API directly, so the
+  // board needs an explicit refetch hint to pick up the new status.
+  useEffect(() => {
+    if (!refreshTodosSignal) return
+    consumeSignal('refreshTodos')
+    fetchTodos()
+  }, [refreshTodosSignal, consumeSignal, fetchTodos])
 
   // ─── 按象限分组 ───
 

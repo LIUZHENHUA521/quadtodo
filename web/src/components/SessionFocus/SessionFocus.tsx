@@ -19,6 +19,14 @@ export function SessionFocus() {
   const sessions = useAiSessionStore((s) => s.sessions)
   const replaceSessionId = useAiSessionStore((s) => s.replaceSessionId)
 
+  // live session 缺失时（首启动 3s 窗口）回退到 todo.aiSession.status，让 FocusSubbar
+  // 的 pill 不再闪 idle。
+  // ⚠️ 必须在任何早返回之前调用所有 Hook，否则会触发 React error #310
+  // (Rendered more hooks than during the previous render)。
+  const fallbackTodo = useTodoSnapshotStore((s) =>
+    focusedSessionId ? s.bySessionId.get(focusedSessionId) : undefined,
+  )
+
   // 用户打开 focus mode 即视为"已读" —— 让 TodoCard 的待确认徽章清掉
   // (条件：sessionId 存在且 user 真在 focus 这个 session)
   const markSeen = useUnreadStore((s) => s.markSeen)
@@ -51,11 +59,6 @@ export function SessionFocus() {
   if (!focusedTodoId) return null
 
   const session = focusedSessionId ? sessions.get(focusedSessionId) : undefined
-  // live session 缺失时（首启动 3s 窗口）回退到 todo.aiSession.status，让 FocusSubbar
-  // 的 pill 不再闪 idle。
-  const fallbackTodo = useTodoSnapshotStore((s) =>
-    focusedSessionId ? s.bySessionId.get(focusedSessionId) : undefined,
-  )
   const fallbackStatus = fallbackTodo?.aiSession?.sessionId === focusedSessionId
     ? fallbackTodo?.aiSession?.status
     : undefined

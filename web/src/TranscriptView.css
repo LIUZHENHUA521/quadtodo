@@ -65,7 +65,10 @@
   gap: 8px;
   min-height: 0;
   min-width: 0;
-  scroll-behavior: smooth;
+  /* 之前是 smooth：所有程序触发的 scrollTop=scrollHeight 都被浏览器做成长动画，
+     长会话首次进入会看到"从顶部慢慢滚下来"。改成 auto 后程序滚动瞬时完成；
+     用户手动滚轮 / 触摸不受影响，搜索匹配处的 scrollIntoView 显式传 behavior:'smooth' 仍是平滑的。 */
+  scroll-behavior: auto;
   /* 移动端：没有这三行，iOS Safari 会把触摸拖动交给外层 html 的滚动条，
      导致 Chat 续聊内容列表看起来"无法滚动"。
      - -webkit-overflow-scrolling: 开启惯性滚动（iOS < 13 需要，新版本也兼容）
