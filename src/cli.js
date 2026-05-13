@@ -355,6 +355,9 @@ export async function doctorReport({ rootDir = DEFAULT_ROOT_DIR } = {}) {
 
 // runStart：start 子命令的核心实现，导出给默认 action / 首跑向导复用
 export async function runStart(cmdOpts = {}) {
+  // dry-run 短路（仅用于测试，让默认 action 测试不真起服务 / 不跑向导）
+  if (process.env.AGENTQUAD_DRY_RUN === '1') return
+
   const rootDir = DEFAULT_ROOT_DIR
   const cfg = loadConfig({ rootDir })
   const defaultCwd = cmdOpts.cwd || cfg.defaultCwd || process.env.HOME || process.cwd()
@@ -379,9 +382,6 @@ export async function runStart(cmdOpts = {}) {
   } catch (e) {
     console.warn(`⚠ first-run wizard skipped: ${e?.message || e}`)
   }
-
-  // dry-run 短路（仅用于测试，让默认 action 测试不真起服务）
-  if (process.env.AGENTQUAD_DRY_RUN === '1') return
 
   // ─── stdout/stderr 复制到 ~/.agentquad/logs/agentquad.log ───
   // 保留正常 console 输出 + 同步追加到日志文件，方便诊断
@@ -531,10 +531,16 @@ program.command('start')
   .action(async (cmdOpts) => { await runStart(cmdOpts) })
 
 // 裸跑 `agentquad`（无子命令）→ 复用 start 逻辑，默认开向导
+// 注意：--no-wizard 同时挂在 start 子命令上，两边需保持一致
 program
   .option('--no-wizard', 'skip first-run wizard')
-  .action(async (cmdOpts) => {
-    await runStart({ ...cmdOpts })
+  .action(async function (cmdOpts) {
+    if (this.args.length) {
+      console.error(`Unknown command: ${this.args[0]}`)
+      console.error(`Run 'agentquad --help' for available commands.`)
+      process.exit(1)
+    }
+    await runStart(cmdOpts)
   })
 
 program.command('stop')

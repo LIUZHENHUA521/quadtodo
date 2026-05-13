@@ -12,6 +12,17 @@ describe('default action', () => {
       timeout: 5000,
     })
     expect(r.stdout || r.stderr).not.toMatch(/Usage: agentquad \[options\] \[command\]/)
+    expect(r.status).toBe(0)
+  })
+
+  it('unknown subcommand exits non-zero with helpful error', () => {
+    const r = spawnSync(process.execPath, [CLI, 'strat'], {
+      encoding: 'utf8',
+      env: { ...process.env, AGENTQUAD_DRY_RUN: '1', AGENTQUAD_SKIP_WIZARD: '1' },
+      timeout: 5000,
+    })
+    expect(r.status).not.toBe(0)
+    expect(r.stderr).toMatch(/Unknown command: strat/)
   })
 
   it('`agentquad --help` still prints help', () => {
