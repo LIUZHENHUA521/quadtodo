@@ -1,4 +1,5 @@
 import { Tooltip } from 'antd'
+import { useTranslation } from 'react-i18next'
 import type { SessionMeta } from '../../store/aiSessionStore'
 import type { AiStatus } from '../../api'
 import { deriveAiState, AI_STATE_PILL_LABEL } from '../../design/aiPresentationState'
@@ -14,7 +15,8 @@ interface Props {
 }
 
 export function FocusSubbar({ session, fallbackStatus, onClose }: Props) {
-  const title = session?.todoTitle ?? '(untitled)'
+  const { t } = useTranslation(['session'])
+  const title = session?.todoTitle ?? t('session:focusSubbar.untitled')
   const tool = session?.tool ?? 'ai'
   const sessionShortId = session?.sessionId?.slice(0, 8) ?? '—'
   const quadrant = session?.quadrant ?? 0
@@ -37,9 +39,9 @@ export function FocusSubbar({ session, fallbackStatus, onClose }: Props) {
 
   return (
     <div className="focus-subbar">
-      <button className="focus-back" onClick={onClose} aria-label="Back to grid">
+      <button className="focus-back" onClick={onClose} aria-label={t('session:focusSubbar.backToGrid')}>
         <span>←</span>
-        <span>Grid</span>
+        <span>{t('session:focusSubbar.grid')}</span>
       </button>
       <div className="focus-task-title">
         <span
@@ -55,11 +57,11 @@ export function FocusSubbar({ session, fallbackStatus, onClose }: Props) {
         </span>
         {canConfirm && (
           <button className="focus-confirm-btn" onClick={handleConfirm}>
-            确认
+            {t('session:focusSubbar.confirm')}
           </button>
         )}
-        <Tooltip title="Close (Esc)">
-          <button className="focus-icon-btn" onClick={onClose} aria-label="Close">✕</button>
+        <Tooltip title={t('session:focusSubbar.closeEsc')}>
+          <button className="focus-icon-btn" onClick={onClose} aria-label={t('session:focusSubbar.close')}>✕</button>
         </Tooltip>
       </div>
     </div>

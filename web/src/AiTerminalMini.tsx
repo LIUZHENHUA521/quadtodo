@@ -4,6 +4,7 @@
 
 import React, { useEffect, useMemo, useRef, useCallback, useState } from 'react'
 import { Button, Tooltip, Tag, Dropdown, Modal, ColorPicker, Input, Divider, Spin } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { useAppMessages } from './design/useAppMessages'
 import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, VerticalAlignBottomOutlined, LockOutlined, UnlockOutlined, BgColorsOutlined, DeleteOutlined, UpOutlined, LeftOutlined, RightOutlined, DragOutlined } from '@ant-design/icons'
 import { Terminal } from '@xterm/xterm'
@@ -108,6 +109,7 @@ async function waitTerminalReady(container: HTMLDivElement): Promise<void> {
 
 export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeTarget, onSessionRecovered, onSessionSwitch, onClose, onDone, onStatusChange, fillHeight }: Props) {
   void onClose
+  const { t } = useTranslation(['session'])
   const { message } = useAppMessages()
   const { mode } = useTheme()
   const { theme, preset, override, customPresets, setPreset, setOverride, resetOverride, saveCustomPreset, deleteCustomPreset } = useTerminalTheme()
@@ -225,7 +227,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     recoveringRef.current = true
     recoveryAttemptedRef.current = true
     try {
-      termRef.current?.writeln('\r\n\x1b[33m--- 检测到服务重启，正在自动恢复会话... ---\x1b[0m\r')
+      termRef.current?.writeln(`\r\n\x1b[33m--- ${t('session:terminal.writeln.autoRecovering')} ---\x1b[0m\r`)
       const { sessionId: nextSessionId } = await startAiExec({
         todoId: latestResumeTarget.todoId,
         tool: latestResumeTarget.tool,
@@ -242,9 +244,9 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       // 后端在 CLI 二进制缺失时回 424 tool_missing → 弹出修复卡片，不再用 ENOENT toast 把人吓跑
       if (error instanceof ApiError && error.status === 424 && error.body?.code === 'tool_missing') {
         setToolMissing({ tool: error.body.tool, bin: error.body.bin, fix: error.body.fix })
-        termRef.current?.writeln(`\r\n\x1b[31m--- 自动恢复失败：${error.body.tool} 未安装 ---\x1b[0m\r`)
+        termRef.current?.writeln(`\r\n\x1b[31m--- ${t('session:terminal.writeln.autoRecoverFailedTool', { tool: error.body.tool })} ---\x1b[0m\r`)
       } else {
-        termRef.current?.writeln(`\r\n\x1b[31m--- 自动恢复失败：${error?.message || 'unknown error'} ---\x1b[0m\r`)
+        termRef.current?.writeln(`\r\n\x1b[31m--- ${t('session:terminal.writeln.autoRecoverFailedReason', { reason: error?.message || t('session:terminal.writeln.unknownError') })} ---\x1b[0m\r`)
       }
       return false
     } finally {
@@ -255,19 +257,19 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   const requestBrowserNotifications = useCallback(async () => {
     if (typeof window === 'undefined' || typeof window.Notification === 'undefined') {
       setNotificationPermission('unsupported')
-      message.info('当前浏览器不支持系统通知')
+      message.info(t('session:terminal.notification.unsupported'))
       return
     }
     try {
       const permission = await window.Notification.requestPermission()
       setNotificationPermission(permission)
-      if (permission === 'granted') message.success('已开启浏览器通知')
-      else if (permission === 'denied') message.warning('浏览器通知权限已被拒绝，可在浏览器设置中重新开启')
-      else message.info('浏览器通知暂未开启')
+      if (permission === 'granted') message.success(t('session:terminal.notification.granted'))
+      else if (permission === 'denied') message.warning(t('session:terminal.notification.denied'))
+      else message.info(t('session:terminal.notification.notEnabled'))
     } catch (error) {
       console.warn('[AiTerminalMini] request notification permission failed:', error)
       setNotificationPermission(getBrowserNotificationPermission())
-      message.warning('浏览器通知权限请求失败')
+      message.warning(t('session:terminal.notification.requestFailed'))
     }
   }, [])
 
@@ -297,7 +299,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             style={{ cursor: 'pointer' }}
           >
             {TURN_DONE_TEXT}
-            <span style={{ marginLeft: 6, opacity: 0.7, fontSize: 12 }}>点击查看 →</span>
+            <span style={{ marginLeft: 6, opacity: 0.7, fontSize: 12 }}>{t('session:terminal.turnDoneClickHint')}</span>
           </span>
         ),
         key: messageKey,
@@ -627,7 +629,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
           lastSentSizeRef.current = null
 
           if (!resumeTargetRef.current?.nativeSessionId && status === 'ai_running') {
-            term.writeln('\x1b[90m--- 正在注入任务上下文，请稍候... ---\x1b[0m\r')
+            term.writeln(`\x1b[90m--- ${t('session:terminal.writeln.injectingContext')} ---\x1b[0m\r`)
           }
 
           // ─── Size-first 握手 ───
@@ -675,7 +677,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
                   if (!recovered) {
                     stopReconnectRef.current = true
                     setSessionExpired(true)
-                    term.writeln('\r\n\x1b[31m--- 会话已过期（服务端重启或已清理） ---\x1b[0m\r')
+                    term.writeln(`\r\n\x1b[31m--- ${t('session:terminal.writeln.sessionExpiredServerRestart')} ---\x1b[0m\r`)
                   }
                 })
               }
@@ -707,7 +709,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
                 break
               case 'session_restarted':
                 if (typeof msg.newSessionId === 'string' && msg.newSessionId) {
-                  message.info(msg.message || '已切换到恢复后的全托管会话')
+                  message.info(msg.message || t('session:terminal.message.switchedToManaged'))
                   stopReconnectRef.current = true  // 旧 WS 关闭后不再自动重连
                   setSwitchingMode(false)
                   onSessionSwitchRef.current?.(msg.newSessionId)
@@ -733,12 +735,12 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
               }
               case 'done':
                 setSessionStatus(msg.status === 'done' ? 'ai_done' : 'todo')
-                term.writeln(`\r\n\x1b[${msg.exitCode === 0 ? '32' : '31'}m=== ${msg.status === 'done' ? 'AI 任务已结束' : '任务失败'} ===\x1b[0m\r`)
+                term.writeln(`\r\n\x1b[${msg.exitCode === 0 ? '32' : '31'}m=== ${msg.status === 'done' ? t('session:terminal.writeln.aiTaskDone') : t('session:terminal.writeln.aiTaskFailed')} ===\x1b[0m\r`)
                 onDone?.({ status: msg.status, exitCode: msg.exitCode })
                 break
               case 'stopped':
                 setSessionStatus('todo')
-                term.writeln('\r\n\x1b[33m=== 已中止 ===\x1b[0m\r')
+                term.writeln(`\r\n\x1b[33m=== ${t('session:terminal.writeln.aborted')} ===\x1b[0m\r`)
                 break
             }
           } catch (err) {
@@ -760,18 +762,18 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
               if (!recovered) {
                 stopReconnectRef.current = true
                 setSessionExpired(true)
-                term.writeln('\r\n\x1b[31m--- 会话已过期 ---\x1b[0m\r')
+                term.writeln(`\r\n\x1b[31m--- ${t('session:terminal.writeln.sessionExpired')} ---\x1b[0m\r`)
               }
             })
             return
           }
 
           if (reconnectCountRef.current >= MAX_RECONNECT_ATTEMPTS) {
-            term.writeln('\r\n\x1b[31m--- 重连失败次数过多，已停止重连 ---\x1b[0m\r')
+            term.writeln(`\r\n\x1b[31m--- ${t('session:terminal.writeln.reconnectExhausted')} ---\x1b[0m\r`)
             return
           }
 
-          term.writeln(`\r\n\x1b[33m--- 连接断开 (code ${ev.code})，正在重连 (${reconnectCountRef.current + 1}/${MAX_RECONNECT_ATTEMPTS}) ---\x1b[0m\r`)
+          term.writeln(`\r\n\x1b[33m--- ${t('session:terminal.writeln.reconnectAttempt', { code: ev.code, attempt: reconnectCountRef.current + 1, max: MAX_RECONNECT_ATTEMPTS })} ---\x1b[0m\r`)
           scheduleReconnect()
         }
 
@@ -810,7 +812,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
 
         reconnectCountRef.current = 0
         reconnectDelayRef.current = INITIAL_RECONNECT_DELAY
-        term.writeln(`\r\n\x1b[33m--- ${reason}，正在重新连接... ---\x1b[0m\r`)
+        term.writeln(`\r\n\x1b[33m--- ${t('session:terminal.writeln.reconnecting', { reason })} ---\x1b[0m\r`)
         if (reconnectTimerRef.current) {
           clearTimeout(reconnectTimerRef.current)
           reconnectTimerRef.current = null
@@ -830,9 +832,9 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         } else {
           if (!warnedDisconnect) {
             warnedDisconnect = true
-            term.writeln('\r\n\x1b[31m⚠ 连接已断开，正在自动重连...\x1b[0m\r')
+            term.writeln(`\r\n\x1b[31m${t('session:terminal.writeln.connectionLost')}\x1b[0m\r`)
           }
-          forceReconnect('检测到连接失效')
+          forceReconnect(t('session:terminal.reconnectReason.stale'))
         }
       })
 
@@ -866,7 +868,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         lastPongRef.current = Date.now()
         const ws = wsRef.current
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-          forceReconnect('标签页切回，连接已断开')
+          forceReconnect(t('session:terminal.reconnectReason.visibility'))
         } else {
           ws.send(JSON.stringify({ type: 'ping' }))
         }
@@ -885,7 +887,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         if (disposedRef.current || stopReconnectRef.current) return
         const ws = wsRef.current
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-          forceReconnect('聚焦时发现连接断开')
+          forceReconnect(t('session:terminal.reconnectReason.focus'))
           return
         }
         const beforePing = lastPongRef.current
@@ -894,7 +896,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         focusProbeTimer = setTimeout(() => {
           focusProbeTimer = null
           if (lastPongRef.current === beforePing && !disposedRef.current && !stopReconnectRef.current) {
-            forceReconnect('探活超时，连接可能已断开')
+            forceReconnect(t('session:terminal.reconnectReason.probeTimeout'))
           }
         }, 2000)
       }
@@ -1084,7 +1086,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   const handleManualRecover = useCallback(async () => {
     const recovered = await tryAutoRecover()
     if (!recovered) {
-      termRef.current?.writeln('\r\n\x1b[31m--- 当前没有可恢复的原生会话 ID ---\x1b[0m\r')
+      termRef.current?.writeln(`\r\n\x1b[31m--- ${t('session:terminal.writeln.noNativeSessionId')} ---\x1b[0m\r`)
     }
   }, [tryAutoRecover])
 
@@ -1154,7 +1156,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   // 清空 xterm 显示 + 通知服务端丢弃 outputHistory：旧 session 在窄 cols 下产生的
   // 硬折行 scrollback 在更宽的窗口里显示窄一截，清完后下次 Claude 输出按当前 cols 重绘。
   const handleClearHistory = useCallback(() => {
-    if (!window.confirm('清空当前会话的历史输出？\n\n仅影响显示，不影响正在运行的 AI 任务。')) return
+    if (!window.confirm(t('session:terminal.clearHistoryConfirm'))) return
     const term = termRef.current
     if (term) {
       try { term.clear() } catch { /* ignore */ }

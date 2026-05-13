@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useFocusStore } from '../../store/focusStore'
 import { useAiSessionStore } from '../../store/aiSessionStore'
 import { useTodoSnapshotStore } from '../../store/todoSnapshotStore'
@@ -9,6 +10,7 @@ import SessionViewer from '../../SessionViewer'
 import './SessionFocus.css'
 
 export function SessionFocus() {
+  const { t } = useTranslation(['session'])
   const focusedTodoId = useFocusStore((s) => s.focusedTodoId)
   const focusedSessionId = useFocusStore((s) => s.focusedSessionId)
   const replaceFocusedSession = useFocusStore((s) => s.replaceFocusedSession)
@@ -99,7 +101,7 @@ export function SessionFocus() {
             fillHeight
           />
         ) : (
-          <div className="session-focus-empty">No active session for this todo.</div>
+          <div className="session-focus-empty">{t('session:focus.noActiveSession')}</div>
         )}
       </div>
     </div>
