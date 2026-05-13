@@ -62,6 +62,8 @@ import { useDispatchStore } from './store/dispatchStore'
 import { TopbarDispatch } from './components/TopbarDispatch'
 import { QuadrantBoard, QuadrantZone, QUADRANT_CONFIG } from './components/QuadrantBoard'
 import { SortableTodoCard } from './components/TodoCard'
+import { StageTagChip } from './components/StageTagChip'
+import type { StageTag } from './api'
 import './TodoManage.css'
 
 const { TextArea } = Input
@@ -1367,6 +1369,20 @@ export default function TodoManage() {
                 <span className="todo-detail-chip todo-detail-chip--level">
                   <span className="todo-detail-chip__label">层级</span>
                   <span className="todo-detail-chip__value">{detailTodo.parentId ? '子待办' : '顶级待办'}</span>
+                </span>
+                <span className="todo-detail-chip todo-detail-chip--stage" onClick={(e) => e.stopPropagation()}>
+                  <span className="todo-detail-chip__label">阶段</span>
+                  <StageTagChip
+                    value={detailTodo.stageTag}
+                    onChange={async (next: StageTag | null) => {
+                      try {
+                        await updateTodo(detailTodo.id, { stageTag: next })
+                        await fetchTodos()
+                      } catch (e: any) {
+                        message.error(e?.message || '阶段标签更新失败')
+                      }
+                    }}
+                  />
                 </span>
                 <Tooltip title="点击编辑截止时间">
                   <button
