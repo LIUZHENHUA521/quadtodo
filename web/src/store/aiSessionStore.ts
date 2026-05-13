@@ -23,6 +23,7 @@ interface AiSessionState {
   updateSessionStatus: (sessionId: string, status: AiStatus, completedAt?: number | null) => void
   recordOutputBytes: (sessionId: string, len: number, at?: number) => void
   setResources: (list: ResourceSnapshot[]) => void
+  replaceSessionId: (oldId: string, nextId: string) => void
   reset: () => void
 }
 
@@ -90,6 +91,31 @@ export const useAiSessionStore = create<AiSessionState>((set) => ({
       rh.set(r.sessionId, hist)
     }
     return { resources: m, resourceHistory: rh }
+  }),
+
+  replaceSessionId: (oldId, nextId) => set((state) => {
+    const oldSession = state.sessions.get(oldId)
+    if (!oldSession) return {}
+    const sessions = new Map(state.sessions)
+    sessions.delete(oldId)
+    sessions.set(nextId, { ...oldSession, sessionId: nextId })
+
+    const moveMap = <V,>(src: Map<string, V>): Map<string, V> => {
+      if (!src.has(oldId)) return src
+      const next = new Map(src)
+      const v = next.get(oldId)
+      next.delete(oldId)
+      if (v !== undefined) next.set(nextId, v)
+      return next
+    }
+
+    return {
+      sessions,
+      outputSamples: moveMap(state.outputSamples),
+      outputRates: moveMap(state.outputRates),
+      resources: moveMap(state.resources),
+      resourceHistory: moveMap(state.resourceHistory),
+    }
   }),
 
   reset: () => set({
