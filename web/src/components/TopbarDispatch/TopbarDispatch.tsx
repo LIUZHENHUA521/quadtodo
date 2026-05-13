@@ -1,24 +1,27 @@
-import { Tooltip } from 'antd'
+import { useState } from 'react'
+import { Popover, Tooltip } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { StatPill } from '../StatPill'
 import { ThemeToggle } from '../ThemeToggle'
 import { useDispatchStore } from '../../store/dispatchStore'
 import { useDispatchStats } from '../../design/useDispatchStats'
 import { useAiSessionStore } from '../../store/aiSessionStore'
-import { useUnreadStore, isSessionUnread } from '../../store/unreadStore'
+import type { UnreadSessionItem } from '../../replyHub'
 import './TopbarDispatch.css'
 
-export function TopbarDispatch() {
-  const { activeCount, pendingCount, tokenSumLabel } = useDispatchStats()
+export interface TopbarDispatchProps {
+  unreadItems: UnreadSessionItem[]
+  onJump: (item: UnreadSessionItem) => void
+}
+
+export function TopbarDispatch({ unreadItems, onJump }: TopbarDispatchProps) {
+  const { activeCount, tokenSumLabel } = useDispatchStats()
   const openDrawer = useDispatchStore((s) => s.openDrawer)
   const togglePalette = useDispatchStore((s) => s.togglePalette)
+  const [pendingOpen, setPendingOpen] = useState(false)
 
-  // Build the active-sessions tooltip from live store data.
-  // 待确认 = real pending_confirm OR unread reply (matches TodoCard + useDispatchStats).
   const sessions = useAiSessionStore((s) => s.sessions)
-  const lastSeenMap = useUnreadStore((s) => s.lastSeenAt)
   const activeList: { id: string; title: string; tool: string; status: string }[] = []
-  const pendingList: { id: string; title: string; tool: string; reason: 'pending_confirm' | 'unread' }[] = []
   sessions.forEach((session) => {
     if (session.status === 'running') {
       activeList.push({
@@ -28,16 +31,46 @@ export function TopbarDispatch() {
         status: session.status,
       })
     }
-    const unread = isSessionUnread(session.lastTurnDoneAt, lastSeenMap.get(session.sessionId))
-    if (session.status === 'pending_confirm' || unread) {
-      pendingList.push({
-        id: session.sessionId,
-        title: session.todoTitle,
-        tool: session.tool,
-        reason: session.status === 'pending_confirm' ? 'pending_confirm' : 'unread',
-      })
-    }
   })
+
+  const pendingCount = unreadItems.length
+
+  const handlePickItem = (item: UnreadSessionItem) => {
+    setPendingOpen(false)
+    onJump(item)
+  }
+
+  const pendingPopoverContent =
+    pendingCount === 0 ? (
+      <div className="topbar-tooltip-empty">No pending</div>
+    ) : (
+      <>
+        <div className="topbar-tooltip-title">待处理 ({pendingCount})</div>
+        <div className="topbar-pending-list">
+          {unreadItems.map((item) => {
+            const isPending = item.reason === 'pending_confirm'
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className="topbar-tooltip-row topbar-pending-row"
+                onClick={() => handlePickItem(item)}
+                data-testid="topbar-pending-row"
+              >
+                <span
+                  className="topbar-tooltip-dot"
+                  style={{ background: isPending ? 'var(--ai-pending-confirm)' : 'var(--ai-error)' }}
+                />
+                <span className="topbar-tooltip-name">{item.todoTitle}</span>
+                <span className="topbar-tooltip-meta">
+                  {item.tool} · {isPending ? '待批准' : '未读'}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </>
+    )
 
   return (
     <div className="topbar-dispatch">
@@ -86,32 +119,26 @@ export function TopbarDispatch() {
         }
       />
 
-      <StatPill
-        variant={pendingCount > 0 ? 'alert' : 'default'}
-        icon="pulse-dot"
-        iconColor="var(--ai-pending-confirm)"
-        value={pendingCount}
-        label="pending"
-        data-testid="stat-pending"
-        tooltip={
-          pendingList.length === 0 ? (
-            <div className="topbar-tooltip-empty">No pending</div>
-          ) : (
-            <>
-              <div className="topbar-tooltip-title">待确认 ({pendingList.length})</div>
-              {pendingList.map((s) => (
-                <div key={s.id} className="topbar-tooltip-row">
-                  <span className="topbar-tooltip-dot" style={{ background: 'var(--ai-pending-confirm)' }} />
-                  <span className="topbar-tooltip-name">{s.title}</span>
-                  <span className="topbar-tooltip-meta">
-                    {s.tool} · {s.reason === 'pending_confirm' ? '待批准' : '未读'}
-                  </span>
-                </div>
-              ))}
-            </>
-          )
-        }
-      />
+      <Popover
+        open={pendingOpen}
+        onOpenChange={setPendingOpen}
+        trigger="click"
+        placement="bottomRight"
+        overlayClassName="topbar-pending-popover"
+        content={pendingPopoverContent}
+      >
+        <span data-testid="stat-pending-trigger">
+          <StatPill
+            variant={pendingCount > 0 ? 'alert' : 'default'}
+            icon="pulse-dot"
+            iconColor="var(--ai-pending-confirm)"
+            value={pendingCount}
+            label="pending"
+            data-testid="stat-pending"
+            onClick={() => setPendingOpen((v) => !v)}
+          />
+        </span>
+      </Popover>
 
       <div className="topbar-spacer" />
 
