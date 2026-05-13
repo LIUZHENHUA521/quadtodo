@@ -493,6 +493,8 @@ export default function SettingsDrawer({ open, onClose }: Props) {
 
   const runTab = (
     <>
+      <div className="settings-section-title">启动</div>
+
       <Form.Item
         label="默认启动目录"
         extra="新开的 AI 会话会默认在这个目录里启动。保存后立即对新会话生效。"
@@ -524,13 +526,15 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         </Radio.Group>
       </Form.Item>
 
+      <div className="settings-section-title">服务</div>
+
       <Form.Item
         name="port"
         label="服务端口"
         rules={[{ required: true, message: '请输入服务端口' }]}
         extra="端口会保存到配置文件，重启 AgentQuad 后生效。"
       >
-        <Input type="number" min={1} max={65535} />
+        <InputNumber min={1} max={65535} style={{ width: 160 }} />
       </Form.Item>
     </>
   )
