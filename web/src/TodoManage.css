@@ -946,13 +946,11 @@ button.todo-detail-chip:hover { background: var(--surface-2); }
   color: var(--ai-running);
   animation: todo-ai-pulse 1.6s ease-in-out infinite;
 }
-.todo-ai-state-pending_confirm {
+.todo-ai-state-pending {
   color: var(--ai-pending-confirm);
   animation: todo-ai-pulse 1.2s ease-in-out infinite;
 }
-.todo-ai-state-done { color: var(--ai-running); }
-.todo-ai-state-failed { color: var(--ai-error); }
-.todo-ai-state-stopped, .todo-ai-state-idle { color: var(--ai-idle); }
+.todo-ai-state-idle { color: var(--ai-idle); }
 
 @keyframes todo-ai-pulse {
   0%, 100% { opacity: 0.85; }

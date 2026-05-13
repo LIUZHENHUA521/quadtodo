@@ -16,6 +16,7 @@ import { CSS } from '@dnd-kit/utilities'
 import dayjs from 'dayjs'
 import type { Todo, AiTool } from '../../api'
 import { useAppMessages } from '../../design/useAppMessages'
+import { deriveAiState, AI_STATE_LABEL } from '../../design/aiPresentationState'
 import { useAiSessionStore } from '../../store/aiSessionStore'
 import { useUnreadStore, isSessionUnread } from '../../store/unreadStore'
 import { useDispatchStore } from '../../store/dispatchStore'
@@ -160,25 +161,17 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
           </div>
 
           {todo.aiSession && (() => {
-            // 三态简化：running / 待确认 / 空闲。
-            // 待确认 = 真实 pending_confirm（后端要 user 批准）OR
-            //         有未读回复（lastTurnDoneAt > lastSeenAt，但 user 还没打开 focus mode 看过）。
-            // 用户点开 focus mode → SessionFocus mount → markSeen → 这里再渲染时未读已清。
+            // 三态严格定义：running / pending(待确认) / idle。详见
+            // docs/superpowers/specs/2026-05-13-ai-state-3-state-strict-design.md
             const liveSession = liveSessionsMap.get(todo.aiSession.sessionId)
-            const status = liveSession?.status
             const liveTurnDoneAt = liveSession?.lastTurnDoneAt ?? null
             const turnDoneAt = liveTurnDoneAt || todo.aiSession.lastTurnDoneAt || null
             const unread = isSessionUnread(turnDoneAt, lastSeenMap.get(todo.aiSession.sessionId))
-            const isRunning = status === 'running'
-            const isPending = status === 'pending_confirm' || unread
-            const stateClass = isRunning ? 'running' : isPending ? 'pending_confirm' : 'idle'
-            const label = isRunning ? '● running'
-              : isPending ? '⚠ 待确认'
-              : '○ 空闲'
+            const state = deriveAiState(liveSession?.status, unread)
             return (
               <div className="todo-ai-status-row" onClick={(e) => e.stopPropagation()}>
                 <span className="todo-ai-tag">{todo.aiSession.tool}</span>
-                <span className={`todo-ai-state todo-ai-state-${stateClass}`}>{label}</span>
+                <span className={`todo-ai-state todo-ai-state-${state}`}>{AI_STATE_LABEL[state]}</span>
                 <ActivitySparkline sessionId={todo.aiSession.sessionId} width={70} height={14} />
               </div>
             )
