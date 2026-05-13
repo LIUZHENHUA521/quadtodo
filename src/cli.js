@@ -400,7 +400,7 @@ export async function runStart(cmdOpts = {}) {
     actualPort = await srv.listen(port, host)
   } catch (e) {
     if (e.code === 'EADDRINUSE') {
-      console.error(`port ${port} in use — run 'agentquad config set port <newPort>' or stop whoever holds it`)
+      console.error(`ports ${port} and ${port + 1} both in use — run 'agentquad config set port <newPort>' or stop whoever holds them`)
     } else if (e.code === 'EADDRNOTAVAIL') {
       console.error(`host ${host} not available on this machine — try --host 0.0.0.0`)
     } else {

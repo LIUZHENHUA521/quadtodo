@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { createServer } from 'node:http'
 import { listenWithRetry } from '../src/server.js'
 
