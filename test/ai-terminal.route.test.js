@@ -1339,32 +1339,4 @@ describe('routes/ai-terminal', () => {
     })
   })
 
-  describe('GET /sessions/:sessionId/log', () => {
-    it('rejects malformed sessionId with 400 (path traversal guard)', async () => {
-      const r = await request(ctx.app).get('/api/ai-terminal/sessions/..%2Fetc%2Fpasswd/log')
-      expect(r.status).toBe(400)
-      expect(r.body.error).toMatch(/invalid/i)
-    })
-
-    it('returns 404 when log file does not exist', async () => {
-      const r = await request(ctx.app).get('/api/ai-terminal/sessions/ai-9999999999999-zzzz/log')
-      expect(r.status).toBe(404)
-      expect(r.body.error).toMatch(/not found/i)
-    })
-
-    it('returns ANSI-stripped content for an existing log file', async () => {
-      const { writeFileSync } = await import('node:fs')
-      const sessionId = 'ai-1700000000000-test'
-      const logPath = join(ctx.logDir, `${sessionId}.log`)
-      // Mix of CSI color sequence, OSC title, CSI private prefix, and DEL
-      const raw = '\x1b[31mhello\x1b[0m\x1b]0;title\x07world\x1b[>4mEND\x7f'
-      writeFileSync(logPath, raw, 'utf8')
-      const r = await request(ctx.app).get(`/api/ai-terminal/sessions/${sessionId}/log`)
-      expect(r.status).toBe(200)
-      expect(r.body.sessionId).toBe(sessionId)
-      expect(r.body.content).toBe('helloworldEND')
-      expect(r.body.sizeBytes).toBeGreaterThan(0)
-      expect(r.body.truncated).toBe(false)
-    })
-  })
 })

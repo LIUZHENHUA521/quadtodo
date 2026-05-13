@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type FocusTab = 'conversation' | 'live' | 'log'
+export type FocusTab = 'conversation' | 'live'
 
 interface FocusState {
   /** Currently-focused todo (null = no focus / Grid mode) */

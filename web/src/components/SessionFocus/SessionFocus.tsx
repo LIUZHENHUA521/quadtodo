@@ -4,7 +4,6 @@ import { useAiSessionStore } from '../../store/aiSessionStore'
 import { useUnreadStore } from '../../store/unreadStore'
 import { FocusSubbar } from './FocusSubbar'
 import { FocusTabs } from './FocusTabs'
-import { LogPanel } from './LogPanel'
 import SessionViewer from '../../SessionViewer'
 import './SessionFocus.css'
 
@@ -65,20 +64,16 @@ export function SessionFocus() {
       <FocusTabs value={focusedTab} onChange={setTab} />
       <div className="session-focus-content">
         {focusedSessionId && session ? (
-          focusedTab === 'log' ? (
-            <LogPanel sessionId={focusedSessionId} active />
-          ) : (
-            <SessionViewer
-              sessionId={focusedSessionId}
-              todoId={focusedTodoId}
-              status={todoStatus}
-              cwd={session.cwd ?? null}
-              onClose={clearFocus}
-              hideTabs
-              mode={sessionViewerMode}
-              fillHeight
-            />
-          )
+          <SessionViewer
+            sessionId={focusedSessionId}
+            todoId={focusedTodoId}
+            status={todoStatus}
+            cwd={session.cwd ?? null}
+            onClose={clearFocus}
+            hideTabs
+            mode={sessionViewerMode}
+            fillHeight
+          />
         ) : (
           <div className="session-focus-empty">No active session for this todo.</div>
         )}

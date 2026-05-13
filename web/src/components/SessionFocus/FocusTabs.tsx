@@ -8,7 +8,6 @@ interface Props {
 const TABS: { key: FocusTab; label: string }[] = [
   { key: 'conversation', label: 'Conversation' },
   { key: 'live', label: 'Live 终端' },
-  { key: 'log', label: 'Log 日志' },
 ]
 
 export function FocusTabs({ value, onChange }: Props) {

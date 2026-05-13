@@ -1071,23 +1071,3 @@ export function subscribeProbeChatId(callbacks: {
   return () => es.close()
 }
 
-// ─── AI session log file (~/.agentquad/logs/{sessionId}.log) ───
-export interface SessionLogResponse {
-  sessionId: string
-  sizeBytes: number
-  content: string
-  truncated: boolean
-}
-
-export async function fetchSessionLog(sessionId: string): Promise<SessionLogResponse> {
-  const r = await fetch(`${BASE}/api/ai-terminal/sessions/${encodeURIComponent(sessionId)}/log`)
-  if (!r.ok) {
-    let detail = ''
-    try {
-      const body = await r.json()
-      detail = body?.error ? `: ${body.error}` : ''
-    } catch { /* ignore */ }
-    throw new Error(`fetch session log failed: ${r.status}${detail}`)
-  }
-  return r.json()
-}

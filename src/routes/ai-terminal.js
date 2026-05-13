@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { Router } from 'express'
 import { writeFile, mkdir } from 'node:fs/promises'
@@ -527,48 +527,6 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
     }
   })
 
-  // 读取 ~/.agentquad/logs/{sessionId}.log 的原始 PTY 输出（已剥 ANSI），
-  // 给 SessionFocus 的 "Log 日志" tab 用。比 outputHistory 更完整：覆盖
-  // server 重启后已经被截断的会话，且不依赖会话仍在内存里。
-  router.get('/sessions/:sessionId/log', (req, res) => {
-    const { sessionId } = req.params
-    // 严格白名单：只接受 spawnSession 里生成的 ai-{ts}-{rand} 格式，避免
-    // 路径遍历（即便 path.join 会规范化，提前拒绝更安全也更便于排错）
-    if (!/^ai-\d+-[a-z0-9]+$/i.test(sessionId)) {
-      return res.status(400).json({ error: 'invalid session id' })
-    }
-    if (!logDir) {
-      return res.status(500).json({ error: 'log dir not configured' })
-    }
-    const logPath = join(logDir, `${sessionId}.log`)
-    if (!existsSync(logPath)) {
-      return res.status(404).json({ error: 'log not found', path: logPath })
-    }
-    try {
-      const raw = readFileSync(logPath, 'utf8')
-      // ANSI/控制字符剥离：保留 \t (\x09) \n (\x0a) \r (\x0d)
-      //   1. CSI 序列：ESC [ params? intermediates? final
-      //      params: 0x30-0x3F (含 < > = ? 等私有前缀)，intermediates: 0x20-0x2F，final: 0x40-0x7E
-      //   2. OSC 序列：ESC ] ... (BEL | ST=ESC\)
-      //   3. 单字符 ESC 序列（ESC + 单个字符）
-      //   4. 不可打印 C0 控制字符（除 \t \n \r 外）+ DEL
-      const stripped = raw.replace(
-        // eslint-disable-next-line no-control-regex
-        /\x1b\[[\x30-\x3F]*[\x20-\x2F]*[\x40-\x7E]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[\x20-\x2F]*[\x30-\x7E]|[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]/g,
-        ''
-      )
-      let sizeBytes = raw.length
-      try { sizeBytes = statSync(logPath).size } catch { /* keep raw.length */ }
-      res.json({
-        sessionId,
-        sizeBytes,
-        content: stripped,
-        truncated: false,
-      })
-    } catch (err) {
-      res.status(500).json({ error: 'read failed', message: err.message })
-    }
-  })
 
   // 返回当前内存中的所有会话（包含已完成的"雕像期"），供仪表盘和宠物视图使用
   router.get('/sessions', (req, res) => {
