@@ -166,4 +166,99 @@ describe('routes/todos', () => {
     expect(res.body.turns[0].content).toContain('first line')
     expect(res.body.turns[0].content).toContain('second line')
   })
+
+  describe('PUT /:id auto-close PTY on done', () => {
+    function makeAppWithMocks(stops) {
+      const db = openDb(':memory:')
+      const liveSessions = new Map() // sessionId -> session object
+      const app = express()
+      app.use(express.json())
+      app.use('/api/todos', createTodosRouter({
+        db,
+        getLiveSession: (sid) => liveSessions.get(sid) || null,
+        getPty: () => ({ stop: (sid) => { stops.push(sid) } }),
+      }))
+      return { app, db, liveSessions }
+    }
+
+    it('calls pty.stop and tags userClosedReason when status transitions to done', async () => {
+      const stops = []
+      const { app, db, liveSessions } = makeAppWithMocks(stops)
+      const todo = db.createTodo({
+        title: 'T', quadrant: 1,
+        aiSessions: [{ sessionId: 'sX', tool: 'claude', nativeSessionId: null, status: 'running', startedAt: 1, completedAt: null, prompt: '' }],
+      })
+      const live = { status: 'running' }
+      liveSessions.set('sX', live)
+      const res = await request(app).put(`/api/todos/${todo.id}`).send({ status: 'done' })
+      expect(res.status).toBe(200)
+      expect(stops).toEqual(['sX'])
+      expect(live.userClosedReason).toBe('todo_marked_done')
+    })
+
+    it('cascades to subtodo sessions but does not tag the subtodo session', async () => {
+      const stops = []
+      const { app, db, liveSessions } = makeAppWithMocks(stops)
+      const parent = db.createTodo({
+        title: 'P', quadrant: 1,
+        aiSessions: [{ sessionId: 'pSess', tool: 'claude', nativeSessionId: null, status: 'running', startedAt: 1, completedAt: null, prompt: '' }],
+      })
+      const child = db.createTodo({
+        title: 'C', quadrant: 1, parentId: parent.id,
+        aiSessions: [{ sessionId: 'cSess', tool: 'codex', nativeSessionId: null, status: 'running', startedAt: 1, completedAt: null, prompt: '' }],
+      })
+      const liveP = { status: 'running' }
+      const liveC = { status: 'running' }
+      liveSessions.set('pSess', liveP)
+      liveSessions.set('cSess', liveC)
+      const res = await request(app).put(`/api/todos/${parent.id}`).send({ status: 'done' })
+      expect(res.status).toBe(200)
+      expect(stops.sort()).toEqual(['cSess', 'pSess'])
+      expect(liveP.userClosedReason).toBe('todo_marked_done')
+      expect(liveC.userClosedReason).toBeUndefined()
+    })
+
+    it('skips dead sessions (status done/failed/stopped)', async () => {
+      const stops = []
+      const { app, db, liveSessions } = makeAppWithMocks(stops)
+      const todo = db.createTodo({
+        title: 'T', quadrant: 1,
+        aiSessions: [
+          { sessionId: 'dead', tool: 'claude', nativeSessionId: null, status: 'done', startedAt: 1, completedAt: 2, prompt: '' },
+          { sessionId: 'live', tool: 'claude', nativeSessionId: null, status: 'running', startedAt: 1, completedAt: null, prompt: '' },
+        ],
+      })
+      liveSessions.set('dead', { status: 'done' })
+      liveSessions.set('live', { status: 'pending_confirm' })
+      await request(app).put(`/api/todos/${todo.id}`).send({ status: 'done' })
+      expect(stops).toEqual(['live'])
+    })
+
+    it('does nothing when status is unchanged or moves to non-done', async () => {
+      const stops = []
+      const { app, db, liveSessions } = makeAppWithMocks(stops)
+      const todo = db.createTodo({
+        title: 'T', quadrant: 1, status: 'todo',
+        aiSessions: [{ sessionId: 'sX', tool: 'claude', nativeSessionId: null, status: 'running', startedAt: 1, completedAt: null, prompt: '' }],
+      })
+      liveSessions.set('sX', { status: 'running' })
+      await request(app).put(`/api/todos/${todo.id}`).send({ title: 'renamed' })
+      await request(app).put(`/api/todos/${todo.id}`).send({ status: 'ai_running' })
+      expect(stops).toEqual([])
+    })
+
+    it('does not blow up when getPty / getLiveSession is missing or session is gone', async () => {
+      const db = openDb(':memory:')
+      const app = express()
+      app.use(express.json())
+      app.use('/api/todos', createTodosRouter({ db })) // no getPty, no getLiveSession
+      const todo = db.createTodo({
+        title: 'T', quadrant: 1,
+        aiSessions: [{ sessionId: 'sX', tool: 'claude', nativeSessionId: null, status: 'running', startedAt: 1, completedAt: null, prompt: '' }],
+      })
+      const res = await request(app).put(`/api/todos/${todo.id}`).send({ status: 'done' })
+      expect(res.status).toBe(200)
+      expect(res.body.todo.status).toBe('done')
+    })
+  })
 })

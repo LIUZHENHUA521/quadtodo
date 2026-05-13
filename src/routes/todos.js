@@ -96,6 +96,37 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
         return
       }
       const todo = db.updateTodo(req.params.id, patch)
+
+      // Auto-close PTY when status transitions to 'done':
+      // - kill all live AI sessions of this todo and its subtodos
+      // - tag parent's live sessions with userClosedReason so PTY 'done' handler
+      //   doesn't overwrite the just-written status back to 'todo'.
+      // - subtodo sessions are NOT tagged (subtodo lifecycle is independent;
+      //   normal PTY 'done' handler will reset them to 'todo' which is correct)
+      if (existing.status !== 'done' && patch.status === 'done') {
+        const pty = typeof getPty === 'function' ? getPty() : null
+        if (pty && typeof getLiveSession === 'function') {
+          const parentSessions = Array.isArray(todo.aiSessions) ? todo.aiSessions : []
+          for (const s of parentSessions) {
+            const live = getLiveSession(s.sessionId)
+            if (live && (live.status === 'running' || live.status === 'pending_confirm' || live.status === 'idle')) {
+              live.userClosedReason = 'todo_marked_done'
+              try { pty.stop(s.sessionId) } catch (e) { console.warn('[todos] pty.stop parent failed:', e?.message) }
+            }
+          }
+          const subtodos = typeof db.listSubtodosByParent === 'function' ? db.listSubtodosByParent(todo.id) : []
+          for (const sub of subtodos) {
+            const subSessions = Array.isArray(sub.aiSessions) ? sub.aiSessions : []
+            for (const s of subSessions) {
+              const live = getLiveSession(s.sessionId)
+              if (live && (live.status === 'running' || live.status === 'pending_confirm' || live.status === 'idle')) {
+                try { pty.stop(s.sessionId) } catch (e) { console.warn('[todos] pty.stop subtodo failed:', e?.message) }
+              }
+            }
+          }
+        }
+      }
+
       res.json({ ok: true, todo })
     } catch (e) {
       if (['parent_not_found', 'nested_subtodo_not_allowed', 'parent_quadrant_mismatch', 'parent_cycle'].includes(e.message)) {
