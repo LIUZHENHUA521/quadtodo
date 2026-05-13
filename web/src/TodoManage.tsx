@@ -318,6 +318,29 @@ export default function TodoManage() {
   const refreshTodosSignal = useDispatchStore((s) => s.signals.refreshTodos === true)
   const consumeSignal = useDispatchStore((s) => s.consumeSignal)
 
+  const findBrainstormTemplate = useCallback(
+    () => templates.find(t => t.builtin && t.name === 'Brainstorm（脑爆）'),
+    [templates],
+  )
+
+  const openCreateDrawer = useCallback((parent: Todo | null = null) => {
+    setEditingTodo(null)
+    setParentForCreate(parent)
+    form.resetFields()
+    const brainstormTpl = findBrainstormTemplate()
+    form.setFieldsValue({
+      quadrant: parent?.quadrant ?? 1,
+      workDir: parent?.workDir || undefined,
+      recurring: false,
+      recurringFrequency: 'daily',
+      recurringWeekdays: [1, 2, 3, 4, 5],
+      recurringMonthDays: [1],
+      useTemplates: !!brainstormTpl,
+      appliedTemplateIds: brainstormTpl ? [brainstormTpl.id] : [],
+    })
+    setDrawerOpen(true)
+  }, [findBrainstormTemplate, form])
+
   useEffect(() => {
     if (!jumpToTodoId) return
     const el = document.querySelector(`[data-todo-id="${jumpToTodoId}"]`) as HTMLElement | null
@@ -342,10 +365,9 @@ export default function TodoManage() {
 
   useEffect(() => {
     if (!newTodoSignal) return
-    // Reuse the existing new-todo entry (local state at line ~738).
-    setDrawerOpen(true)
+    openCreateDrawer()
     consumeSignal('newTodo')
-  }, [newTodoSignal, consumeSignal])
+  }, [newTodoSignal, openCreateDrawer, consumeSignal])
 
   useEffect(() => {
     if (!recoverSignal) return
@@ -535,43 +557,18 @@ export default function TodoManage() {
 
   // ─── CRUD ───
 
-  const findBrainstormTemplate = () => templates.find(t => t.builtin && t.name === 'Brainstorm（脑爆）')
-
   const handleCreate = () => {
-    setEditingTodo(null)
-    setParentForCreate(null)
-    form.resetFields()
-    const brainstormTpl = findBrainstormTemplate()
-    form.setFieldsValue({
-      quadrant: 1,
-      workDir: undefined,
-      recurring: false,
-      recurringFrequency: 'daily',
-      recurringWeekdays: [1, 2, 3, 4, 5],
-      recurringMonthDays: [1],
-      useTemplates: !!brainstormTpl,
-      appliedTemplateIds: brainstormTpl ? [brainstormTpl.id] : [],
-    })
-    setDrawerOpen(true)
+    openCreateDrawer()
   }
 
   const handleCreateSubtodo = (todo: Todo) => {
-    setEditingTodo(null)
-    setParentForCreate(todo)
-    form.resetFields()
-    const brainstormTpl = findBrainstormTemplate()
-    form.setFieldsValue({
-      quadrant: todo.quadrant,
-      workDir: todo.workDir || undefined,
-      useTemplates: !!brainstormTpl,
-      appliedTemplateIds: brainstormTpl ? [brainstormTpl.id] : [],
-    })
-    setDrawerOpen(true)
+    openCreateDrawer(todo)
   }
 
   const handleEdit = (todo: Todo) => {
     setParentForCreate(null)
     setEditingTodo(todo)
+    form.resetFields()
     form.setFieldsValue({
       title: todo.title,
       description: todo.description,
@@ -611,6 +608,7 @@ export default function TodoManage() {
         await updateTodo(editingTodo.id, { ...data, parentId: editingTodo.parentId })
         message.success('已更新')
         setDrawerOpen(false)
+        setEditingTodo(null)
         setParentForCreate(null)
         fetchTodos()
       } else if (values.recurring && !parentForCreate) {
@@ -637,12 +635,14 @@ export default function TodoManage() {
         })
         message.success('已创建每日待办规则')
         setDrawerOpen(false)
+        setEditingTodo(null)
         setParentForCreate(null)
         fetchTodos()
       } else {
         await createTodo(data)
         message.success(parentForCreate ? '子待办已创建' : '已创建')
         setDrawerOpen(false)
+        setEditingTodo(null)
         setParentForCreate(null)
         fetchTodos()
       }
@@ -654,7 +654,7 @@ export default function TodoManage() {
   const handleToggleDone = async (todo: Todo) => {
     const newStatus = todo.status === 'done' ? 'todo' : 'done'
     const liveCount = newStatus === 'done'
-      ? (todo.aiSessions || []).filter((s) => s.status === 'running' || s.status === 'pending_confirm').length
+      ? (todo.aiSessions || []).filter((s) => s.status === 'running' || s.status === 'idle' || s.status === 'pending_confirm').length
       : 0
     const doUpdate = async () => {
       try {
@@ -665,7 +665,7 @@ export default function TodoManage() {
       }
     }
     if (liveCount > 0) {
-      Modal.confirm({
+      modal.confirm({
         title: '该任务还有 AI 会话在运行',
         content: `共有 ${liveCount} 个 Claude/Codex 终端正在运行。标记完成会同时关闭它们。确定继续？`,
         okText: '确定，完成并关闭',
@@ -1049,7 +1049,7 @@ export default function TodoManage() {
 
   return (
     <div className="todo-manage-shell">
-      <div className="todo-manage__main" style={{ padding: '0 16px 16px' }}>
+      <div className="todo-manage__main">
       {!isMobile && (
         <TopbarDispatch
           unreadItems={unreadItems}
@@ -1218,7 +1218,12 @@ export default function TodoManage() {
       <Drawer
         title={editingTodo ? '编辑待办' : parentForCreate ? `新建子待办 · ${parentForCreate.title}` : '新建待办'}
         open={drawerOpen}
-        onClose={() => { setDrawerOpen(false); setParentForCreate(null) }}
+        onClose={() => {
+          setDrawerOpen(false)
+          setEditingTodo(null)
+          setParentForCreate(null)
+          form.resetFields()
+        }}
         width={640}
         extra={
           <Button type="primary" onClick={handleSave}>保存</Button>

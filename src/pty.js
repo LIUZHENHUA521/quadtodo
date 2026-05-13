@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
+import { spawnSync, execFile as execFileCb } from 'node:child_process'
 import { readdirSync, statSync, existsSync, watch as fsWatch, mkdirSync, openSync, readSync, closeSync, readFileSync } from 'node:fs'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import { homedir } from 'node:os'
@@ -222,22 +222,21 @@ export function cursorTranscriptPath(cwd, chatId) {
 }
 
 /**
- * 同步预生成 cursor chatId：跑 `cursor-agent create-chat`，stdout 第一行就是 UUID。
- * 阻塞调用，默认 6s 超时。失败/超时返回 null（让上层走"无 nativeId"降级路径）。
+ * 异步预生成 cursor chatId：跑 `cursor-agent create-chat`，stdout 第一行就是 UUID。
+ * 非阻塞，默认 6s 超时。失败/超时 resolve null（让上层走"无 nativeId"降级路径）。
  */
-function createCursorChatSync(bin, timeoutMs = 6000) {
-  try {
-    const r = spawnSync(bin, ['create-chat'], {
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    if (r.error || r.status !== 0) return null
-    const m = String(r.stdout || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)
-    return m ? m[0] : null
-  } catch {
-    return null
-  }
+function createCursorChatAsync(bin, timeoutMs = 6000) {
+  return new Promise((resolve) => {
+    try {
+      execFileCb(bin, ['create-chat'], { timeout: timeoutMs, encoding: 'utf8' }, (err, stdout) => {
+        if (err) { resolve(null); return }
+        const m = String(stdout || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)
+        resolve(m ? m[0] : null)
+      })
+    } catch {
+      resolve(null)
+    }
+  })
 }
 
 /**
@@ -435,17 +434,14 @@ export class PtyManager extends EventEmitter {
     const presetClaudeId = tool === 'claude' && !resumeNativeId ? randomUUID() : null
     const claudeSessionArgs = presetClaudeId ? ['--session-id', presetClaudeId] : []
 
-    // cursor-agent 没有 --session-id 预置，但有 `cursor-agent create-chat` 同步建会话拿 chatId。
-    // 新会话先跑一下 create-chat（~3-4s），拿到 chatId 后用 --resume 进交互模式 ——
-    // 比 codex 那套 fs.watch 干净得多。create-chat 失败就降级（无 nativeId）。
-    let presetCursorId = null
+    // cursor-agent 没有 --session-id 预置，但有 `cursor-agent create-chat` 异步建会话拿 chatId。
+    // 新会话先异步跑 create-chat，拿到 chatId 后在 startWithSize() 里用 --resume 进交互模式。
+    // create-chat 失败就降级（无 nativeId，直接传 prompt）。
+    let cursorChatPromise = null
     if (tool === 'cursor' && !resumeNativeId) {
-      presetCursorId = createCursorChatSync(toolCfg.bin)
-      if (!presetCursorId) {
-        console.warn(`[pty] cursor-agent create-chat failed; session will run without nativeId tracking`)
-      }
+      cursorChatPromise = createCursorChatAsync(toolCfg.bin)
     }
-    const cursorResumeId = tool === 'cursor' ? (resumeNativeId || presetCursorId) : null
+    const cursorResumeId = tool === 'cursor' ? resumeNativeId : null
 
     let args
     if (resumeNativeId) {
@@ -506,13 +502,14 @@ export class PtyManager extends EventEmitter {
       pendingPrompt: useCliPrompt ? null : (prompt && !resumeNativeId ? prompt : null),
       resized: false,
       promptTimer: null,
-      nativeId: resumeNativeId || presetClaudeId || presetCursorId || null,
+      nativeId: resumeNativeId || presetClaudeId || null,
       stopped: false,
       detectTimer: null,
       fsWatcher: null,
       eventEmitter: null,
       detector: null,
       lastTuiAlertAt: 0,
+      cursorChatPromise,
       spawnSpec: {
         args,
         env,
@@ -520,6 +517,9 @@ export class PtyManager extends EventEmitter {
         toolCfg,
         tool,
         resumeNativeId: resumeNativeId || null,
+        _baseArgs: [...baseArgs],
+        _permissionArgs: [...permissionArgs],
+        _promptArg: useCliPrompt ? prompt : null,
       },
     }
     this.sessions.set(sessionId, session)
@@ -527,16 +527,32 @@ export class PtyManager extends EventEmitter {
 
   /**
    * 用真实 cols/rows 把 PTY 拉起来；第二次及之后调用会降级为 resize()。
-   * 必须先经过 create()。
+   * 必须先经过 create()。对 cursor 新会话会先 await create-chat 异步结果。
    */
-  startWithSize(sessionId, cols, rows) {
+  async startWithSize(sessionId, cols, rows) {
     const session = this.sessions.get(sessionId)
     if (!session) throw new Error(`no session ${sessionId}`)
     if (session.proc) {
-      // 已经 spawn 过了 —— 当 resize 处理，避免重复拉起子进程
       try { session.proc.resize(cols, rows) } catch { /* ignore */ }
       return
     }
+
+    // cursor 新会话：等待 create-chat 异步结果，拿到 chatId 后重建 args
+    if (session.cursorChatPromise) {
+      const chatId = await session.cursorChatPromise
+      session.cursorChatPromise = null
+      if (chatId) {
+        session.nativeId = chatId
+        const spec = session.spawnSpec
+        const parts = [...spec._baseArgs, ...spec._permissionArgs, '--resume', chatId]
+        if (spec._promptArg) parts.push(spec._promptArg)
+        spec.args = parts
+        this.emit('native-session', { sessionId, nativeId: chatId })
+      } else {
+        console.warn(`[pty] cursor-agent create-chat failed; session will run without nativeId tracking`)
+      }
+    }
+
     const spec = session.spawnSpec
     if (!spec) throw new Error(`session ${sessionId} has no spawnSpec (was it created?)`)
     const { args, env, effectiveCwd, toolCfg, tool } = spec
@@ -739,7 +755,8 @@ export class PtyManager extends EventEmitter {
     // 实测 cursor 的 stop hook 偶发不 fire（同一 cursor 安装，部分 session 完全
     // 收不到 stop 事件），靠 jsonl 才能做到稳定 100%。
     if (tool === 'cursor') {
-      session.cursorLastAssistantMtimeMs = 0
+      session.cursorLastSeenMtimeMs = 0
+      session.cursorPendingDone = false
       session.cursorWatchTimer = setInterval(() => {
         try {
           const nativeId = session.nativeId
@@ -747,8 +764,18 @@ export class PtyManager extends EventEmitter {
           const jsonlPath = cursorTranscriptPath(session.cwd, nativeId)
           if (!jsonlPath || !existsSync(jsonlPath)) return
           const st = statSync(jsonlPath)
-          if (st.mtimeMs <= session.cursorLastAssistantMtimeMs) return
-          // 读整个 jsonl（cursor 单 chat 通常 < 几 MB），找最后一行非空
+
+          if (st.mtimeMs === session.cursorLastSeenMtimeMs) {
+            // mtime 没变 → 文件已稳定；如果之前看到了 assistant 末行，现在可以安全 emit
+            if (session.cursorPendingDone) {
+              session.cursorPendingDone = false
+              this.emit('cursor-turn-done', { sessionId, nativeId })
+            }
+            return
+          }
+
+          // mtime 变了 → cursor 还在写，读文件判断当前状态但不急着 emit
+          session.cursorLastSeenMtimeMs = st.mtimeMs
           const content = readFileSync(jsonlPath, 'utf8')
           const idx = content.lastIndexOf('\n', content.length - 2)
           const lastLine = (idx >= 0 ? content.slice(idx + 1) : content).trim()
@@ -756,11 +783,9 @@ export class PtyManager extends EventEmitter {
           let role = null
           try { role = JSON.parse(lastLine)?.role || null } catch { return }
           if (role === 'assistant') {
-            session.cursorLastAssistantMtimeMs = st.mtimeMs
-            this.emit('cursor-turn-done', { sessionId, nativeId })
+            session.cursorPendingDone = true
           } else {
-            // 末行是 user → 进入新一轮，记录 mtime 推进但不 emit
-            session.cursorLastAssistantMtimeMs = st.mtimeMs
+            session.cursorPendingDone = false
           }
         } catch { /* ignore — watcher 不能影响 PTY 主链路 */ }
       }, 2000)
@@ -824,9 +849,9 @@ export class PtyManager extends EventEmitter {
    * 现有的 route / 测试 / CLI 调用不需要改，只是 PTY 会先在 80×24 上开。
    * size-first 握手路径请改用 create() + startWithSize(realCols, realRows)。
    */
-  start(opts) {
+  async start(opts) {
     this.create(opts)
-    this.startWithSize(opts.sessionId, 80, 24)
+    await this.startWithSize(opts.sessionId, 80, 24)
   }
 
   startShell({ sessionId, shell, cwd }) {

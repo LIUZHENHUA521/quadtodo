@@ -5,8 +5,8 @@ export type PillVariant = 'default' | 'alert'
 
 export interface StatPillProps {
   variant?: PillVariant
-  /** Optional left-side icon: 'dot' (status), 'pulse-dot' (status with ring), 'arrow' */
-  icon?: 'dot' | 'pulse-dot' | 'arrow'
+  /** Optional left-side icon: 'dot' (status), 'pulse-dot' (status with ring), 'arrow', or a custom ReactNode */
+  icon?: 'dot' | 'pulse-dot' | 'arrow' | React.ReactNode
   /** Color for the dot or arrow icon (CSS color or token var) */
   iconColor?: string
   /** Numeric or short-text value (rendered in mono) */
@@ -31,6 +31,9 @@ export function StatPill(props: StatPillProps) {
     tooltip,
     onClick,
   } = props
+
+  const isBuiltinIcon = icon === 'dot' || icon === 'pulse-dot' || icon === 'arrow'
+
   return (
     <div
       className={`stat-pill stat-pill-${variant}${onClick ? ' stat-pill-clickable' : ''}`}
@@ -45,6 +48,9 @@ export function StatPill(props: StatPillProps) {
       )}
       {icon === 'arrow' && (
         <span className="stat-pill-arrow" style={iconColor ? { color: iconColor } : undefined}>▲</span>
+      )}
+      {!isBuiltinIcon && icon && (
+        <span className="stat-pill-custom-icon" style={iconColor ? { color: iconColor } : undefined}>{icon}</span>
       )}
       <span className="stat-pill-value">{value}</span>
       <span className="stat-pill-label">{label}</span>

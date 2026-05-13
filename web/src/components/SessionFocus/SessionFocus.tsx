@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
 import { useFocusStore } from '../../store/focusStore'
 import { useAiSessionStore } from '../../store/aiSessionStore'
-import { useUnreadStore } from '../../store/unreadStore'
 import { useTodoSnapshotStore } from '../../store/todoSnapshotStore'
+import { useUnreadStore } from '../../store/unreadStore'
 import { FocusSubbar } from './FocusSubbar'
 import { FocusTabs } from './FocusTabs'
 import SessionViewer from '../../SessionViewer'
@@ -18,6 +18,16 @@ export function SessionFocus() {
 
   const sessions = useAiSessionStore((s) => s.sessions)
   const replaceSessionId = useAiSessionStore((s) => s.replaceSessionId)
+  const markSeen = useUnreadStore((s) => s.markSeen)
+
+  // 进入聚焦视图时自动标记已读，让 pending → idle
+  useEffect(() => {
+    if (!focusedSessionId) return
+    const session = sessions.get(focusedSessionId)
+    if (session?.lastTurnDoneAt) {
+      markSeen(focusedSessionId, session.lastTurnDoneAt)
+    }
+  }, [focusedSessionId, sessions, markSeen])
 
   // live session 缺失时（首启动 3s 窗口）回退到 todo.aiSession.status，让 FocusSubbar
   // 的 pill 不再闪 idle。
@@ -26,14 +36,6 @@ export function SessionFocus() {
   const fallbackTodo = useTodoSnapshotStore((s) =>
     focusedSessionId ? s.bySessionId.get(focusedSessionId) : undefined,
   )
-
-  // 用户打开 focus mode 即视为"已读" —— 让 TodoCard 的待确认徽章清掉
-  // (条件：sessionId 存在且 user 真在 focus 这个 session)
-  const markSeen = useUnreadStore((s) => s.markSeen)
-  useEffect(() => {
-    if (!focusedSessionId) return
-    markSeen(focusedSessionId)
-  }, [focusedSessionId, markSeen])
 
   // Nudge ResizeObservers (xterm fit, etc.) after the focus mode opens or
   // after a tab switch. Without this, the Live xterm canvas can stay sized
@@ -68,9 +70,9 @@ export function SessionFocus() {
     focusedTab === 'conversation' ? 'transcript' : 'live'
 
   // SessionViewer expects a TodoStatus. Approximate from SessionMeta.status:
-  //   running / pending_confirm → 'ai_running' (so SessionViewer treats it as live)
+  //   running / idle / pending_confirm → 'ai_running' (so SessionViewer treats it as live)
   //   anything else             → 'ai_done'
-  const isActive = session?.status === 'running' || session?.status === 'pending_confirm'
+  const isActive = session?.status === 'running' || session?.status === 'idle' || session?.status === 'pending_confirm'
   const todoStatus: 'ai_running' | 'ai_done' = isActive ? 'ai_running' : 'ai_done'
 
   return (

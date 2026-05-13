@@ -20,17 +20,11 @@
   margin-right: 8px;
   color: var(--text-primary);
 }
-.topbar-logo-mark {
+.topbar-logo-img {
   width: 26px; height: 26px;
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--accent-electric) 0%, var(--q1) 100%);
-  display: grid;
-  place-items: center;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  color: var(--surface-0);
-  font-size: var(--text-sm);
-  box-shadow: 0 0 14px var(--accent-electric-glow);
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .topbar-spacer { flex: 1; }

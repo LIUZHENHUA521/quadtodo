@@ -1,4 +1,5 @@
 import { Button, Tooltip } from 'antd'
+import { Moon, Sun } from 'lucide-react'
 import { useTheme } from '../../design/ThemeProvider'
 import './ThemeToggle.css'
 
@@ -14,7 +15,7 @@ export function ThemeToggle() {
         onClick={toggle}
         aria-label="Toggle theme"
       >
-        {isDark ? '🌙' : '☀️'}
+        {isDark ? <Moon size={16} /> : <Sun size={16} />}
       </Button>
     </Tooltip>
   )

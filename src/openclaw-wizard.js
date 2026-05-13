@@ -2075,7 +2075,7 @@ export function createOpenClawWizard({
     }
     let target = null
     for (const [sid, sess] of aiTerminal.sessions) {
-      if ((sess?.status === 'running' || sess?.status === 'pending_confirm') && sid.endsWith(short)) {
+      if ((sess?.status === 'running' || sess?.status === 'idle' || sess?.status === 'pending_confirm') && sid.endsWith(short)) {
         target = { sid, sess }
         break
       }
@@ -2113,7 +2113,7 @@ export function createOpenClawWizard({
   //  - /stop 走前缀匹配（4-8 字符都 OK），all 停所有，无参列活跃
 
   /**
-   * 找到所有活跃 AI session（status=running / pending_confirm），返回带 todo 上下文的列表：
+   * 找到所有活跃 AI session（status=running / idle / pending_confirm），返回带 todo 上下文的列表：
    *   [{ sid, short, status, lastOutputAt, todo: {id, title, workDir, quadrant} | null }]
    *
    * 数据源：
@@ -2124,7 +2124,7 @@ export function createOpenClawWizard({
     if (!aiTerminal?.sessions) return []
     const active = []
     for (const [sid, sess] of aiTerminal.sessions) {
-      if (sess?.status === 'running' || sess?.status === 'pending_confirm') {
+      if (sess?.status === 'running' || sess?.status === 'idle' || sess?.status === 'pending_confirm') {
         active.push({
           sid,
           short: sid.slice(-8),

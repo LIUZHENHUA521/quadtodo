@@ -15,8 +15,7 @@ import { getTerminalWsUrl, startAiExec, stopAiExec, openTraeCN, TodoStatus, Resu
 import { useTerminalTheme } from './hooks/useTerminalTheme'
 import { PRESET_LABELS, PRESET_ORDER, TerminalPresetName, TERMINAL_PRESETS, deriveChrome, getTokenDrivenTheme } from './terminalThemes'
 import { useTheme } from './design/ThemeProvider'
-import { decideNearBottomAction, NEAR_BOTTOM_LINES } from './AiTerminalMini.scrollSnap'
-import { useUnreadStore } from './store/unreadStore'
+import { useAiSessionStore } from './store/aiSessionStore'
 import { useDispatchStore } from './store/dispatchStore'
 import {
   getBrowserNotificationPermission,
@@ -74,10 +73,6 @@ const DECTCEM_HIDE_SHOW_RE = /\x1b\[\?25[lh]/g
 function stripCursorVisibility(data: string): string {
   return data.replace(DECTCEM_HIDE_SHOW_RE, '')
 }
-
-// 整个页面生命周期内仅打印一次诊断 warn（跨多 tab 共享）。出现 = 已经被兜底吸附到底了。
-// 不是计数器，仅用于排查"卡在近底"现象第一次发生时抓取数值。
-let warnedNearBottomOnce = false
 
 // Wait until (a) the container has settled layout and is visible, AND
 // (b) the bundled JetBrains Mono font is loaded, before letting xterm measure
@@ -152,10 +147,11 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   })
   const [switchingMode, setSwitchingMode] = useState(false)
   const prevAutoModeRef = useRef<string | null>(autoMode)
-  const [followTail, setFollowTail] = useState<boolean>(() => {
-    try { return localStorage.getItem('quadtodo.followTail') !== '0' } catch { return true }
-  })
-  const followTailRef = useRef<boolean>(followTail)
+  // 首次"容器可见 + fit 完成 + 一帧绘制"之前隐藏 xterm 元素，
+  // 避免用户看到 xterm 用初始 80×24 渲染再撑大到容器尺寸的"小→大"闪动。
+  // 一旦 ready，session 内不再回退（resize 期间靠 xterm 自身平滑重排）。
+  const [viewportReady, setViewportReady] = useState(false)
+  const viewportReadyRef = useRef(false)
   useEffect(() => { prevAutoModeRef.current = autoMode }, [autoMode])
   useEffect(() => { sessionStatusRef.current = sessionStatus }, [sessionStatus])
   useEffect(() => {
@@ -163,11 +159,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStatus])
   useEffect(() => { sessionExpiredRef.current = sessionExpired }, [sessionExpired])
-  useEffect(() => { followTailRef.current = followTail }, [followTail])
   const dragRef = useRef<{ startY: number; startH: number } | null>(null)
-  // 反回声：我们自己调 term.scrollToBottom() 后 xterm 也会 fire onScroll，
-  // 该次事件不应再触发判定逻辑（否则会形成不必要的 setState 抖动）。
-  const suppressNextScrollEventRef = useRef<boolean>(false)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY)
   const reconnectCountRef = useRef(0)
@@ -225,23 +217,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     }
   }, [sessionId])
 
-  // 标记已读：AiTerminalMini 只会在 SessionFocus overlay 内挂载，所以挂载即"用户能看到"，
-  // 只剩下页面可见性这一个 gate。
-  const markSeen = useUnreadStore(s => s.markSeen)
-  useEffect(() => {
-    function isVisibleHere(): boolean {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false
-      return true
-    }
-    function evaluate() { if (isVisibleHere()) markSeen(sessionId) }
-    evaluate()
-    document.addEventListener('visibilitychange', evaluate)
-    window.addEventListener('focus', evaluate)
-    return () => {
-      document.removeEventListener('visibilitychange', evaluate)
-      window.removeEventListener('focus', evaluate)
-    }
-  }, [sessionId, markSeen])
+  const markSessionTurnDone = useAiSessionStore(s => s.markSessionTurnDone)
 
   const tryAutoRecover = useCallback(async () => {
     const latestResumeTarget = resumeTargetRef.current
@@ -421,6 +397,19 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       }
       refitAttemptsRef.current = 0
       scheduleResizeSend(cols, rows)
+      // 成功 fit 后揭开容器：等 3 帧让 xterm canvas 真正画出当前尺寸再 visible。
+      // CanvasAddon 的渲染队列至少要一帧；保险起见多等两帧。再加 16ms 兜底覆盖
+      // 主线程被别的工作（diff 渲染、SSE 重渲）挤占导致 rAF 推迟的情况。
+      if (!viewportReadyRef.current) {
+        viewportReadyRef.current = true
+        const reveal = () => setViewportReady(true)
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              reveal()
+              setTimeout(reveal, 16)
+            })))
+      }
     } catch (e) {
       console.warn('[AiTerminalMini] fit error:', e)
     }
@@ -441,6 +430,9 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     lastPongRef.current = Date.now()
     setSessionExpired(false)
     setWsConnected(false)
+    // session 切换时重置 viewport 揭开状态，给新 xterm 一次"等首次 fit 完成再显示"的机会
+    viewportReadyRef.current = false
+    setViewportReady(false)
 
     let cleanup: (() => void) | null = null
 
@@ -466,7 +458,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         // 当前定位上稳定显示，重绘瞬间也不会被反复擦写。
         cursorBlink: false,
         convertEol: true,
-        scrollback: 5000,
+        scrollback: 30000,
         disableStdin: false,
       })
       const fit = new FitAddon()
@@ -504,8 +496,6 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         if (imeComposing || ev.isComposing || ev.keyCode === 229) return false
         if (ev.type === 'keydown' && ev.ctrlKey && ev.key === 'End') {
           term.scrollToBottom()
-          setFollowTail(true)
-          try { localStorage.setItem('quadtodo.followTail', '1') } catch { /* ignore */ }
           return false
         }
         return true
@@ -566,52 +556,26 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       // valid before connectWs() runs — important for hidden tabs where rAF is
       // throttled and would otherwise leave term at xterm's constructor default 80×24.
       try { fit.fit() } catch (e) { console.warn('[AiTerminalMini] initial fit failed:', e) }
-
-      // ─── 近底自动吸附 ───
-      // 手动滚动（wheel / touch / 拖 scrollbar）在某些边角下停在 baseY 前 1~2 行无法
-      // 到达绝对底部；这里订阅 onScroll，距底 ≤ NEAR_BOTTOM_LINES 行就主动 scrollToBottom，
-      // 同时跟 followTail 状态联动：用户主动往上翻 > NEAR_BOTTOM_LINES 行则取消跟随。
-      // 详细设计见 docs/superpowers/specs/2026-05-12-ai-terminal-scroll-near-bottom-snap-design.md。
-      const scrollSnapDisposable = term.onScroll(() => {
-        if (suppressNextScrollEventRef.current) {
-          suppressNextScrollEventRef.current = false
-          return
+      // 只在"容器真的可见 + fit 算出有效 cols"时标记 ready；
+      // 否则留给后续 IO/RO 触发的 doFit 来标记，避免在 display:none 容器里就揭开
+      // 导致后面切到可见时 xterm 用旧 80×24 画一帧再扩大（"小→大"闪动的根因）。
+      if (
+        !viewportReadyRef.current
+        && container.offsetParent !== null
+        && container.clientWidth >= MIN_CONTAINER_WIDTH
+        && term.cols >= MIN_VALID_COLS
+      ) {
+        viewportReadyRef.current = true
+        const reveal = () => {
+          if (!disposedRef.current && myGen === effectGenRef.current) setViewportReady(true)
         }
-        const buf = term.buffer.active
-        const baseY = buf.baseY
-        const dispY = buf.viewportY
-        const action = decideNearBottomAction(
-          baseY,
-          dispY,
-          followTailRef.current,
-          NEAR_BOTTOM_LINES,
-        )
-
-        if (action.snap) {
-          if (!warnedNearBottomOnce) {
-            warnedNearBottomOnce = true
-            try {
-              const v = container.querySelector('.xterm-viewport') as HTMLElement | null
-              console.warn('[AiTerminalMini] near-bottom snap engaged', {
-                baseY, dispY, delta: baseY - dispY,
-                rows: term.rows, cols: term.cols,
-                scrollTop: v?.scrollTop,
-                scrollH: v?.scrollHeight,
-                clientH: v?.clientHeight,
-              })
-            } catch { /* console 不可用就算了 */ }
-          }
-          suppressNextScrollEventRef.current = true
-          term.scrollToBottom()
-        }
-
-        if (action.nextFollowTail !== null) {
-          setFollowTail(action.nextFollowTail)
-          try {
-            localStorage.setItem('quadtodo.followTail', action.nextFollowTail ? '1' : '0')
-          } catch { /* ignore */ }
-        }
-      })
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              reveal()
+              setTimeout(reveal, 16)
+            })))
+      }
 
       function connectWs() {
         if (disposedRef.current || stopReconnectRef.current) return
@@ -699,16 +663,13 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             }
             switch (msg.type) {
               case 'output':
-                term.write(stripCursorVisibility(msg.data), () => {
-                  if (followTailRef.current) term.scrollToBottom()
-                })
+                term.write(stripCursorVisibility(msg.data))
                 break
               case 'replay':
                 if (Array.isArray(msg.chunks)) {
                   for (const chunk of msg.chunks) term.write(stripCursorVisibility(chunk))
                   // 回放结束后强制 SGR reset，避免 TUI 在切片边界遗留 underline/颜色
                   term.write('\x1b[0m')
-                  if (followTailRef.current) term.scrollToBottom()
                 }
                 break
               case 'pending_confirm':
@@ -747,10 +708,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
                 break
               case 'turn_done': {
                 showTurnDoneReminder()
-                // 用户当前正盯着这个会话（SessionFocus 已挂载本组件、页面在前台）— turn_done
-                // 一到就标已读，避免红点闪一下又消失带来的视觉干扰。
-                const docVisible = typeof document === 'undefined' || document.visibilityState === 'visible'
-                if (docVisible) markSeen(sessionId)
+                markSessionTurnDone(sessionId, msg.status || 'idle', msg.timestamp || Date.now())
                 break
               }
               case 'done':
@@ -934,16 +892,41 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       })
       ro.observe(container)
 
-      // 可见性监听：display:none ↔ 可见切换时 ResizeObserver 不保证触发，用 IO 兜底
-      // 双 rAF：第一帧让样式计算提交，第二帧让布局完全 settle，再读 clientWidth 做 fit
+      // 可见性监听：display:none ↔ 可见切换时 ResizeObserver 不保证触发，用 IO 兜底。
+      // 关键修复：每次"从不可见 → 可见"过渡都先把容器 opacity 拨回 0（隐藏 xterm 用旧尺寸
+      // 画的旧帧），等 doFit 完成 + 双 rAF 后再揭开。避免用户切回 Live tab 看见
+      // "小框→撑满" 的闪动（容器在隐藏期间可能因为窗口缩放等原因尺寸变化，xterm
+      // 内部 cols/rows 还停在上次的值）。
+      let wasIntersecting = false
       const io = new IntersectionObserver((entries) => {
         if (isHiddenRef.current) return
         for (const entry of entries) {
-          if (entry.isIntersecting && entry.intersectionRatio > 0) {
+          const nowIn = entry.isIntersecting && entry.intersectionRatio > 0
+          if (nowIn) {
+            const justEntered = !wasIntersecting
+            wasIntersecting = true
+            // 重新进入可见态：临时隐藏 xterm 元素，让 doFit 跑完再揭开
+            if (justEntered && viewportReadyRef.current) {
+              viewportReadyRef.current = false
+              setViewportReady(false)
+            }
             refitAttemptsRef.current = 0
             requestAnimationFrame(() => {
-              requestAnimationFrame(() => doFit())
+              requestAnimationFrame(() => {
+                doFit()
+                // 重新可见后默认回到最底部 —— 隐藏期间 PTY 可能持续输出（live-output
+                // 事件刷新了 outputHistory），用户切回 Live tab 总是想看最新内容；
+                // xterm 自身只有"用户主动滚回底部 / 新输出到达"才会自动跟随，
+                // display:none ↔ flex 切换不算其中任何一种，要显式触发。
+                // 仅在"刚从隐藏切回"时调一次；常驻可见期间的滚动状态保留。
+                if (justEntered) {
+                  const term = termRef.current
+                  if (term) { try { term.scrollToBottom() } catch { /* ignore */ } }
+                }
+              })
             })
+          } else {
+            wasIntersecting = false
           }
         }
       })
@@ -991,7 +974,6 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         const ws = wsRef.current
         if (ws) ws.close()
         try { linkProviderRef.current?.dispose() } catch {}
-        try { scrollSnapDisposable.dispose() } catch {}
         linkProviderRef.current = null
         term.dispose()
         termRef.current = null
@@ -1004,7 +986,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       disposedRef.current = true
       if (cleanup) cleanup()
     }
-  }, [sessionId, tryAutoRecover, showTurnDoneReminder])
+  }, [sessionId, tryAutoRecover, showTurnDoneReminder, markSessionTurnDone])
 
   useEffect(() => { setSessionStatus(status) }, [status])
 
@@ -1153,15 +1135,6 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     termRef.current?.focus()
   }, [])
 
-  const scrollToBottom = useCallback(() => {
-    const term = termRef.current
-    if (!term) return
-    term.scrollToBottom()
-    setFollowTail(true)
-    try { localStorage.setItem('quadtodo.followTail', '1') } catch { /* ignore */ }
-    term.focus()
-  }, [])
-
   // 清空 xterm 显示 + 通知服务端丢弃 outputHistory：旧 session 在窄 cols 下产生的
   // 硬折行 scrollback 在更宽的窗口里显示窄一截，清完后下次 Claude 输出按当前 cols 重绘。
   const handleClearHistory = useCallback(() => {
@@ -1198,15 +1171,6 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     message.success(`已保存自定义主题「${name}」`)
   }, [saveAsName, customPresets, saveCustomPreset, theme])
 
-  const toggleFollowTail = useCallback(() => {
-    setFollowTail(prev => {
-      const next = !prev
-      try { localStorage.setItem('quadtodo.followTail', next ? '1' : '0') } catch { /* ignore */ }
-      if (next) termRef.current?.scrollToBottom()
-      return next
-    })
-  }, [])
-
   return (
     <div
       className="xterm-terminal-wrapper"
@@ -1218,7 +1182,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         height: vvSize ? vvSize.height : '100dvh',
         zIndex: 9999, background: chrome.outer, display: 'flex', flexDirection: 'column',
       } : fillHeight ? {
-        borderRadius: 10, overflow: 'hidden', background: chrome.outer,
+        overflow: 'hidden', background: chrome.outer,
         display: 'flex', flexDirection: 'column' as const, width: '100%',
         flex: 1, minHeight: 0, height: '100%',
         border: `1px solid ${chrome.border}`,
@@ -1229,7 +1193,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             ? '0 0 0 1px #52c41a, 0 10px 24px rgba(8, 13, 30, 0.16)'
             : '0 10px 24px rgba(8, 13, 30, 0.16)',
       } : {
-        borderRadius: 10, overflow: 'hidden', background: chrome.outer,
+        overflow: 'hidden', background: chrome.outer,
         display: 'flex', flexDirection: 'column' as const, width: '100%',
         border: `1px solid ${chrome.border}`,
         boxShadow: sessionStatus === 'ai_pending'
@@ -1258,18 +1222,6 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         )}
         {turnDoneNotice && sessionStatus !== 'ai_done' && (
           <Tag color="success" style={{ fontSize: 10, lineHeight: '16px', margin: 0 }}>回复完成</Tag>
-        )}
-        {notificationPermission === 'default' && (
-          <Tooltip title="页面隐藏或窗口失焦时，用浏览器系统通知提醒 Claude 回复完成">
-            <Button
-              type="text"
-              size="small"
-              onClick={requestBrowserNotifications}
-              style={TURN_DONE_NOTIFICATION_BUTTON_STYLE}
-            >
-              {TURN_DONE_NOTIFICATION_BUTTON_LABEL}
-            </Button>
-          </Tooltip>
         )}
         {sessionExpired && (
           <Tag color="error" style={{ fontSize: 10, lineHeight: '16px', margin: 0 }}>
@@ -1436,53 +1388,6 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             <Button onClick={handleSaveAsCustomPreset} disabled={!saveAsName.trim()}>另存为</Button>
           </div>
         </Modal>
-        <Tooltip title={followTail ? '已跟随新输出（点击暂停）' : '已暂停跟随（点击恢复）'}>
-          <Tag
-            color={followTail ? 'green' : 'default'}
-            onClick={toggleFollowTail}
-            style={{ fontSize: 10, lineHeight: '16px', margin: 0, cursor: 'pointer', userSelect: 'none' }}
-          >
-            {followTail ? <LockOutlined style={{ fontSize: 9 }} /> : <UnlockOutlined style={{ fontSize: 9 }} />} 跟随
-          </Tag>
-        </Tooltip>
-        <Tooltip title="清空历史输出（仅显示，不影响任务）">
-          <Button type="text" size="small"
-            icon={<DeleteOutlined />}
-            style={{ color: 'var(--text-tertiary)', fontSize: 12, width: 20, height: 20, minWidth: 20 }}
-            onClick={handleClearHistory}
-          />
-        </Tooltip>
-        <Tooltip title="滚动到底部（Ctrl+End）">
-          <Button type="text" size="small"
-            icon={<VerticalAlignBottomOutlined />}
-            style={{ color: 'var(--text-tertiary)', fontSize: 12, width: 20, height: 20, minWidth: 20 }}
-            onClick={scrollToBottom}
-          />
-        </Tooltip>
-        {isActive && !sessionExpired && (
-          <Tooltip title="中止">
-            <Button type="text" size="small" danger icon={<StopOutlined />}
-              style={{ color: 'var(--ai-error)', fontSize: 12, width: 20, height: 20, minWidth: 20 }}
-              onClick={handleStop}
-            />
-          </Tooltip>
-        )}
-        <Tooltip title={dpadHidden ? '显示方向键' : '隐藏方向键'}>
-          <Button
-            className="dpad-toggle-btn"
-            type="text" size="small"
-            icon={<DragOutlined />}
-            style={{ color: dpadHidden ? 'var(--text-secondary)' : 'var(--accent-electric)', fontSize: 12, width: 20, height: 20, minWidth: 20 }}
-            onClick={toggleDpad}
-          />
-        </Tooltip>
-        <Tooltip title={fullscreen ? '退出全屏' : '全屏'}>
-          <Button type="text" size="small"
-            icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
-            style={{ color: 'var(--text-tertiary)', fontSize: 12, width: 20, height: 20, minWidth: 20 }}
-            onClick={toggleFullscreen}
-          />
-        </Tooltip>
       </div>
       {/* tool_missing 修复卡片：424 时弹出，告诉用户跑哪条命令装回 claude/codex */}
       {toolMissing && (
@@ -1543,8 +1448,12 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
           width: '100%',
           position: 'relative',
           pointerEvents: switchingMode ? 'none' : undefined,
-          opacity: switchingMode ? 0.6 : 1,
-          transition: 'opacity 0.2s',
+          // viewportReady=false: 隐藏 xterm 直到首次 fit + 多帧绘制完成，避免"小→大"闪动
+          // switchingMode 进一步压暗到 0.6 表示正在切换 auto 模式
+          // 揭开时不加 transition：xterm canvas 已经画好，直接显示比 fade-in 视觉上更稳，
+          // fade-in 期间用户能透过半透明看到 canvas 仍在变化，反而像"闪"
+          opacity: !viewportReady ? 0 : (switchingMode ? 0.6 : 1),
+          transition: switchingMode ? 'opacity 0.2s' : 'none',
           overflow: 'hidden',
           userSelect: 'text',
           cursor: 'text',

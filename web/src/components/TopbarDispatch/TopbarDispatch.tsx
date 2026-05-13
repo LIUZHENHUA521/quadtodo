@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { Popover, Tooltip, message } from 'antd'
-import { CloseOutlined, SearchOutlined } from '@ant-design/icons'
+import { CloseOutlined } from '@ant-design/icons'
+import { Plus, Search, BarChart3, BookOpen, FileText, Settings, Zap, Pause, MessageCircleWarning } from 'lucide-react'
 import { StatPill } from '../StatPill'
 import { ThemeToggle } from '../ThemeToggle'
 import { useDispatchStore } from '../../store/dispatchStore'
@@ -204,7 +205,7 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
   return (
     <div className="topbar-dispatch">
       <div className="topbar-logo">
-        <div className="topbar-logo-mark">A</div>
+        <img src={new URL('../../assets/logo.png', import.meta.url).href} alt="AgentQuad" className="topbar-logo-img" />
         <span>AgentQuad</span>
       </div>
 
@@ -218,7 +219,7 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
       >
         <span data-testid="stat-running-trigger">
           <StatPill
-            icon="pulse-dot"
+            icon={<Zap size={13} />}
             iconColor="var(--ai-running)"
             value={runningCount}
             label="running"
@@ -238,7 +239,7 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
       >
         <span data-testid="stat-idle-trigger">
           <StatPill
-            icon="pulse-dot"
+            icon={<Pause size={13} />}
             iconColor="var(--ai-idle)"
             value={idleCount}
             label="idle"
@@ -259,7 +260,7 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
         <span data-testid="stat-pending-trigger">
           <StatPill
             variant={pendingCount > 0 ? 'alert' : 'default'}
-            icon="pulse-dot"
+            icon={<MessageCircleWarning size={13} />}
             iconColor="var(--ai-pending-confirm)"
             value={pendingCount}
             label="待确认"
@@ -277,6 +278,26 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
         <kbd>⌘K</kbd>
       </button>
 
+      <Tooltip title="新建待办">
+        <button
+          className="topbar-icon-btn"
+          onClick={() => useDispatchStore.getState().signal('newTodo')}
+          aria-label="New todo"
+          data-testid="topbar-new-btn"
+        >
+          <Plus size={16} />
+        </button>
+      </Tooltip>
+      <Tooltip title="Prompt 模板">
+        <button
+          className="topbar-icon-btn"
+          onClick={() => openDrawer('template')}
+          aria-label="Templates"
+          data-testid="topbar-template-btn"
+        >
+          <FileText size={16} />
+        </button>
+      </Tooltip>
       <Tooltip title="历史会话找回">
         <button
           className="topbar-icon-btn"
@@ -284,17 +305,17 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
           aria-label="Recover session"
           data-testid="topbar-recover-btn"
         >
-          <SearchOutlined />
+          <Search size={16} />
         </button>
       </Tooltip>
       <Tooltip title="Stats &amp; Reports">
-        <button className="topbar-icon-btn" onClick={() => openDrawer('statsReports')} data-testid="topbar-stats-btn">📊</button>
+        <button className="topbar-icon-btn" onClick={() => openDrawer('statsReports')} data-testid="topbar-stats-btn"><BarChart3 size={16} /></button>
       </Tooltip>
       <Tooltip title="Wiki">
-        <button className="topbar-icon-btn" onClick={() => openDrawer('wiki')} data-testid="topbar-wiki-btn">📖</button>
+        <button className="topbar-icon-btn" onClick={() => openDrawer('wiki')} data-testid="topbar-wiki-btn"><BookOpen size={16} /></button>
       </Tooltip>
       <Tooltip title="Settings">
-        <button className="topbar-icon-btn" onClick={() => openDrawer('settings')} data-testid="topbar-settings-btn">⚙</button>
+        <button className="topbar-icon-btn" onClick={() => openDrawer('settings')} data-testid="topbar-settings-btn"><Settings size={16} /></button>
       </Tooltip>
       <ThemeToggle />
     </div>

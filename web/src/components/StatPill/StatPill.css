@@ -8,6 +8,7 @@
   border-radius: var(--radius-md);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+  line-height: 1;
   color: var(--text-secondary);
   position: relative;
   transition: border-color var(--motion-fast) var(--ease-standard);
@@ -51,6 +52,16 @@
 .stat-pill-arrow {
   color: var(--accent-electric);
   font-size: 10px;
+}
+
+.stat-pill-custom-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.stat-pill-custom-icon svg {
+  display: block;
 }
 
 .stat-pill-tooltip {

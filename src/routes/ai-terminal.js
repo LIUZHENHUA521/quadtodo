@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import pidusage from 'pidusage'
 import { loadConfig, resolveToolsConfig, SUPPORTED_TOOLS, DEFAULT_ROOT_DIR } from '../config.js'
 
-const MAX_OUTPUT_BUFFER = 512 * 1024
+const MAX_OUTPUT_BUFFER = 5 * 1024 * 1024
 const CLEANUP_MS = 30 * 60_000
 const MIN_RESIZE_COLS = 30
 // PTY 实际使用的 cols 下限。低于这个值的 viewer（例如默认 480px Dock、手机竖屏）
@@ -14,6 +14,7 @@ const MIN_RESIZE_COLS = 30
 // 为什么：Claude 的 TUI/diff 输出包含按 cols 计算好坐标的字符画，一旦 PTY 写下窄行
 // 就以 \r\n 形式硬刻进 outputHistory，replay 到更宽的 viewer 仍然窄。
 const MIN_PTY_COLS = 80
+const LIVE_AI_STATUSES = new Set(['running', 'idle', 'pending_confirm'])
 const TERMINAL_RESIZE_STATUSES = new Set(['done', 'failed', 'stopped'])
 const DEFAULT_CONFIRM_PATTERNS = [
   /Press Enter to confirm/i,
@@ -114,18 +115,61 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
     }
   }
 
+  function persistLiveSessionState(session, status, todoStatus, extra = {}) {
+    const todo = db.getTodo(session.todoId)
+    if (!todo) return
+    const current = (todo.aiSessions || []).find(item => item.sessionId === session.sessionId) || todo.aiSession || {}
+    db.updateTodo(session.todoId, {
+      status: todoStatus,
+      aiSessions: mergeTodoAiSessions(todo, {
+        ...current,
+        ...extra,
+        sessionId: session.sessionId,
+        tool: session.tool,
+        nativeSessionId: session.nativeSessionId || current.nativeSessionId || null,
+        cwd: session.cwd || current.cwd || null,
+        status,
+        startedAt: session.startedAt,
+        completedAt: null,
+        prompt: session.prompt,
+      }),
+    })
+  }
+
+  function markSessionIdleAfterTurn(session, ts) {
+    if (!session || session.status !== 'running') return false
+    session.status = 'idle'
+    session.awaitingReply = true
+    session.recentOutput = ''
+    persistLiveSessionState(session, 'idle', 'ai_done', { lastTurnDoneAt: ts })
+    return true
+  }
+
+  function markSessionRunningAfterInput(session) {
+    if (!session || !LIVE_AI_STATUSES.has(session.status)) return false
+    const wasPending = session.status === 'pending_confirm'
+    if (session.status === 'running' && session.awaitingReply === false) return false
+    session.status = 'running'
+    session.awaitingReply = false
+    if (wasPending) session.recentOutput = ''
+    persistLiveSessionState(session, 'running', 'ai_running')
+    if (wasPending) broadcastToSession(session, { type: 'pending_cleared' })
+    return true
+  }
+
   function notifyTurnDone(sessionId, payload = {}) {
     const session = sessions.get(sessionId)
     if (!session) return false
     const ts = payload.timestamp || Date.now()
     session.lastTurnDoneAt = ts
+    const markedIdle = markSessionIdleAfterTurn(session, ts)
     // 持久化到 todo.aiSessions[i].lastTurnDoneAt：即使 server 重启或浏览器关掉，
     // 客户端再开仍能根据 lastTurnDoneAt > 本地 lastSeenAt 判断未读。
     try {
       const todo = db.getTodo(session.todoId)
       if (todo) {
         const current = (todo.aiSessions || []).find(item => item.sessionId === sessionId) || todo.aiSession
-        if (current) {
+        if (current && !markedIdle) {
           db.updateTodo(session.todoId, {
             aiSessions: mergeTodoAiSessions(todo, { ...current, lastTurnDoneAt: ts }),
           })
@@ -138,7 +182,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       ...payload,
       type: 'turn_done',
       event: payload.event || 'stop',
-      status: payload.status || 'idle',
+      status: payload.status || session.status || 'idle',
       timestamp: ts,
     })
     return true
@@ -481,17 +525,14 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       // 4. 5s 兜底：前端如果一直没发合法 init（极少见 — /exec 返回后 WS 还没连上），
       // 用老的 80×24 兜底 spawn，避免 session 永远卡在 create 状态。
       session.spawnFallbackTimer = setTimeout(() => {
-        // Always clear the pointer first so the "is pending" state is accurate
-        // the moment the timer fires, even if init won the race and we return early.
         session.spawnFallbackTimer = null
         if (session.spawned) return
         console.warn(`[ai-terminal] spawn fallback fired session=${sessionId} (no init within 5s)`)
-        try {
-          pty.startWithSize(sessionId, 80, 24)
-          session.spawned = true
-        } catch (e) {
+        session.spawned = true
+        pty.startWithSize(sessionId, 80, 24).catch((e) => {
           console.warn(`[ai-terminal] spawn fallback failed: ${e.message}`)
-        }
+          session.spawned = false
+        })
       }, 5000)
       session.spawnFallbackTimer.unref?.()
     } catch (error) {
@@ -676,13 +717,12 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
         res.status(404).json({ ok: false, error: 'session_not_found' })
         return
       }
-      clearPendingConfirm(session)
       // 只在真正"提交"按键（Enter / Ctrl+C / Ctrl+D）时翻 awaitingReply=false。
       // 普通字符 / 焦点 ANSI 序列 / 粘贴中间态都不算 Claude 正式 busy ——
       // 如果在这里无条件翻 false，dispatcher 会把同一 chat 后续的 IM 消息全部 queue，
       // 而队列只能等下一次 Stop hook 才会 flush，导致飞书消息延迟数分钟才送达。
-      if (isPendingClearingInput(data)) session.awaitingReply = false
-      pty.write(sessionId, data)
+      if (isPendingClearingInput(data)) markSessionRunningAfterInput(session)
+      writeRestInputToPty(sessionId, data)
       res.json({ ok: true })
     } catch (e) {
       console.error('[ai-terminal/input]', e)
@@ -750,29 +790,20 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
     return /[\r\n\x03\x04]/.test(data)
   }
 
-  function clearPendingConfirm(session) {
-    if (!session || session.status !== 'pending_confirm') return
-    session.status = 'running'
-    // 清空 recentOutput，避免旧的 confirm 文本残留导致下次 output 再次匹配
-    session.recentOutput = ''
-    const todo = db.getTodo(session.todoId)
-    if (todo) {
-      const current = (todo.aiSessions || []).find(item => item.sessionId === session.sessionId) || todo.aiSession || {}
-      db.updateTodo(session.todoId, {
-        status: 'ai_running',
-        aiSessions: mergeTodoAiSessions(todo, {
-          ...current,
-          sessionId: session.sessionId,
-          tool: session.tool,
-          nativeSessionId: session.nativeSessionId || current.nativeSessionId || null,
-          status: 'running',
-          startedAt: session.startedAt,
-          completedAt: null,
-          prompt: session.prompt,
-        }),
-      })
+  function writeRestInputToPty(sessionId, data) {
+    if (typeof data !== 'string') return
+    const submit = data.match(/[\r\n]$/)?.[0]
+    if (!submit || data.length === 1) {
+      pty.write(sessionId, data)
+      return
     }
-    broadcastToSession(session, { type: 'pending_cleared' })
+    const text = data.slice(0, -1)
+    if (text) pty.write(sessionId, text)
+    setTimeout(() => {
+      try { pty.write(sessionId, submit) } catch (e) {
+        console.warn(`[ai-terminal/input] submit write failed for ${sessionId}: ${e.message}`)
+      }
+    }, 80)
   }
 
   function handleSetAutoMode(sessionId, msg, ws) {
@@ -846,11 +877,10 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       // pending 状态，紧跟的回显输出会再次匹配 confirm 关键词，把状态翻回 pending_confirm。
       // 浏览器侧每次按键都收到 pending_cleared → pending_confirm 一对消息，导致前端 border
       // 在 1px ↔ 2px 之间反复，肉眼上就是"打字时终端布局抖动"。
-      if (isPendingClearingInput(msg.data)) clearPendingConfirm(session)
+      if (isPendingClearingInput(msg.data)) markSessionRunningAfterInput(session)
       // 同 REST /input：只在真正的"提交"键才翻 false，避免普通字符 / 焦点序列 / 粘贴
       // 中间态把 awaitingReply 推回 false，导致 dispatcher 把 IM 消息死锁在队列里
       // 直到下一次 Stop。
-      if (session && isPendingClearingInput(msg.data)) session.awaitingReply = false
       pty.write(sessionId, msg.data)
     } else if (msg.type === 'init') {
       const cols = Number(msg.cols)
@@ -859,21 +889,23 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       if (!session) return
       if (!isValidResizeSize(cols, rows)) return
       if (!session.spawned) {
-        // WS init won the race — cancel the 5s fallback timer and spawn at the
-        // real cols/rows the frontend just measured.
         if (session.spawnFallbackTimer) {
           clearTimeout(session.spawnFallbackTimer)
           session.spawnFallbackTimer = null
         }
-        try {
-          pty.startWithSize(sessionId, clampPtyCols(cols), rows)
-          session.spawned = true
+        session.spawned = true
+        pty.startWithSize(sessionId, clampPtyCols(cols), rows).then(() => {
           session.lastAppliedCols = clampPtyCols(cols)
           session.lastAppliedRows = rows
-        } catch (e) {
+          if (ws && session.browsers.has(ws)) {
+            ws.__quadtodoSize = { cols, rows }
+            applyAggregatedResize(session)
+          }
+        }).catch((e) => {
           console.warn(`[ai-terminal] startWithSize failed for ${sessionId}: ${e.message}`)
-          return
-        }
+          session.spawned = false
+        })
+        return
       }
       // Register this WS's size into the aggregation map either way (covers
       // both the spawned-by-this-init case and the spawned-earlier reconnect case).
@@ -920,7 +952,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
   const cleanupTimer = setInterval(() => {
     const cutoff = Date.now() - CLEANUP_MS
     for (const [id, s] of sessions) {
-      if (s.status !== 'running' && s.status !== 'pending_confirm'
+      if (!LIVE_AI_STATUSES.has(s.status)
           && s.completedAt && s.completedAt < cutoff
           && s.browsers.size === 0) {
         sessions.delete(id)
@@ -946,7 +978,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
     const todos = db.listTodos()
       .filter(todo => ['ai_running', 'ai_pending'].includes(todo.status))
     for (const todo of todos) {
-      let recoverable = (todo.aiSessions || []).find(item => item?.nativeSessionId && (item.status === 'running' || item.status === 'pending_confirm'))
+      let recoverable = (todo.aiSessions || []).find(item => item?.nativeSessionId && (item.status === 'running' || item.status === 'idle' || item.status === 'pending_confirm'))
         || (todo.aiSessions || []).find(item => item?.nativeSessionId)
       if (!recoverable) {
         db.updateTodo(todo.id, { status: 'todo' })
@@ -1007,9 +1039,6 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
         }),
       })
       try {
-        // 复活 session 也注入 hook env：即使没 routeUserId，hook script 看到
-        // QUADTODO_SESSION_ID 就会 POST 到 quadtodo，端服务自己 fallback 到
-        // config.openclaw.targetUserId（兜底推送通道）
         pty.start({
           sessionId,
           tool: recoverable.tool,
@@ -1022,6 +1051,13 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
             QUADTODO_TODO_TITLE: String(todo.title || ''),
             QUADTODO_URL: 'http://127.0.0.1:5677',
           },
+        }).catch((e) => {
+          console.warn('[ai-terminal] auto-recover start failed:', e.message)
+          sessions.delete(sessionId)
+          todoSessionMap.delete(todo.id)
+          const nativeKey = `${recoverable.tool}:${recoverable.nativeSessionId}`
+          if (nativeSessionMap.get(nativeKey) === sessionId) nativeSessionMap.delete(nativeKey)
+          db.updateTodo(todo.id, { status: 'todo' })
         })
       } catch (e) {
         console.warn('[ai-terminal] auto-recover failed:', e.message)
@@ -1055,9 +1091,17 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
   function markSessionAwaitingReply(sessionId, value) {
     const session = sessions.get(sessionId)
     if (!session) return false
-    if (session.status !== 'running' && session.status !== 'pending_confirm') return false
+    if (!LIVE_AI_STATUSES.has(session.status)) return false
     const next = !!value
-    if (session.awaitingReply === next) return false
+    if (!next) {
+      markSessionRunningAfterInput(session)
+      return true
+    }
+    if (session.status === 'running') {
+      markSessionIdleAfterTurn(session, Date.now())
+      return true
+    }
+    if (session.awaitingReply === next) return true
     session.awaitingReply = next
     return true
   }
@@ -1065,7 +1109,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
   function isSessionAwaitingReply(sessionId) {
     const session = sessions.get(sessionId)
     if (!session) return false  // 不存在 → 视为 busy（保守，避免抢跑）
-    if (session.status !== 'running' && session.status !== 'pending_confirm') return false
+    if (!LIVE_AI_STATUSES.has(session.status)) return false
     return !!session.awaitingReply
   }
 }

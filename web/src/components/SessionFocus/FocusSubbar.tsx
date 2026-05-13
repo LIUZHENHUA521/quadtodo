@@ -22,12 +22,18 @@ export function FocusSubbar({ session, fallbackStatus, onClose }: Props) {
   const lastSeen = useUnreadStore((s) =>
     session?.sessionId ? s.lastSeenAt.get(session.sessionId) : undefined,
   )
+  const markSeen = useUnreadStore((s) => s.markSeen)
   const unread = isSessionUnread(session?.lastTurnDoneAt, lastSeen)
   const state = deriveAiState(session?.status ?? fallbackStatus, unread, session?.awaitingReply ?? false)
   const statusLabel = AI_STATE_PILL_LABEL[state]
 
   const quadColor =
     quadrant >= 1 && quadrant <= 4 ? `var(--q${quadrant})` : 'var(--text-tertiary)'
+  const canConfirm = !!session?.sessionId && state === 'pending'
+  const handleConfirm = () => {
+    if (!session?.sessionId) return
+    markSeen(session.sessionId, session.lastTurnDoneAt || Date.now())
+  }
 
   return (
     <div className="focus-subbar">
@@ -44,7 +50,14 @@ export function FocusSubbar({ session, fallbackStatus, onClose }: Props) {
         <span className="focus-task-id">#{sessionShortId}</span>
       </div>
       <div className="focus-actions">
-        <span className="pill-select green">{tool} · {statusLabel}</span>
+        <span className={`pill-select ${state === 'pending' ? 'pending' : state === 'running' ? 'green' : 'idle'}`}>
+          {tool} · {statusLabel}
+        </span>
+        {canConfirm && (
+          <button className="focus-confirm-btn" onClick={handleConfirm}>
+            确认
+          </button>
+        )}
         <Tooltip title="Close (Esc)">
           <button className="focus-icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </Tooltip>

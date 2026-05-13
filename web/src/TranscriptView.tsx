@@ -2,13 +2,14 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { Input, Button, Spin, Tag, Empty, Tooltip, Mentions, Popconfirm } from 'antd'
 import { useAppMessages } from './design/useAppMessages'
 import {
-  ReloadOutlined, BranchesOutlined, DownOutlined, RightOutlined, SearchOutlined,
+  ReloadOutlined, BranchesOutlined, SearchOutlined,
   FullscreenOutlined, FullscreenExitOutlined, StopOutlined, PoweroffOutlined,
 } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { diffLines } from 'diff'
 import './design/highlight.css'
-import { getTranscript, ResumeSessionInput, sendAiInput, startAiExec, stopAiExec, TranscriptResponse, TranscriptTurn } from './api'
+import { getTranscript, ResumeSessionInput, sendAiInput, startAiExec, stopAiExec, TranscriptResponse, TranscriptTurn, uploadImage } from './api'
 import { markdownComponents } from './markdownComponents'
 import './TranscriptView.css'
 import { deriveAiState, type AiPresentationState } from './design/aiPresentationState'
@@ -44,6 +45,96 @@ const ROLE_META: Record<string, { label: string; cls: string }> = {
   tool_use: { label: '工具调用', cls: 'tv-role-tool-use' },
   tool_result: { label: '工具输出', cls: 'tv-role-tool-result' },
   raw: { label: '日志', cls: 'tv-role-raw' },
+}
+
+// 把 tool_use.content（多半是个 JSON 字符串）解析出便于渲染的结构。
+// 解析失败就回退到原始文本，保证不丢信息。
+function parseToolInput(raw: string): Record<string, any> | null {
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
+    return null
+  } catch {
+    return null
+  }
+}
+
+function shortPath(p: string): string {
+  if (!p) return ''
+  // 仅做简单收敛：去掉 home 前缀、保留末两段，前面用 ... 替代
+  const homeStripped = p.replace(/^\/Users\/[^/]+\//, '~/')
+  const segs = homeStripped.split('/')
+  if (segs.length <= 4) return homeStripped
+  return `…/${segs.slice(-2).join('/')}`
+}
+
+function truncateOneLine(s: string, max = 80): string {
+  const line = (s || '').split('\n').find(l => l.trim().length > 0) || ''
+  const trimmed = line.trim()
+  return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** 把 tool_use 的输入按工具名拼成单行签名，例如 Read(file.ts, lines: 240-380) */
+function toolSignature(toolName: string | undefined, raw: string): string {
+  const name = toolName || 'Tool'
+  const input = parseToolInput(raw)
+  if (!input) return `${name}(${truncateOneLine(raw, 60)})`
+  const fmt = (v: any) => typeof v === 'string' ? v : JSON.stringify(v)
+  switch (name) {
+    case 'Read': {
+      const p = shortPath(input.path || input.file_path || '')
+      const off = input.offset, lim = input.limit
+      if (off != null && lim != null) return `Read(${p}, lines: ${off}-${off + lim})`
+      if (off != null) return `Read(${p}, from: ${off})`
+      if (lim != null) return `Read(${p}, limit: ${lim})`
+      return `Read(${p})`
+    }
+    case 'Write':
+    case 'Edit':
+    case 'StrReplace':
+    case 'Delete': {
+      const p = shortPath(input.path || input.target_notebook || input.file_path || '')
+      return `${name}(${p})`
+    }
+    case 'Bash':
+    case 'Shell': {
+      const cmd = truncateOneLine(input.command || '', 80)
+      return `${name}(${cmd})`
+    }
+    case 'Grep': {
+      const pat = JSON.stringify(input.pattern ?? '')
+      const path = input.path ? `, ${shortPath(input.path)}` : ''
+      return `Grep(${pat}${path})`
+    }
+    case 'Glob':
+      return `Glob(${JSON.stringify(input.glob_pattern ?? input.pattern ?? '')})`
+    case 'WebSearch':
+      return `WebSearch(${JSON.stringify(input.search_term ?? input.query ?? '')})`
+    case 'WebFetch':
+      return `WebFetch(${input.url || ''})`
+    case 'TodoWrite':
+      return `TodoWrite(…)`
+    case 'Task':
+      return `Task(${input.subagent_type || ''}: ${truncateOneLine(input.description || input.prompt || '', 50)})`
+    default: {
+      const keys = Object.keys(input).slice(0, 2)
+      const parts = keys.map(k => `${k}: ${truncateOneLine(fmt(input[k]), 30)}`)
+      return `${name}(${parts.join(', ')})`
+    }
+  }
+}
+
+/** 工具结果摘要：取第一行非空内容。出错则用 ✗ 标记。 */
+function toolResultSummary(raw: string): { ok: boolean; text: string; lineCount: number } {
+  const lines = (raw || '').split('\n')
+  const lineCount = lines.filter(l => l.trim().length > 0).length
+  const text = truncateOneLine(raw, 100) || '(empty)'
+  const ok = !/^(error|exception|traceback|fail|denied)/i.test(text)
+  return { ok, text, lineCount }
 }
 
 function sessionStatusMeta(state: AiPresentationState) {
@@ -102,6 +193,83 @@ function tryParseTodoWriteInput(raw: string): TodoItem[] | null {
   }
 }
 
+/**
+ * 把两段文本做行级 diff 并渲染成 +/- 高亮块。
+ * 大块未改动的连续行做 truncate（每段最多保留首尾各 3 行），其余折叠成 "… N lines …"
+ * 避免长文件展示成一屏几百行无意义 context。
+ */
+function DiffView({ before, after, language }: { before: string; after: string; language?: string }) {
+  const parts = useMemo(() => {
+    try {
+      return diffLines(before || '', after || '', { newlineIsToken: false })
+    } catch {
+      return [{ value: after || '', added: true, removed: false }] as any[]
+    }
+  }, [before, after])
+
+  const rows = useMemo(() => {
+    const acc: Array<{ kind: 'add' | 'del' | 'ctx' | 'gap'; text: string; gapCount?: number }> = []
+    parts.forEach((part: any) => {
+      const text: string = part.value || ''
+      const lines = text.split('\n')
+      // diffLines 末尾通常带一个空字符串（trailing newline），跳掉
+      const arr = lines[lines.length - 1] === '' ? lines.slice(0, -1) : lines
+      if (part.added) {
+        arr.forEach(l => acc.push({ kind: 'add', text: l }))
+      } else if (part.removed) {
+        arr.forEach(l => acc.push({ kind: 'del', text: l }))
+      } else {
+        // context: 头尾各保留 3 行，中间折叠
+        if (arr.length <= 7) {
+          arr.forEach(l => acc.push({ kind: 'ctx', text: l }))
+        } else {
+          arr.slice(0, 3).forEach(l => acc.push({ kind: 'ctx', text: l }))
+          acc.push({ kind: 'gap', text: '', gapCount: arr.length - 6 })
+          arr.slice(-3).forEach(l => acc.push({ kind: 'ctx', text: l }))
+        }
+      }
+    })
+    return acc
+  }, [parts])
+
+  return (
+    <pre className={`tv-diff${language ? ` language-${language}` : ''}`}>
+      {rows.map((r, i) => {
+        if (r.kind === 'gap') {
+          return (
+            <div key={i} className="tv-diff-line tv-diff-gap">
+              <span className="tv-diff-marker"> </span>
+              <span className="tv-diff-text">… {r.gapCount} unchanged lines …</span>
+            </div>
+          )
+        }
+        const marker = r.kind === 'add' ? '+' : r.kind === 'del' ? '-' : ' '
+        return (
+          <div key={i} className={`tv-diff-line tv-diff-${r.kind}`}>
+            <span className="tv-diff-marker">{marker}</span>
+            <span className="tv-diff-text">{r.text || ' '}</span>
+          </div>
+        )
+      })}
+    </pre>
+  )
+}
+
+/** 推断文件后缀对应的高亮 lang 名（仅用于装饰；diff 自身不依赖语法高亮） */
+function langFromPath(p: string): string | undefined {
+  const ext = (p.split('.').pop() || '').toLowerCase()
+  if (!ext) return undefined
+  const map: Record<string, string> = {
+    ts: 'ts', tsx: 'tsx', js: 'js', jsx: 'jsx', mjs: 'js', cjs: 'js',
+    py: 'python', go: 'go', rs: 'rust', java: 'java', kt: 'kotlin',
+    rb: 'ruby', php: 'php', swift: 'swift', sh: 'bash', bash: 'bash', zsh: 'bash',
+    json: 'json', yml: 'yaml', yaml: 'yaml', toml: 'toml',
+    md: 'markdown', html: 'html', css: 'css', scss: 'scss', less: 'less',
+    vue: 'vue', sql: 'sql', xml: 'xml',
+  }
+  return map[ext]
+}
+
 function TodoWriteList({ todos, keyword }: { todos: TodoItem[]; keyword: string }) {
   return (
     <ul className="tv-todos">
@@ -127,57 +295,162 @@ function TodoWriteList({ todos, keyword }: { todos: TodoItem[]; keyword: string 
 
 const TurnItem = React.memo(function TurnItem({ turn, index, keyword, canFork, collapsed, onFork, onToggleCollapse }: TurnItemProps) {
   const meta = ROLE_META[turn.role] || { label: turn.role, cls: '' }
-  const isTool = turn.role === 'tool_use' || turn.role === 'tool_result' || turn.role === 'thinking'
+  const isToolUse = turn.role === 'tool_use'
+  const isToolResult = turn.role === 'tool_result'
+  const isThinking = turn.role === 'thinking'
   const isRaw = turn.role === 'raw'
+  const isUser = turn.role === 'user'
+  const isAssistant = turn.role === 'assistant'
 
-  // markdown / 代码高亮仅在内容或关键词变化时重跑，切 tab / 追加新 turn 时不做无谓计算
-  const body = useMemo(() => {
-    if (isTool) {
-      if (collapsed) return null
-      // TodoWrite 的 input 是结构化 JSON，原样 pre 展示只看到一坨 escape 字符，
-      // 把它渲染成带状态图标的清单，跟 Claude TUI 里一致
-      if (turn.role === 'tool_use' && turn.toolName === 'TodoWrite') {
-        const todos = tryParseTodoWriteInput(turn.content)
-        if (todos) return <TodoWriteList todos={todos} keyword={keyword} />
-      }
-      return <pre className="tv-tool-pre">{highlightKeyword(turn.content, keyword)}</pre>
+  const handleToggle = useCallback(() => onToggleCollapse(index), [onToggleCollapse, index])
+  const handleFork = useCallback(() => onFork(index), [onFork, index])
+
+  // —— 工具调用：单行签名 + 折叠的详情。TodoWrite 不折叠，直接展开 checklist。
+  // Edit / StrReplace / Write 走专用 diff 视图，比 JSON pre 直观得多
+  if (isToolUse) {
+    const todos = turn.toolName === 'TodoWrite' ? tryParseTodoWriteInput(turn.content) : null
+    const editLike = turn.toolName === 'Edit' || turn.toolName === 'StrReplace' || turn.toolName === 'Write'
+    const editInput = editLike ? parseToolInput(turn.content) : null
+    const sig = useMemo(() => toolSignature(turn.toolName, turn.content), [turn.toolName, turn.content])
+
+    // Edit / StrReplace：行级 diff（old_string → new_string）
+    // Write：把全部内容当 + 行展示
+    if (editInput) {
+      const path = String(editInput.path || editInput.file_path || editInput.target_notebook || '')
+      const lang = langFromPath(path)
+      const isWrite = turn.toolName === 'Write'
+      const before = isWrite ? '' : String(editInput.old_string ?? '')
+      const after = isWrite
+        ? String(editInput.contents ?? editInput.content ?? '')
+        : String(editInput.new_string ?? '')
+      // diff 主体，加一个文件名标题；折叠按钮仍可用（折叠后只剩标题）
+      return (
+        <div className={`tv-row tv-row-tool ${meta.cls}`} data-turn-index={index}>
+          <span className="tv-dot tv-dot-tool" aria-hidden />
+          <div className="tv-row-content">
+            <button className="tv-tool-sig tv-tool-sig-button tv-edit-head" onClick={handleToggle} title={collapsed ? '展开 diff' : '收起 diff'}>
+              <span className="tv-tool-name">{turn.toolName}</span>
+              <span className="tv-tool-args">({shortPath(path)})</span>
+              {editInput.replace_all && <span className="tv-edit-flag">replace_all</span>}
+              <span className="tv-tool-caret">{collapsed ? '›' : '⌄'}</span>
+            </button>
+            {!collapsed && (before || after) && (
+              <DiffView before={before} after={after} language={lang} />
+            )}
+          </div>
+        </div>
+      )
     }
-    if (isRaw) return <pre className="tv-raw-pre">{highlightKeyword(turn.content, keyword)}</pre>
-    if (keyword && turn.content.toLowerCase().includes(keyword.toLowerCase())) {
-      return <div className="tv-plain">{highlightKeyword(turn.content, keyword)}</div>
-    }
+
     return (
+      <div className={`tv-row tv-row-tool ${meta.cls}`} data-turn-index={index}>
+        <span className="tv-dot tv-dot-tool" aria-hidden />
+        <div className="tv-row-content">
+          {todos ? (
+            <>
+              <div className="tv-tool-sig">
+                <span className="tv-tool-name">TodoWrite</span>
+              </div>
+              <TodoWriteList todos={todos} keyword={keyword} />
+            </>
+          ) : (
+            <>
+              <button className="tv-tool-sig tv-tool-sig-button" onClick={handleToggle} title={collapsed ? '展开详情' : '收起详情'}>
+                <span className="tv-tool-name">{turn.toolName || 'Tool'}</span>
+                <span className="tv-tool-args">{highlightKeyword(sig.replace(/^[^(]*/, ''), keyword)}</span>
+                <span className="tv-tool-caret">{collapsed ? '›' : '⌄'}</span>
+              </button>
+              {!collapsed && (
+                <pre className="tv-tool-detail">{highlightKeyword(turn.content, keyword)}</pre>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // —— 工具输出：默认显示一行 ✓/✗ 摘要 + 行数；展开看完整 pre
+  if (isToolResult) {
+    const { ok, text, lineCount } = useMemo(() => toolResultSummary(turn.content), [turn.content])
+    return (
+      <div className={`tv-row tv-row-toolresult ${meta.cls}`} data-turn-index={index}>
+        <span className="tv-dot tv-dot-result" aria-hidden />
+        <div className="tv-row-content">
+          <button className="tv-result-summary tv-tool-sig-button" onClick={handleToggle} title={collapsed ? '展开输出' : '收起输出'}>
+            <span className={ok ? 'tv-result-ok' : 'tv-result-err'}>{ok ? '✓' : '✗'}</span>
+            <span className="tv-result-text">{highlightKeyword(text, keyword)}</span>
+            {lineCount > 1 && <span className="tv-result-meta">· {lineCount} lines</span>}
+            <span className="tv-tool-caret">{collapsed ? '›' : '⌄'}</span>
+          </button>
+          {!collapsed && (
+            <pre className="tv-tool-detail">{highlightKeyword(turn.content, keyword)}</pre>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // —— 思考：折叠态只显示 "thinking" 药丸，展开看完整文本
+  if (isThinking) {
+    return (
+      <div className={`tv-row tv-row-thinking ${meta.cls}`} data-turn-index={index}>
+        <span className="tv-dot tv-dot-thinking" aria-hidden />
+        <div className="tv-row-content">
+          <button className="tv-thinking-pill tv-tool-sig-button" onClick={handleToggle}>
+            <span className="tv-thinking-pill-dot" />
+            <span>thinking</span>
+            <span className="tv-tool-caret">{collapsed ? '›' : '⌄'}</span>
+          </button>
+          {!collapsed && (
+            <pre className="tv-tool-detail tv-tool-detail-thinking">{highlightKeyword(turn.content, keyword)}</pre>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // —— 原始 PTY 行
+  if (isRaw) {
+    return (
+      <div className={`tv-row tv-row-raw ${meta.cls}`} data-turn-index={index}>
+        <span className="tv-dot tv-dot-raw" aria-hidden />
+        <div className="tv-row-content">
+          <pre className="tv-raw-pre">{highlightKeyword(turn.content, keyword)}</pre>
+        </div>
+      </div>
+    )
+  }
+
+  // —— 用户 / AI 消息：极简文本行，无卡片
+  const body = (keyword && turn.content.toLowerCase().includes(keyword.toLowerCase()))
+    ? <div className="tv-plain">{highlightKeyword(turn.content, keyword)}</div>
+    : (
       <div className="tv-md">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
           {turn.content}
         </ReactMarkdown>
       </div>
     )
-  }, [turn.content, turn.role, turn.toolName, keyword, collapsed, isTool, isRaw])
-
-  const handleToggle = useCallback(() => onToggleCollapse(index), [onToggleCollapse, index])
-  const handleFork = useCallback(() => onFork(index), [onFork, index])
 
   return (
-    <div className={`tv-turn ${meta.cls}`} data-turn-index={index}>
-      <div className="tv-turn-header">
-        <Tag className="tv-turn-tag">{meta.label}{turn.toolName ? ` · ${turn.toolName}` : ''}</Tag>
-        {turn.timestamp && (
-          <span className="tv-turn-time">{new Date(turn.timestamp).toLocaleTimeString()}</span>
-        )}
-        {isTool && (
-          <Button size="small" type="text" icon={collapsed ? <RightOutlined /> : <DownOutlined />} onClick={handleToggle}>
-            {collapsed ? '展开' : '折叠'}
-          </Button>
-        )}
-        <div style={{ flex: 1 }} />
-        {canFork && !isTool && !isRaw && (
-          <Tooltip title="从这里 Fork 新会话">
-            <Button size="small" type="text" icon={<BranchesOutlined />} onClick={handleFork} />
-          </Tooltip>
-        )}
+    <div className={`tv-row ${isUser ? 'tv-row-user' : 'tv-row-assistant'} ${meta.cls}`} data-turn-index={index}>
+      <span className={`tv-dot ${isUser ? 'tv-dot-user' : 'tv-dot-assistant'}`} aria-hidden />
+      <div className="tv-row-content">
+        {body}
+        <div className="tv-row-meta">
+          {turn.timestamp && (
+            <span className="tv-turn-time">{new Date(turn.timestamp).toLocaleTimeString()}</span>
+          )}
+          {canFork && (isUser || isAssistant) && (
+            <Tooltip title="从这里 Fork 新会话">
+              <button className="tv-row-fork" onClick={handleFork} aria-label="Fork">
+                <BranchesOutlined />
+              </button>
+            </Tooltip>
+          )}
+        </div>
       </div>
-      {body}
     </div>
   )
 })
@@ -196,21 +469,12 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   const [keyword, setKeyword] = useState('')
   const [searchIdx, setSearchIdx] = useState(0)
   const [collapsedTools, setCollapsedTools] = useState<Record<number, boolean>>({})
-  const [allToolsCollapsed, setAllToolsCollapsed] = useState(false)
+  const [allToolsCollapsed, setAllToolsCollapsed] = useState(true)
   const [composer, setComposer] = useState('')
   const [optimisticTurns, setOptimisticTurns] = useState<LocalTurn[]>([])
-  // jsonl 只有消息收尾才落盘，Chat 续聊 tab 过去只能等全文返回才显示；
-  // 服务端现在会推 PTY 实时渲染文本，展示为列表最末的"实时"伪 turn
+  // jsonl 只有消息收尾才落盘；服务端推来的 PTY 实时文本不再直接展示，
+  // 这里只保留它作为"AI 正在生成"的信号。
   const [liveOutput, setLiveOutput] = useState<string | null>(null)
-  const [liveExpanded, setLiveExpanded] = useState<boolean>(() => {
-    // 默认折叠；用户手动展开后 session 内保持选择
-    // rebrand: localStorage key kept for backward compatibility
-    try { return localStorage.getItem('quadtodo.liveExpanded') === '1' } catch { return false }
-  })
-  useEffect(() => {
-    // rebrand: localStorage key kept for backward compatibility
-    try { localStorage.setItem('quadtodo.liveExpanded', liveExpanded ? '1' : '0') } catch { /* ignore */ }
-  }, [liveExpanded])
   const [fullscreen, setFullscreen] = useState(false)
   const [height, setHeight] = useState<number>(() => {
     try {
@@ -230,6 +494,10 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   // 所以同时维护 composingRef 和"刚结束组字的小窗口"作为兜底。
   const composingRef = useRef(false)
   const composingEndAtRef = useRef(0)
+  // Conversation 输入框里粘贴图片时给一个可见占位符 [Image #N]，让用户清楚"图已经收到"
+  // —— 否则之前用户只能看到一行轻提示，文字框里没有任何反馈
+  const imageCounterRef = useRef(0)
+  const composerImagesRef = useRef<Map<string, string>>(new Map())
 
   useEffect(() => {
     if (!fullscreen) return
@@ -312,13 +580,14 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     setComposer('')
     setOptimisticTurns([])
     setCollapsedTools({})
-    setAllToolsCollapsed(false)
+    setAllToolsCollapsed(true)
     // 关键：session 切换时把"用户在底部"标志位拨回 true。否则上个 session 用户滚上去留下来的
     // false 会让所有自动 scroll-to-bottom 被跳过（即使新 session 还没开始读）。
     isAtBottomRef.current = true
     setUnreadCount(0)
     prevCountRef.current = 0
     setLiveOutput(null)
+    imageCounterRef.current = 0
     void fetchData('reset')
   }, [fetchData])
 
@@ -335,6 +604,22 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     let fallbackTimer: ReturnType<typeof setInterval> | null = null
     let retriedOnce = false
     let disposed = false
+    // live-output 事件在 PTY 流式吐字时高频触发（每个 token 一次），直接 setState 会让
+    // Conversation 整树高频重渲（含已展开的 diff 块），用户感受为"页面在抖"。
+    // 这里做 trailing-edge 节流：每 200ms 至多刷一次最新内容，足以呈现"实时感"且不抖。
+    let liveOutputBuffer: string | null = null
+    let liveOutputTimer: ReturnType<typeof setTimeout> | null = null
+    const flushLiveOutput = () => {
+      liveOutputTimer = null
+      if (disposed) return
+      if (liveOutputBuffer == null) return
+      setLiveOutput(liveOutputBuffer)
+      liveOutputBuffer = null
+    }
+    const cancelLiveOutput = () => {
+      if (liveOutputTimer) { clearTimeout(liveOutputTimer); liveOutputTimer = null }
+      liveOutputBuffer = null
+    }
 
     const closeES = () => {
       if (es) { try { es.close() } catch { /* ignore */ } ; es = null }
@@ -358,6 +643,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           session: payload.session,
         })
         setOptimisticTurns([])
+        cancelLiveOutput()
         setLiveOutput(null)
         retriedOnce = false
         stopFallback()
@@ -375,6 +661,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           setOptimisticTurns([])
           // 真实 turn 收尾了，清掉"实时"伪 turn 避免重复显示；后续还有输出
           // 就会被下一个 live-output 事件再写回来
+          cancelLiveOutput()
           setLiveOutput(null)
         }
       } catch { /* ignore */ }
@@ -382,7 +669,9 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     const handleLiveOutput = (e: MessageEvent) => {
       try {
         const payload = JSON.parse(e.data)
-        if (typeof payload?.content === 'string') setLiveOutput(payload.content)
+        if (typeof payload?.content !== 'string') return
+        liveOutputBuffer = payload.content
+        if (!liveOutputTimer) liveOutputTimer = setTimeout(flushLiveOutput, 200)
       } catch { /* ignore */ }
     }
     const handleStreamUnsupported = () => {
@@ -420,6 +709,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
       closeES()
       if (retryTimer) clearTimeout(retryTimer)
       stopFallback()
+      cancelLiveOutput()
       setLiveOutput(null)
     }
   }, [autoRefreshMs, fetchData, todoId, sessionId, active])
@@ -628,7 +918,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
 
     try {
       const currentStatus = dataRef.current?.session.status
-      if (currentStatus === 'running' || currentStatus === 'pending_confirm') {
+      if (currentStatus === 'running' || currentStatus === 'idle' || currentStatus === 'pending_confirm') {
         try {
           await doSend(sessionId)
         } catch (e: any) {
@@ -655,38 +945,81 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   const handleSendMessage = useCallback(async () => {
     const text = composer.trim()
     if (!text) return
+    const usedPlaceholders: string[] = []
+    const payloadText = Array.from(composerImagesRef.current.entries()).reduce((acc, [placeholder, path]) => {
+      if (acc.includes(placeholder)) usedPlaceholders.push(placeholder)
+      return acc.replace(new RegExp(escapeRegExp(placeholder), 'g'), `@${path}`)
+    }, text)
     setSending(true)
     setComposer('')
     try {
-      await sendSessionInput(`${text}\r`, text)
+      await sendSessionInput(`${payloadText}\r`, text)
+      usedPlaceholders.forEach((placeholder) => composerImagesRef.current.delete(placeholder))
     } catch (e: any) {
       setComposer(text)
       message.error(e?.message || '发送失败')
     } finally {
       setSending(false)
     }
-  }, [composer, sendSessionInput])
+  }, [composer, message, sendSessionInput])
 
-  /** 粘贴图片：走 Live 同一机制 —— 发 Ctrl+V (0x16) 给 PTY，Claude Code 自己读 OS 剪贴板 */
+  /**
+   * 粘贴图片：上传成本地文件，发送时把 [Image #N] 占位符替换成 Claude/Codex
+   * 识别的 @<path> 附件语法。
+   *
+   * 不再直接给 PTY 发 Ctrl+V：Claude Code/Codex 的图片粘贴态会让后续 Enter
+   * 偶发变成输入框换行，导致 conversation 里看起来"发送不了"。
+   */
   const handleComposerPaste = useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = e.clipboardData?.items
+    const data = e.clipboardData
+    if (!data) return
+    const items = data.items
     if (!items) return
-    let hasImage = false
+    const imageFiles: File[] = []
     for (let i = 0; i < items.length; i++) {
-      if (items[i].type.startsWith('image/')) { hasImage = true; break }
+      if (!(items[i].type || '').startsWith('image/')) continue
+      const file = items[i].getAsFile()
+      if (file) imageFiles.push(file)
     }
-    if (!hasImage) return
+    if (!imageFiles.length) return  // 没图：让浏览器粘文字
+    const pastedText = data.getData('text/plain') || data.getData('text') || ''
     e.preventDefault()
+
+    let placeholders: string[]
     try {
-      await sendAiInput(sessionId, '\x16')
-      message.success('已粘贴图片到 Claude（将随下一条消息一起提交）', 1.5)
+      placeholders = await Promise.all(imageFiles.map(async (file) => {
+        const { path } = await uploadImage(file)
+        imageCounterRef.current += 1
+        const placeholder = `[Image #${imageCounterRef.current}]`
+        composerImagesRef.current.set(placeholder, path)
+        return placeholder
+      }))
     } catch (err: any) {
-      const msg = err?.message === 'session_not_found'
-        ? '会话已结束：请先发一条消息激活/恢复会话后再粘贴图片'
-        : (err?.message || '粘贴图片失败')
-      message.error(msg)
+      message.error(err?.message || '图片上传失败')
+      return
     }
-  }, [sessionId])
+
+    // 在 textarea 当前光标位置插入 "{pastedText}{placeholder}"。
+    // antd Mentions 内部 textarea 是 e.target；selectionStart/End 可用。
+    const ta = e.target as HTMLTextAreaElement
+    const selStart = typeof ta.selectionStart === 'number' ? ta.selectionStart : composer.length
+    const selEnd = typeof ta.selectionEnd === 'number' ? ta.selectionEnd : composer.length
+    const before = composer.slice(0, selStart)
+    const after = composer.slice(selEnd)
+    const needSepBefore = before.length > 0 && !/\s$/.test(before)
+    const insert = `${needSepBefore ? ' ' : ''}${pastedText ? `${pastedText} ` : ''}${placeholders.join(' ')}`
+    const next = `${before}${insert}${after}`
+    setComposer(next)
+    // 把光标移到刚插入内容的末尾。需要等 React 提交后再设置 selection，
+    // 否则 antd 内部 onChange 会把 selection 拉回原位置。
+    requestAnimationFrame(() => {
+      try {
+        const newPos = before.length + insert.length
+        ta.setSelectionRange?.(newPos, newPos)
+        ta.focus()
+      } catch { /* ignore */ }
+    })
+  }, [composer, message])
 
   // Ctrl+C：发 \x03 信号让 Claude 打断当前生成（停止 tool / 文本输出），
   // 会话保持存活，用户可以继续追问。对应终端里手动敲 Ctrl+C 的语义。
@@ -720,6 +1053,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     setAllToolsCollapsed(next)
     if (!displayedTurns.length) return
     const map: Record<number, boolean> = {}
+    // 显式覆写所有 tool/result/thinking（含 Edit-like，让"折叠工具"按钮把 diff 一并折叠）
     displayedTurns.forEach((t, i) => {
       if (t.role === 'tool_use' || t.role === 'tool_result' || t.role === 'thinking') map[i] = next
     })
@@ -759,13 +1093,16 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
       ? {}
       : { height }
 
+  const sessionCwd = data?.session && (data.session as any).cwd ? String((data.session as any).cwd) : (cwd || null)
+
   return (
     <div className={wrapperClassName} style={wrapperStyle}>
       <div className="tv-toolbar">
         <Input
           size="small"
           allowClear
-          prefix={<SearchOutlined />}
+          variant="borderless"
+          prefix={<SearchOutlined style={{ color: 'var(--text-tertiary)' }} />}
           placeholder="搜索对话..."
           value={keyword}
           onChange={(e) => { setKeyword(e.target.value); setSearchIdx(0) }}
@@ -774,18 +1111,14 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
         {keyword && (
           <>
             <span className="tv-match-count">{matches.length ? `${searchIdx + 1}/${matches.length}` : '0'}</span>
-            <Button size="small" disabled={!matches.length} onClick={() => jumpToMatch(searchIdx - 1)}>↑</Button>
-            <Button size="small" disabled={!matches.length} onClick={() => jumpToMatch(searchIdx + 1)}>↓</Button>
+            <Button size="small" type="text" disabled={!matches.length} onClick={() => jumpToMatch(searchIdx - 1)}>↑</Button>
+            <Button size="small" type="text" disabled={!matches.length} onClick={() => jumpToMatch(searchIdx + 1)}>↓</Button>
           </>
         )}
-        <Button size="small" onClick={toggleAllTools}>
+        <Button size="small" type="text" onClick={toggleAllTools}>
           {allToolsCollapsed ? '展开工具' : '折叠工具'}
         </Button>
-        <Button size="small" icon={<ReloadOutlined />} onClick={() => { void fetchData('reset') }} loading={loading} />
-        {data && <Tag color={data.source === 'jsonl' ? 'green' : data.source === 'ptylog' ? 'orange' : 'default'}>
-          {data.source === 'jsonl' ? '结构化' : data.source === 'ptylog' ? '日志降级' : '无数据'}
-        </Tag>}
-        {data && <Tag color={statusMeta.color}>{statusMeta.text}</Tag>}
+        <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => { void fetchData('reset') }} loading={loading} />
         <Tooltip title={fullscreen ? '退出全屏 (Esc)' : '全屏'}>
           <Button
             size="small"
@@ -801,82 +1134,27 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
         {!loading && !error && data && data.turns.length === 0 && (
           <Empty description="没有找到会话记录（JSONL 文件和 PTY 日志都不存在）" />
         )}
-        {displayedTurns.map((t, i) => (
-          <TurnItem
-            key={t.optimisticId || `${t.role}-${t.timestamp || 0}-${i}`}
-            turn={t}
-            index={i}
-            keyword={keyword}
-            canFork={!!onFork}
-            collapsed={collapsedTools[i] ?? allToolsCollapsed}
-            onFork={handleTurnFork}
-            onToggleCollapse={handleToggleCollapse}
-          />
-        ))}
-        {(() => {
-          // 只在"真正在等 AI 回复"时才展示实时 PTY 输出 + "生成中"。
-          // 否则（比如 Claude CLI 回完话后闲置在 prompt，PTY 仍会推 banner / scrollback），
-          // 让 liveOutput 静默——避免 "生成中" 一直挂着。
-          if (!liveOutput) return null
-          const status = data?.session.status
-          const lastTurn = displayedTurns[displayedTurns.length - 1]
-          // AI 真的在"忙"的判定：
-          //   - status=pending_confirm（等待用户确认工具调用）→ 忙
-          //   - status=running 且下列之一：刚发送还没收 turn / 无 turn / 最后一条
-          //     是 user/tool_use/tool_result/thinking（都意味着 AI 还在下一步）→ 忙
-          //   - 最后一条是 assistant → 普通回复刚结束，不显示（这正是之前"一直挂着"的修复点）
-          const nonIdleRoles = new Set(['user', 'tool_use', 'tool_result', 'thinking'])
-          const activelyGenerating =
-            status === 'pending_confirm' ||
-            (status === 'running' && (sending || !lastTurn || nonIdleRoles.has(lastTurn.role)))
-          if (!activelyGenerating) return null
-          // liveOutput 里是整个 PTY outputHistory，会带上 banner / 之前消息 / 模板……
-          // 展示时只留尾部若干行（AI 当前正在吐字的部分），避免重复显示已经在上方聊天气泡里
-          // 呈现过的历史内容。
-          const TAIL_LINES = 10
-          const lines = liveOutput.split('\n')
-          const truncated = lines.length > TAIL_LINES
-          const visible = truncated
-            ? lines.slice(lines.length - TAIL_LINES).join('\n')
-            : liveOutput
+        {displayedTurns.map((t, i) => {
+          // Edit/StrReplace/Write 默认展开（用户最常想直接看 diff），其他工具默认折叠
+          const isEditLike = t.role === 'tool_use' && (t.toolName === 'Edit' || t.toolName === 'StrReplace' || t.toolName === 'Write')
+          const defaultCollapsed = isEditLike ? false : allToolsCollapsed
           return (
-            <div className="tv-turn tv-role-raw tv-turn-live">
-              <div className="tv-turn-header">
-                <Tag className="tv-turn-tag" color="processing">实时</Tag>
-                <span className="tv-live-pulse">生成中</span>
-                <div style={{ flex: 1 }} />
-                {liveExpanded && truncated && (
-                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginRight: 6 }}>
-                    仅最新 {TAIL_LINES} 行
-                  </span>
-                )}
-                <Button
-                  size="small"
-                  type="text"
-                  icon={liveExpanded ? <DownOutlined /> : <RightOutlined />}
-                  onClick={() => setLiveExpanded((v) => !v)}
-                >
-                  {liveExpanded ? '折叠' : '展开实时输出'}
-                </Button>
-              </div>
-              {liveExpanded && <pre className="tv-raw-pre">{visible}</pre>}
-            </div>
+            <TurnItem
+              key={t.optimisticId || `${t.role}-${t.timestamp || 0}-${i}`}
+              turn={t}
+              index={i}
+              keyword={keyword}
+              canFork={!!onFork}
+              collapsed={collapsedTools[i] ?? defaultCollapsed}
+              onFork={handleTurnFork}
+              onToggleCollapse={handleToggleCollapse}
+            />
           )
-        })()}
+        })}
         {(() => {
-          if (liveOutput) {
-            // 如果上面的实时块会渲染（真在生成），这里就不再叠"AI 思考中"——避免双重指示
-            const status0 = data?.session.status
-            const lastTurn0 = displayedTurns[displayedTurns.length - 1]
-            const nonIdleRoles = new Set(['user', 'tool_use', 'tool_result', 'thinking'])
-            const active0 =
-              status0 === 'pending_confirm' ||
-              (status0 === 'running' && (sending || !lastTurn0 || nonIdleRoles.has(lastTurn0.role)))
-            if (active0) return null // 上面那块已经在显示了
-          }
           const status = data?.session.status
           // 等待用户确认是独立状态，始终提示一下
-          if (status === 'pending_confirm') {
+          if (status === 'pending_confirm' && transcriptState === 'pending') {
             return (
               <div className="tv-thinking" aria-live="polite">
                 <span className="tv-thinking-label">等待确认</span>
@@ -888,12 +1166,13 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           }
           // "AI 思考中"只在真正等 AI 回复时才显示：
           //   session 在跑 + 最后一条 turn 是 user 发来的消息（还没有 assistant
-          //   产出）。assistant / tool_use / thinking 等都意味着 AI 已经产出过
-          //   了，静态时不该再闪烁"思考中"。sending 兜底覆盖发送到 optimistic
-          //   turn 刷新前那一瞬。
+          //   产出）。如果 PTY 正在推 liveOutput，则 tool_use/tool_result/thinking
+          //   也视为活跃生成；assistant 仍不显示，避免回复结束后 loading 挂住。
+          //   sending 兜底覆盖发送到 optimistic turn 刷新前那一瞬。
           if (status !== 'running') return null
           const lastTurn = displayedTurns[displayedTurns.length - 1]
-          const waiting = sending || !lastTurn || lastTurn.role === 'user'
+          const liveActiveRoles = new Set(['user', 'tool_use', 'tool_result', 'thinking'])
+          const waiting = sending || !lastTurn || lastTurn.role === 'user' || (!!liveOutput && liveActiveRoles.has(lastTurn.role))
           if (!waiting) return null
           return (
             <div className="tv-thinking" aria-live="polite">
@@ -910,24 +1189,80 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           ↓ {unreadCount} 条新消息
         </button>
       )}
+      {(() => {
+        const canInterrupt = transcriptState === 'running' || data?.session.status === 'pending_confirm'
+        const status = data?.session.status
+        const statusDotCls =
+          transcriptState === 'pending' ? 'tv-statusbar-dot--warn' :
+          transcriptState === 'running' ? 'tv-statusbar-dot--running' :
+          status === 'failed' ? 'tv-statusbar-dot--err' :
+          'tv-statusbar-dot--idle'
+        const statusText =
+          transcriptState === 'pending' ? '待确认' :
+          transcriptState === 'running' ? (sending ? 'sending…' : 'running') :
+          status === 'failed' ? 'failed' :
+          status === 'stopped' ? 'stopped' :
+          status === 'done' ? 'idle' : 'idle'
+        const sourceText = data?.source === 'jsonl' ? 'jsonl' : data?.source === 'ptylog' ? 'pty-log' : 'no-data'
+        return (
+          <div className="tv-statusbar">
+            <span className={`tv-statusbar-dot ${statusDotCls}`} />
+            <span className="tv-statusbar-text">{statusText}</span>
+            <span className="tv-statusbar-sep">·</span>
+            <span className="tv-statusbar-text tv-statusbar-mute">{sourceText}</span>
+            {sessionCwd && (
+              <>
+                <span className="tv-statusbar-sep">·</span>
+                <span className="tv-statusbar-text tv-statusbar-mute" title={sessionCwd}>worktree: {shortPath(sessionCwd)}</span>
+              </>
+            )}
+            <div style={{ flex: 1 }} />
+            <Tooltip title={canInterrupt ? '发送 Ctrl+C 打断当前生成' : '会话未在运行'}>
+              <button
+                className="tv-statusbar-btn"
+                disabled={!canInterrupt}
+                onClick={() => { void handleInterrupt() }}
+              >
+                <StopOutlined /> interrupt
+              </button>
+            </Tooltip>
+            <Popconfirm
+              title="结束会话"
+              description="将终止 PTY 进程，之后需要再发消息才会 resume。"
+              okText="结束"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => { void handleEndSession() }}
+              disabled={!canInterrupt}
+            >
+              <Tooltip title={canInterrupt ? '终止 PTY 进程' : '会话已不在运行'}>
+                <button className="tv-statusbar-btn tv-statusbar-btn--danger" disabled={!canInterrupt}>
+                  <PoweroffOutlined /> end
+                </button>
+              </Tooltip>
+            </Popconfirm>
+          </div>
+        )
+      })()}
       <div
         className="tv-composer"
-        // 组字事件会冒泡到这里，即便 Antd Mentions 某些版本没把 onCompositionStart/End
-        // 直接透传给内部 textarea，也能稳定拿到。双写一份同名 props 给 Mentions 作为
-        // 保险：某些环境下外层 div 没拿到的情况还能兜住。
         onCompositionStart={() => { composingRef.current = true }}
         onCompositionEnd={() => {
           composingRef.current = false
           composingEndAtRef.current = performance.now()
         }}
       >
+        <span className="tv-composer-prompt" aria-hidden>›</span>
         <Mentions
           value={composer}
           onChange={(v) => setComposer(v)}
           prefix="/"
+          variant="borderless"
           options={slashOptions}
-          placeholder="继续这段会话，Enter 发送 / Shift+Enter 换行 / 输入 / 查看命令 / Cmd+V 粘贴图片"
-          autoSize={{ minRows: 2, maxRows: 6 }}
+          placeholder={data?.session.status === 'pending_confirm'
+            ? '等待确认，回车确认 / 输入补充说明…'
+            : 'Type your message or paste anything…  ⏎ send · ⇧⏎ newline · / commands · ⌘V image'}
+          autoSize={{ minRows: 1, maxRows: 8 }}
           filterOption={(input, option) => {
             const v = String(option?.value || '').toLowerCase()
             return v.includes(input.toLowerCase())
@@ -951,42 +1286,14 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           }}
           onPaste={handleComposerPaste}
         />
-        <div className="tv-composer-actions">
-          <span className="tv-composer-hint">
-            {data?.session.status === 'pending_confirm' ? '当前等待确认，可直接发回车或补充说明。' : '支持在这里继续追问，必要时会自动恢复历史会话。'}
-          </span>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {(() => {
-              const canInterrupt = data?.session.status === 'running' || data?.session.status === 'pending_confirm'
-              return (
-                <>
-                  <Tooltip title={canInterrupt ? '发送 Ctrl+C 打断当前生成，会话保留，可继续追问' : '会话未在运行，无需打断'}>
-                    <Button
-                      icon={<StopOutlined />}
-                      disabled={!canInterrupt}
-                      onClick={() => { void handleInterrupt() }}
-                    >
-                      中断
-                    </Button>
-                  </Tooltip>
-                  <Popconfirm
-                    title="结束会话"
-                    description="将终止 PTY 进程，之后需要再发消息才会 resume 新会话。"
-                    okText="结束"
-                    okButtonProps={{ danger: true }}
-                    cancelText="取消"
-                    onConfirm={() => { void handleEndSession() }}
-                    disabled={!canInterrupt}
-                  >
-                    <Tooltip title={canInterrupt ? '终止 PTY 进程' : '会话已不在运行，无需结束'}>
-                      <Button danger disabled={!canInterrupt} icon={<PoweroffOutlined />}>结束会话</Button>
-                    </Tooltip>
-                  </Popconfirm>
-                </>
-              )
-            })()}
-          </div>
-        </div>
+        <button
+          className="tv-composer-send"
+          disabled={!composer.trim() || sending}
+          onClick={() => { void handleSendMessage() }}
+          title="发送 (Enter)"
+        >
+          send
+        </button>
       </div>
       {!fullscreen && !fillHeight && (
         <div

@@ -1,6 +1,7 @@
 import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createElement } from 'react'
 import { Dropdown } from 'antd'
-import { PlusOutlined } from '@ant-design/icons'
+import { Plus } from 'lucide-react'
 import type { StageTag } from '../../api'
 import { STAGE_TAGS, STAGE_TAG_META } from '../../stageTags'
 
@@ -14,7 +15,7 @@ export function StageTagChip({ value, onChange, disabled }: StageTagChipProps) {
   const items = [
     ...STAGE_TAGS.map(tag => {
       const meta = STAGE_TAG_META[tag]
-      return { key: tag, label: `${meta.emoji} ${meta.label}` }
+      return { key: tag, label: createElement('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } }, meta.icon(), meta.label) }
     }),
     { type: 'divider' as const },
     { key: '__clear__', label: '清除', disabled: value == null },
@@ -31,13 +32,13 @@ export function StageTagChip({ value, onChange, disabled }: StageTagChipProps) {
   const trigger = meta == null
     ? (
       <button type="button" className="stage-tag-chip stage-tag-chip--empty" disabled={disabled}>
-        <PlusOutlined />
+        <Plus size={12} />
         <span>加阶段</span>
       </button>
     )
     : (
       <button type="button" className={`stage-tag-chip ${meta.className}`} disabled={disabled}>
-        <span>{meta.emoji}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center' }}>{meta.icon()}</span>
         <span>{meta.label}</span>
       </button>
     )

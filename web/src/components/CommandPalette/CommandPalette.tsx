@@ -5,6 +5,7 @@ import { useTheme } from '../../design/ThemeProvider'
 import { useAiSessionStore } from '../../store/aiSessionStore'
 import { listTodos, updateTodo, type Todo } from '../../api'
 import { useAppMessages } from '../../design/useAppMessages'
+import { BarChart3, BookOpen, Settings, BarChartBig, FileText, Send, Moon } from 'lucide-react'
 import './CommandPalette.css'
 
 type Page = 'default' | 'aiPicker'
@@ -235,27 +236,27 @@ export function CommandPalette() {
 
               <Command.Group heading="Drawers">
                 <Command.Item onSelect={() => { openDrawer('report'); closePalette() }}>
-                  <span className="cmdk-icon">📊</span>
+                  <span className="cmdk-icon"><BarChart3 size={14} /></span>
                   <span>Open Stats &amp; Reports</span>
                 </Command.Item>
                 <Command.Item onSelect={() => { openDrawer('wiki'); closePalette() }}>
-                  <span className="cmdk-icon">📖</span>
+                  <span className="cmdk-icon"><BookOpen size={14} /></span>
                   <span>Open Wiki</span>
                 </Command.Item>
                 <Command.Item onSelect={() => { openDrawer('settings'); closePalette() }}>
-                  <span className="cmdk-icon">⚙</span>
+                  <span className="cmdk-icon"><Settings size={14} /></span>
                   <span>Open Settings</span>
                 </Command.Item>
                 <Command.Item onSelect={() => { openDrawer('statsReports'); closePalette() }}>
-                  <span className="cmdk-icon">📈</span>
+                  <span className="cmdk-icon"><BarChartBig size={14} /></span>
                   <span>Open Stats</span>
                 </Command.Item>
                 <Command.Item onSelect={() => { openDrawer('template'); closePalette() }}>
-                  <span className="cmdk-icon">📋</span>
+                  <span className="cmdk-icon"><FileText size={14} /></span>
                   <span>Insert from Template…</span>
                 </Command.Item>
                 <Command.Item onSelect={() => { useDispatchStore.getState().signal('telegramSync'); closePalette() }}>
-                  <span className="cmdk-icon">📨</span>
+                  <span className="cmdk-icon"><Send size={14} /></span>
                   <span>Telegram sync</span>
                 </Command.Item>
               </Command.Group>
@@ -277,7 +278,7 @@ export function CommandPalette() {
 
               <Command.Group heading="System">
                 <Command.Item onSelect={() => { toggleTheme(); closePalette() }}>
-                  <span className="cmdk-icon">🌙</span>
+                  <span className="cmdk-icon"><Moon size={14} /></span>
                   <span>Toggle theme (dark / light)</span>
                 </Command.Item>
               </Command.Group>

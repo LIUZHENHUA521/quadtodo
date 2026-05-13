@@ -148,7 +148,7 @@ function normalizeAiSessions(value) {
 
 function currentAiSession(aiSessions) {
   if (!aiSessions.length) return null
-  return aiSessions.find(s => s?.status === 'running' || s?.status === 'pending_confirm') || aiSessions[0]
+  return aiSessions.find(s => s?.status === 'running' || s?.status === 'idle' || s?.status === 'pending_confirm') || aiSessions[0]
 }
 
 function rowToTodo(row) {

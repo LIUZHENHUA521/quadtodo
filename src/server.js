@@ -1506,7 +1506,7 @@ export function createServer(opts = {}) {
 			let sweptTg = 0
 			let sweptLark = 0
 			for (const [sid, sess] of ait.sessions) {
-				if (sess.status !== 'running' && sess.status !== 'pending_confirm') continue
+				if (sess.status !== 'running' && sess.status !== 'idle' && sess.status !== 'pending_confirm') continue
 				const r = openclawBridge.resolveRoute?.(sid)
 				if (tgSweep && !r?.threadId) {
 					openclawWizard.ensureTopicForSession({ sessionId: sid, todoId: sess.todoId })
@@ -1558,7 +1558,7 @@ export function createServer(opts = {}) {
 		if (tracker) {
 			let kicked = 0
 			for (const [sid, sess] of ait.sessions) {
-				if (sess.status !== 'running' && sess.status !== 'pending_confirm') continue
+				if (sess.status !== 'running' && sess.status !== 'idle' && sess.status !== 'pending_confirm') continue
 				const r = openclawBridge.resolveRoute?.(sid)
 				if (!r?.threadId) continue
 				if (tracker.has(sid)) continue
@@ -1727,7 +1727,7 @@ export function createServer(opts = {}) {
 
 		const active = []
 		for (const [sid, sess] of ait.sessions) {
-			if (sess?.status === 'running' || sess?.status === 'pending_confirm') {
+			if (sess?.status === 'running' || sess?.status === 'idle' || sess?.status === 'pending_confirm') {
 				active.push({ sid, lastOutputAt: sess.lastOutputAt || sess.startedAt || 0 })
 			}
 		}

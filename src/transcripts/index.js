@@ -40,7 +40,7 @@ export function createTranscriptsService({ db, listTodos, updateTodo, dirs = {} 
     newSession.source = 'imported'
     if (!newSession.startedAt) newSession.startedAt = baseTs
     if (!newSession.completedAt) newSession.completedAt = endedAt || baseTs
-    if (!newSession.status || newSession.status === 'running' || newSession.status === 'pending_confirm') {
+    if (!newSession.status || newSession.status === 'running' || newSession.status === 'idle' || newSession.status === 'pending_confirm') {
       newSession.status = 'done'
     }
 

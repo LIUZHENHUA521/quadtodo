@@ -21,6 +21,7 @@ interface AiSessionState {
   upsertSession: (s: SessionMeta) => void
   removeSession: (sessionId: string) => void
   updateSessionStatus: (sessionId: string, status: AiStatus, completedAt?: number | null) => void
+  markSessionTurnDone: (sessionId: string, status: AiStatus, timestamp: number) => void
   recordOutputBytes: (sessionId: string, len: number, at?: number) => void
   setResources: (list: ResourceSnapshot[]) => void
   replaceSessionId: (oldId: string, nextId: string) => void
@@ -64,6 +65,19 @@ export const useAiSessionStore = create<AiSessionState>((set) => ({
     if (!s) return {}
     const m = new Map(state.sessions)
     m.set(sessionId, { ...s, status, completedAt: completedAt ?? s.completedAt })
+    return { sessions: m }
+  }),
+
+  markSessionTurnDone: (sessionId, status, timestamp) => set((state) => {
+    const s = state.sessions.get(sessionId)
+    if (!s) return {}
+    const m = new Map(state.sessions)
+    m.set(sessionId, {
+      ...s,
+      status,
+      lastTurnDoneAt: timestamp,
+      awaitingReply: true,
+    })
     return { sessions: m }
   }),
 
@@ -130,6 +144,7 @@ export const useAiSessionStore = create<AiSessionState>((set) => ({
 /** 把 session 状态 + 输出速率映射到宠物状态 */
 export function derivePetState(session: SessionMeta, bytesPerSec: number, now = Date.now()): PetState {
   if (session.status === 'pending_confirm') return 'calling'
+  if (session.status === 'idle') return 'idle'
   if (session.status === 'stopped' || session.status === 'failed') return 'fallen'
   if (session.status === 'done') return 'celebrating'
   // running

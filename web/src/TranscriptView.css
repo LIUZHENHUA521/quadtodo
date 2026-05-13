@@ -1,276 +1,355 @@
+/* ---------- 容器 ---------- */
 .tv-wrapper {
   display: flex;
   flex-direction: column;
-  background: var(--surface-2);
-  border-radius: 10px;
+  background: var(--surface-1);
   overflow: hidden;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-elevated);
   position: relative;
-  /* 防止子节点（长 JSON / base64 tool result）把外框撑出视口；min-width:0
-     是 flex 子元素能真正按 100% 宽展开的前提 */
   max-width: 100%;
   min-width: 0;
 }
 
-.tv-wrapper--fill {
-  height: 100%;
-  flex: 1;
-  min-height: 0;
-}
-
+.tv-wrapper--fill { height: 100%; flex: 1; min-height: 0; }
 .tv-wrapper--fullscreen {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  border-radius: 0;
-  border: none;
-  box-shadow: none;
-  /* 移动端（特别是 iOS Safari）需要明确高度，否则 height:auto 会被内容撑高到
-     溢出视口并产生页面级滚动，tv-body 的内部滚动就失效了 */
-  height: 100dvh;
-  width: 100vw;
-  max-width: 100vw;
+  position: fixed; inset: 0; z-index: 9999;
+  border-radius: 0; border: none; box-shadow: none;
+  height: 100dvh; width: 100vw; max-width: 100vw;
 }
 
+/* ---------- 顶部工具栏：极简 ---------- */
 .tv-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  background: var(--surface-1);
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 8px;
+  background: transparent;
   border-bottom: 1px solid var(--border-subtle);
-  flex-wrap: wrap;
   flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  z-index: 2;
+  position: sticky; top: 0; z-index: 2;
+  backdrop-filter: blur(6px);
 }
+.tv-toolbar .ant-input-affix-wrapper { background: transparent !important; }
+.tv-match-count { font-size: 11px; color: var(--text-tertiary); padding: 0 4px; font-variant-numeric: tabular-nums; }
 
-.tv-match-count {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  padding: 0 4px;
-}
-
+/* ---------- 主体 + 时间轴 ---------- */
 .tv-body {
-  flex: 1;
-  overflow-y: auto;
-  /* tool_result 里常出现超长无空格的 token（JSON、base64、UUID 拼接），
-     显式关掉横向滚动，让它们只能竖向堆叠，防止整个 body 被撑宽产生页面级横滚 */
-  overflow-x: hidden;
-  padding: 10px 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 0;
-  min-width: 0;
-  /* 之前是 smooth：所有程序触发的 scrollTop=scrollHeight 都被浏览器做成长动画，
-     长会话首次进入会看到"从顶部慢慢滚下来"。改成 auto 后程序滚动瞬时完成；
-     用户手动滚轮 / 触摸不受影响，搜索匹配处的 scrollIntoView 显式传 behavior:'smooth' 仍是平滑的。 */
+  flex: 1; min-height: 0; min-width: 0;
+  overflow-y: auto; overflow-x: hidden;
+  padding: 8px 16px 16px;
+  display: flex; flex-direction: column; gap: 0;
   scroll-behavior: auto;
-  /* 移动端：没有这三行，iOS Safari 会把触摸拖动交给外层 html 的滚动条，
-     导致 Chat 续聊内容列表看起来"无法滚动"。
-     - -webkit-overflow-scrolling: 开启惯性滚动（iOS < 13 需要，新版本也兼容）
-     - overscroll-behavior: contain 防止滚动链冒泡到页面级滚动
-     - touch-action: pan-y 明确声明只接受竖向手势，不被外层横向滑动劫持 */
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   touch-action: pan-y;
+  position: relative;
 }
+.tv-body::-webkit-scrollbar { width: 8px; height: 8px; }
+.tv-body::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+.tv-body::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text-primary) 25%, transparent); }
 
-/* 让滚动条更收敛 */
-.tv-body::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.tv-body::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 4px;
-}
-.tv-body::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--text-primary) 25%, transparent);
-}
-
-.tv-turn {
-  background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
-  border-left-width: 3px;
-  border-radius: 8px;
-  padding: 8px 12px;
-  transition: box-shadow 0.15s ease;
-  /* flex 子项默认 min-width:auto，遇到超长 token 会把自己撑到和内容等宽 */
+/* ---------- 行（时间轴布局） ---------- */
+.tv-row {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  column-gap: 10px;
+  padding: 4px 0 4px 4px;
+  position: relative;
   min-width: 0;
-  max-width: 100%;
 }
-
-.tv-turn:hover {
-  box-shadow: var(--shadow-subtle);
+/* 在每一行的 dot 列绘制连接线，让圆点串起来形成时间轴 */
+.tv-row::before {
+  content: "";
+  position: absolute;
+  left: 11px; /* 16px 列宽中点 */
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--border-subtle);
 }
+.tv-row:first-child::before { top: 12px; }
+.tv-row:last-child::before  { bottom: calc(100% - 12px); }
 
-.tv-turn.tv-role-user { border-left-color: var(--accent-electric); background: color-mix(in srgb, var(--accent-electric) 8%, var(--surface-1)); }
-.tv-turn.tv-role-assistant { border-left-color: var(--ai-running); background: color-mix(in srgb, var(--ai-running) 8%, var(--surface-1)); }
-.tv-turn.tv-role-thinking { border-left-color: var(--text-disabled); background: var(--surface-2); color: var(--text-secondary); }
-.tv-turn.tv-role-tool-use { border-left-color: var(--ai-pending-confirm); background: color-mix(in srgb, var(--ai-pending-confirm) 10%, var(--surface-1)); }
-.tv-turn.tv-role-tool-result { border-left-color: #722ed1; background: color-mix(in srgb, #722ed1 10%, var(--surface-1)); /* token-exception: distinct purple for tool_result, matches dock conventions */ }
-.tv-turn.tv-role-raw { border-left-color: var(--border-strong); background: var(--surface-2); }
-
-.tv-turn-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-  /* 工具名很长时（tool_use 里 toolName 会拼进 tag 文本）允许换行，
-     避免整行 nowrap 导致 header 把父容器撑宽 */
-  flex-wrap: wrap;
+.tv-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  margin-top: 8px;
+  margin-left: 4px;
+  background: var(--text-disabled);
+  position: relative; z-index: 1;
+  box-shadow: 0 0 0 3px var(--surface-1);
 }
+.tv-dot-user       { background: var(--accent-electric); }
+.tv-dot-assistant  { background: var(--ai-running); }
+.tv-dot-tool       { background: var(--ai-pending-confirm); }
+.tv-dot-result     { background: #722ed1; }
+.tv-dot-thinking   { background: var(--text-disabled); }
+.tv-dot-raw        { background: var(--border-strong); }
 
-.tv-turn-tag {
-  margin: 0;
-  font-size: 11px;
-  padding: 0 7px;
-  line-height: 18px;
-  height: 18px;
-  border-radius: 4px;
-  font-weight: 500;
-  max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.tv-turn-time {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-
-.tv-md {
-  font-size: 13.5px;
-  line-height: 1.65;
-  word-break: break-word;
-  overflow-wrap: anywhere;
+.tv-row-content {
+  min-width: 0; max-width: 100%;
+  font-size: 13.5px; line-height: 1.65;
   color: var(--text-primary);
-  max-width: 100%;
-  min-width: 0;
 }
 
+.tv-row-meta {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.tv-row:hover .tv-row-meta { opacity: 1; }
+.tv-turn-time { font-size: 11px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.tv-row-fork {
+  background: none; border: none; padding: 2px 4px; cursor: pointer;
+  color: var(--text-tertiary); font-size: 12px;
+  border-radius: 4px;
+}
+.tv-row-fork:hover { color: var(--accent-electric); background: color-mix(in srgb, var(--accent-electric) 10%, transparent); }
+
+/* ---------- markdown / 文本 ---------- */
+.tv-md { font-size: 13.5px; line-height: 1.65; word-break: break-word; overflow-wrap: anywhere; color: var(--text-primary); max-width: 100%; min-width: 0; }
 .tv-md p { margin: 4px 0; }
 .tv-md pre { margin: 6px 0; }
 .tv-md ul, .tv-md ol { margin: 4px 0; padding-left: 22px; }
 .tv-md h1, .tv-md h2, .tv-md h3 { margin: 10px 0 6px; font-weight: 600; }
-.tv-md h1 { font-size: 17px; }
-.tv-md h2 { font-size: 15px; }
-.tv-md h3 { font-size: 14px; }
+.tv-md h1 { font-size: 17px; } .tv-md h2 { font-size: 15px; } .tv-md h3 { font-size: 14px; }
 .tv-md a { color: var(--accent-electric); }
 .tv-md blockquote {
-  margin: 4px 0;
-  padding: 2px 10px;
+  margin: 4px 0; padding: 2px 10px;
   border-left: 3px solid var(--border-strong);
-  color: var(--text-secondary);
-  background: var(--surface-2);
+  color: var(--text-secondary); background: var(--surface-2);
 }
-
-.tv-tool-pre, .tv-raw-pre {
-  background: var(--surface-2);
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 11.5px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  /* break-word 对"整行无空格的长 token"不够用（比如 tool_result 里的 JSON、
-     base64、带斜杠的 UUID），在移动端会撑宽父容器；break-all + anywhere
-     一起上才能保证随时拆行 */
-  word-break: break-all;
-  overflow-wrap: anywhere;
-  max-width: 100%;
-  max-height: 360px;
-  overflow-y: auto;
-  color: var(--text-secondary);
-  margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  border: 1px solid var(--border-default);
-}
-
 .tv-plain {
-  font-size: 13.5px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  line-height: 1.65;
-  color: var(--text-primary);
+  font-size: 13.5px; white-space: pre-wrap;
+  word-break: break-word; overflow-wrap: anywhere;
+  line-height: 1.65; color: var(--text-primary); max-width: 100%;
+}
+.tv-row-user .tv-md, .tv-row-user .tv-plain { color: var(--text-primary); }
+
+/* ---------- 工具调用：单行签名 ---------- */
+.tv-tool-sig-button {
+  background: none; border: none; padding: 0; margin: 0;
+  cursor: pointer; text-align: left; width: 100%;
+  display: inline-flex; align-items: baseline; gap: 6px;
+  font-family: inherit;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  transition: color 0.12s ease;
+}
+.tv-tool-sig-button:hover { color: var(--text-primary); }
+.tv-tool-sig {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  display: inline-flex; align-items: baseline; gap: 0;
+  flex-wrap: wrap;
   max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.tv-tool-name {
+  color: var(--accent-electric);
+  font-weight: 600;
+}
+.tv-tool-args {
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.tv-tool-caret {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--text-disabled);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.tv-highlight {
-  background: color-mix(in srgb, var(--ai-pending-confirm) 60%, transparent);
-  padding: 0 1px;
-  border-radius: 2px;
+/* 工具结果：✓ + 一行摘要 */
+.tv-result-summary {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+.tv-result-ok { color: var(--ai-running); font-weight: 600; }
+.tv-result-err { color: var(--ai-error); font-weight: 600; }
+.tv-result-text { overflow-wrap: anywhere; word-break: break-all; }
+.tv-result-meta { color: var(--text-tertiary); font-size: 11px; }
+
+/* ---------- Edit / StrReplace / Write 的 diff 视图 ---------- */
+.tv-edit-head .tv-tool-args { color: var(--text-tertiary); }
+.tv-edit-flag {
+  font-size: 10px;
+  padding: 0 6px;
+  height: 16px; line-height: 16px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ai-pending-confirm) 18%, transparent);
+  color: var(--ai-pending-confirm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 500;
+  margin-left: 4px;
 }
 
-/* TodoWrite 工具调用结构化展示：和 Claude TUI 一致的 checkbox 列表 */
-.tv-todos {
-  list-style: none;
-  margin: 0;
-  padding: 2px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.tv-todo {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 13px;
+.tv-diff {
+  margin: 6px 0 4px;
+  padding: 6px 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
   line-height: 1.55;
   max-width: 100%;
-  overflow-wrap: anywhere;
+  max-height: 480px;
+  overflow: auto;
+  white-space: normal;
+  color: var(--text-secondary);
+  /* 行底色铺到内容左右两边，需要去掉默认 pre 的 padding-x，单行自己加 */
 }
-.tv-todo-icon {
-  width: 14px;
+.tv-diff-line {
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  white-space: pre;
+  word-break: normal;
+}
+.tv-diff-marker {
+  display: inline-block;
+  width: 22px;
   flex-shrink: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   text-align: center;
+  user-select: none;
+  color: var(--text-tertiary);
+  font-weight: 600;
 }
-.tv-todo-text {
+.tv-diff-text {
   flex: 1;
   min-width: 0;
+  padding-right: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
-.tv-todo-done .tv-todo-icon { color: var(--ai-running); }
-.tv-todo-done .tv-todo-text { color: var(--text-tertiary); text-decoration: line-through; }
+.tv-diff-add {
+  background: color-mix(in srgb, #2ea043 18%, transparent);
+  color: color-mix(in srgb, #2ea043 90%, var(--text-primary));
+}
+.tv-diff-add .tv-diff-marker { color: #2ea043; }
+.tv-diff-del {
+  background: color-mix(in srgb, #f85149 18%, transparent);
+  color: color-mix(in srgb, #f85149 90%, var(--text-primary));
+}
+.tv-diff-del .tv-diff-marker { color: #f85149; }
+.tv-diff-ctx {
+  color: var(--text-secondary);
+}
+.tv-diff-gap {
+  color: var(--text-tertiary);
+  font-style: italic;
+  background: color-mix(in srgb, var(--text-disabled) 8%, transparent);
+}
+
+/* 折叠展开后的详情 */
+.tv-tool-detail {
+  margin: 6px 0 4px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all; overflow-wrap: anywhere;
+  max-width: 100%; max-height: 360px; overflow-y: auto;
+  color: var(--text-secondary);
+}
+.tv-tool-detail-thinking { font-style: italic; color: var(--text-tertiary); background: transparent; border-style: dashed; }
+
+/* 思考药丸 */
+.tv-thinking-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ai-running) 35%, transparent);
+  color: var(--ai-running);
+  font-size: 11.5px;
+  background: transparent;
+}
+.tv-thinking-pill-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ai-running);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--ai-running) 60%, transparent);
+}
+.tv-thinking-pill .tv-tool-caret { color: color-mix(in srgb, var(--ai-running) 60%, transparent); }
+
+/* 原始 PTY */
+.tv-raw-pre {
+  background: var(--surface-2); border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11.5px; line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all; overflow-wrap: anywhere;
+  max-width: 100%; max-height: 360px; overflow-y: auto;
+  color: var(--text-secondary);
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 1px solid var(--border-subtle);
+}
+
+/* 搜索高亮 */
+.tv-highlight {
+  background: color-mix(in srgb, var(--ai-pending-confirm) 60%, transparent);
+  padding: 0 1px; border-radius: 2px;
+}
+
+/* ---------- TodoWrite checklist ---------- */
+.tv-todos { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.tv-todo  { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.55; max-width: 100%; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.tv-todo-icon { width: 14px; flex-shrink: 0; text-align: center; }
+.tv-todo-text { flex: 1; min-width: 0; }
+.tv-todo-done   .tv-todo-icon { color: var(--ai-running); }
+.tv-todo-done   .tv-todo-text { color: var(--text-tertiary); text-decoration: line-through; }
 .tv-todo-active .tv-todo-icon { color: var(--accent-electric); }
 .tv-todo-active .tv-todo-text { color: var(--accent-electric); font-weight: 500; }
 .tv-todo-pending .tv-todo-icon { color: var(--text-disabled); }
 .tv-todo-pending .tv-todo-text { color: var(--text-primary); }
 
-/* AI 生成中的 loading 占位：没有 liveOutput 前用三点呼吸显示还在算；
-   liveOutput 来了之后换成"生成中..."的呼吸标签 */
+/* ---------- 兼容老类名："AI 思考中" 占位 ---------- */
+.tv-turn {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  column-gap: 10px;
+  padding: 4px 0 4px 4px;
+  position: relative;
+  min-width: 0;
+}
+.tv-turn-header {
+  grid-column: 2;
+  display: flex; align-items: center; gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+.tv-turn-tag { margin: 0 !important; font-size: 10.5px !important; height: 18px !important; line-height: 18px !important; padding: 0 6px !important; border-radius: 4px !important; }
+
 .tv-thinking {
+  grid-column: 2 / -1;
+  margin-left: 26px;
   align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--ai-running);
-  border-radius: 8px;
-  padding: 8px 14px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  max-width: 100%;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ai-running) 35%, transparent);
+  color: var(--ai-running);
+  font-size: 12px;
+  background: transparent;
+  margin-top: 4px;
+  max-width: max-content;
 }
-.tv-thinking-label {
-  opacity: 0.85;
-}
-.tv-thinking-dots {
-  display: inline-flex;
-  gap: 4px;
-}
+.tv-thinking-label { opacity: 0.9; }
+.tv-thinking-dots { display: inline-flex; gap: 3px; }
 .tv-thinking-dots i {
-  width: 6px;
-  height: 6px;
-  background: var(--ai-running);
-  border-radius: 50%;
-  display: inline-block;
+  width: 5px; height: 5px; background: var(--ai-running);
+  border-radius: 50%; display: inline-block;
   animation: tvThinkingBounce 1.2s infinite ease-in-out both;
 }
 .tv-thinking-dots i:nth-child(1) { animation-delay: -0.32s; }
@@ -281,128 +360,126 @@
   40%           { transform: scale(1);    opacity: 1; }
 }
 
-/* 实时 turn 顶部"生成中"做个呼吸效果，和静态 Tag 区分开 */
-.tv-live-pulse {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--accent-electric);
-  font-size: 11px;
-  animation: tvLivePulse 1.5s ease-in-out infinite;
-}
-.tv-live-pulse::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent-electric);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-electric) 50%, transparent);
-  animation: tvLiveDot 1.5s ease-in-out infinite;
-}
-@keyframes tvLivePulse {
-  0%, 100% { opacity: 0.65; }
-  50%      { opacity: 1; }
-}
-@keyframes tvLiveDot {
-  0%   { box-shadow: 0 0 0 0   color-mix(in srgb, var(--accent-electric) 55%, transparent); }
-  70%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent-electric) 0%, transparent); }
-  100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--accent-electric) 0%, transparent); }
-}
+.tv-error { color: var(--ai-error); padding: 12px; text-align: center; }
 
-.tv-error {
-  color: var(--ai-error);
-  padding: 12px;
-  text-align: center;
+/* ---------- 底部：状态条 + 极简 composer ---------- */
+.tv-statusbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
+.tv-statusbar-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-disabled);
+  flex-shrink: 0;
+}
+.tv-statusbar-dot--running { background: var(--ai-running); box-shadow: 0 0 6px color-mix(in srgb, var(--ai-running) 50%, transparent); }
+.tv-statusbar-dot--warn    { background: var(--ai-pending-confirm); }
+.tv-statusbar-dot--err     { background: var(--ai-error); }
+.tv-statusbar-dot--idle    { background: var(--text-disabled); }
+.tv-statusbar-text { color: var(--text-secondary); }
+.tv-statusbar-mute { color: var(--text-tertiary); }
+.tv-statusbar-sep  { color: var(--text-disabled); }
+.tv-statusbar-btn {
+  background: none; border: none; padding: 2px 8px;
+  color: var(--text-tertiary);
+  font: inherit; cursor: pointer;
+  border-radius: 4px;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.tv-statusbar-btn:not(:disabled):hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 8%, transparent); }
+.tv-statusbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.tv-statusbar-btn--danger:not(:disabled):hover { color: var(--ai-error); background: color-mix(in srgb, var(--ai-error) 10%, transparent); }
 
 .tv-composer {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 12px 8px;
   background: var(--surface-1);
   border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
-
-.tv-composer .ant-input {
-  border-radius: 8px;
-}
-
-.tv-composer-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.tv-composer-hint {
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
-
-.tv-resize-handle {
-  height: 8px;
-  cursor: ns-resize;
-  background: linear-gradient(var(--surface-2), var(--surface-3));
+.tv-composer-prompt {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 16px; font-weight: 600;
+  color: var(--accent-electric);
+  margin-top: 4px;
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+}
+.tv-composer .ant-mentions {
+  flex: 1;
+  background: transparent !important;
+  padding: 2px 0 !important;
+}
+.tv-composer .ant-mentions, .tv-composer .ant-mentions textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+  font-size: 13px !important;
+  background: transparent !important;
+  color: var(--text-primary) !important;
+}
+.tv-composer .ant-mentions textarea::placeholder {
+  color: var(--text-tertiary) !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+}
+.tv-composer-send {
+  background: none; border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  padding: 3px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 2px;
+  flex-shrink: 0;
+  transition: all 0.12s ease;
+}
+.tv-composer-send:not(:disabled):hover {
+  color: var(--accent-electric);
+  border-color: var(--accent-electric);
+  background: color-mix(in srgb, var(--accent-electric) 8%, transparent);
+}
+.tv-composer-send:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ---------- resize handle ---------- */
+.tv-resize-handle {
+  height: 6px; cursor: ns-resize;
+  background: var(--surface-2);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
   border-top: 1px solid var(--border-subtle);
   transition: background 0.15s ease;
 }
+.tv-resize-handle:hover { background: var(--surface-3); }
+.tv-resize-grip { width: 28px; height: 2px; border-radius: 2px; background: var(--text-disabled); }
 
-.tv-resize-handle:hover {
-  background: linear-gradient(var(--surface-3), var(--surface-2));
-}
-
-.tv-resize-grip {
-  width: 36px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--text-disabled);
-}
-
+/* ---------- 未读 pill ---------- */
 .tv-unread-pill {
-  position: absolute;
-  right: 16px;
-  /* composer 粗估 ≈ 110px，加 8px gap；用户拖高度时 composer 高度不变 */
-  bottom: 118px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: var(--accent-electric);
-  color: var(--surface-0);
-  border: none;
-  font-size: 12px;
-  font-weight: 500;
+  position: absolute; right: 16px; bottom: 100px;
+  padding: 5px 14px; border-radius: 999px;
+  background: var(--accent-electric); color: var(--surface-0);
+  border: none; font-size: 11.5px; font-weight: 500;
   cursor: pointer;
   box-shadow: 0 6px 16px color-mix(in srgb, var(--accent-electric) 35%, transparent);
   z-index: 3;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   animation: tvPillPop 0.2s ease;
 }
-
 .tv-unread-pill:hover {
   transform: translateY(-1px);
   box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-electric) 45%, transparent);
 }
-
-@keyframes tvPillPop {
-  from { transform: translateY(8px); opacity: 0; }
-  to   { transform: translateY(0);   opacity: 1; }
-}
+@keyframes tvPillPop { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
 .tv-fullscreen-hint {
-  position: absolute;
-  bottom: 10px;
-  right: 12px;
-  padding: 4px 10px;
-  border-radius: 6px;
+  position: absolute; bottom: 10px; right: 12px;
+  padding: 4px 10px; border-radius: 6px;
   background: color-mix(in srgb, var(--surface-0) 60%, transparent);
   color: var(--text-primary);
-  font-size: 11px;
-  pointer-events: none;
-  opacity: 0.85;
+  font-size: 11px; pointer-events: none; opacity: 0.85;
 }

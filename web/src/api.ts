@@ -6,7 +6,7 @@ export type TodoStatus = 'todo' | 'ai_running' | 'ai_pending' | 'ai_done' | 'don
 export type StageTag = 'dev' | 'review' | 'test' | 'release' | 'blocked'
 export type RecurringFrequency = 'daily' | 'weekly' | 'monthly'
 export type AiTool = 'claude' | 'codex' | 'cursor'
-export type AiStatus = 'running' | 'done' | 'failed' | 'stopped' | 'pending_confirm'
+export type AiStatus = 'running' | 'idle' | 'done' | 'failed' | 'stopped' | 'pending_confirm'
 
 export interface AiSession {
   sessionId: string
@@ -951,4 +951,3 @@ export function subscribeProbeChatId(callbacks: {
   es.onerror = (e) => callbacks.onError?.(e)
   return () => es.close()
 }
-

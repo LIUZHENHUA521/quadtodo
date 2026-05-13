@@ -13,12 +13,17 @@ describe('deriveAiState', () => {
   })
 
   it('returns pending when not running but unread', () => {
+    expect(deriveAiState('idle', true)).toBe('pending')
     expect(deriveAiState('done', true)).toBe('pending')
     expect(deriveAiState('failed', true)).toBe('pending')
     expect(deriveAiState('stopped', true)).toBe('pending')
     expect(deriveAiState('pending_confirm', true)).toBe('pending')
     expect(deriveAiState(undefined, true)).toBe('pending')
     expect(deriveAiState(null, true)).toBe('pending')
+  })
+
+  it('returns idle when backend status is real idle and not unread', () => {
+    expect(deriveAiState('idle', false)).toBe('idle')
   })
 
   it('returns idle when not running and not unread (including pending_confirm with no unread)', () => {
@@ -49,6 +54,7 @@ describe('isClosedAiStatus', () => {
 
   it('returns false for live states and missing status', () => {
     expect(isClosedAiStatus('running')).toBe(false)
+    expect(isClosedAiStatus('idle')).toBe(false)
     expect(isClosedAiStatus('pending_confirm')).toBe(false)
     expect(isClosedAiStatus(undefined)).toBe(false)
     expect(isClosedAiStatus(null)).toBe(false)

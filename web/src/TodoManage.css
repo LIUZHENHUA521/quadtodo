@@ -1016,6 +1016,20 @@ button.todo-detail-chip:hover { background: var(--surface-2); }
   font-size: 10px;
 }
 
+.todo-ai-state-running,
+.todo-ai-state-pending,
+.todo-ai-state-idle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.todo-ai-state-running svg,
+.todo-ai-state-pending svg,
+.todo-ai-state-idle svg {
+  display: block;
+  flex-shrink: 0;
+}
+
 .todo-ai-state-running {
   color: var(--ai-running);
   animation: todo-ai-pulse 1.6s ease-in-out infinite;

@@ -2,12 +2,12 @@ import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import xtermHeadless from '@xterm/headless'
+import { cursorTranscriptPath } from './pty.js'
 
 const { Terminal } = xtermHeadless
 
 const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude', 'projects')
 const CODEX_SESSIONS_DIR = join(homedir(), '.codex', 'sessions')
-
 function claudeProjectHash(absPath) {
   // Claude Code 在写 JSONL 路径时会先规范化 cwd（去掉尾斜杠）
   // 若不做同样处理，带尾斜杠的 cwd 会被 hash 成比实际路径多一个 '-' 的目录名，导致找不到 JSONL
@@ -169,6 +169,91 @@ function parseCodexJsonl(filePath) {
   return turns
 }
 
+function findCursorFile(cwd, nativeSessionId) {
+  if (!cwd) return null
+  if (nativeSessionId) {
+    const file = cursorTranscriptPath(cwd, nativeSessionId)
+    if (file && existsSync(file)) return file
+    // nativeSessionId 已知但文件尚不存在（cursor 还没写第一行）→ 返回 null，
+    // 不要 fallback 到 mtime 搜索，否则会展示上一个 cursor 会话的历史内容。
+    return null
+  }
+  // 拿一个临时 chatId 推目录路径，再 dirname 两次 → agent-transcripts 根。
+  // 这样不用复制 encodeCursorCwd 实现，避免和 pty.js 漂移。
+  const probe = cursorTranscriptPath(cwd, '__probe__')
+  if (!probe) return null
+  const transcriptsDir = join(probe, '..', '..')
+  // 兜底：cursor-agent create-chat 偶发失败导致 nativeSessionId 没被存进 DB。
+  // 这种情况下按 mtime 选 cwd 下最近的 chatId 目录，能让正在跑的会话也展示出对话。
+  if (!existsSync(transcriptsDir)) return null
+  let best = null
+  let bestMtime = 0
+  let entries
+  try { entries = readdirSync(transcriptsDir, { withFileTypes: true }) } catch { return null }
+  for (const ent of entries) {
+    if (!ent.isDirectory()) continue
+    const chatId = ent.name
+    const file = join(transcriptsDir, chatId, `${chatId}.jsonl`)
+    if (!existsSync(file)) continue
+    let st
+    try { st = statSync(file) } catch { continue }
+    if (st.mtimeMs > bestMtime) { bestMtime = st.mtimeMs; best = file }
+  }
+  return best
+}
+
+// cursor jsonl 格式：每行 {"role":"user|assistant","message":{"content":[{type:'text'|'tool_use'|'tool_result', ...}]}}
+// 没有顶层 timestamp，沿用文件 mtime 作为兜底。
+function parseCursorJsonl(filePath) {
+  const raw = readFileSync(filePath, 'utf8')
+  const ts = (() => { try { return statSync(filePath).mtimeMs } catch { return undefined } })()
+  const turns = []
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    let obj
+    try { obj = JSON.parse(line) } catch { continue }
+    const role = obj.role || obj.message?.role
+    if (!role) continue
+    const content = obj.message?.content
+    if (typeof content === 'string') {
+      if (content.trim()) turns.push({ role, content, timestamp: ts })
+      continue
+    }
+    if (!Array.isArray(content)) continue
+    if (role === 'assistant') {
+      for (const c of content) {
+        if (!c || typeof c !== 'object') continue
+        if (c.type === 'text' && c.text) {
+          turns.push({ role: 'assistant', content: c.text, timestamp: ts })
+        } else if (c.type === 'thinking' && (c.thinking || c.text)) {
+          turns.push({ role: 'thinking', content: c.thinking || c.text, timestamp: ts })
+        } else if (c.type === 'tool_use') {
+          turns.push({
+            role: 'tool_use',
+            toolName: c.name || 'tool',
+            toolUseId: c.id,
+            content: typeof c.input === 'string' ? c.input : JSON.stringify(c.input ?? {}, null, 2),
+            timestamp: ts,
+          })
+        }
+      }
+    } else if (role === 'user') {
+      for (const c of content) {
+        if (!c || typeof c !== 'object') continue
+        if (c.type === 'text' && c.text) {
+          turns.push({ role: 'user', content: c.text, timestamp: ts })
+        } else if (c.type === 'tool_result') {
+          const text = Array.isArray(c.content)
+            ? c.content.map(x => x.text || '').join('\n')
+            : (typeof c.content === 'string' ? c.content : JSON.stringify(c.content ?? ''))
+          turns.push({ role: 'tool_result', content: text, toolUseId: c.tool_use_id, timestamp: ts })
+        }
+      }
+    }
+  }
+  return turns
+}
+
 async function loadFromPtyLog(logDir, sessionId) {
   if (!logDir || !sessionId) return null
   const file = join(logDir, `${sessionId}.log`)
@@ -202,6 +287,11 @@ export async function loadTranscript({ tool, nativeSessionId, cwd, sessionId, lo
       filePath = findCodexFile(nativeSessionId)
       if (filePath) {
         return { source: 'jsonl', turns: parseCodexJsonl(filePath), filePath }
+      }
+    } else if (tool === 'cursor' && cwd) {
+      filePath = findCursorFile(cwd, nativeSessionId)
+      if (filePath) {
+        return { source: 'jsonl', turns: parseCursorJsonl(filePath), filePath }
       }
     }
   } catch (e) {

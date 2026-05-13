@@ -22,7 +22,7 @@ export function createTelegramSyncRouter({ db, aiTerminal, openclaw, wizard, get
   const router = Router()
 
   function isAlive(sess) {
-    return sess && (sess.status === 'running' || sess.status === 'pending_confirm')
+    return sess && (sess.status === 'running' || sess.status === 'idle' || sess.status === 'pending_confirm')
   }
 
   // 默认两个 channel 都启用；配置里显式 enabled === false 才视为禁用

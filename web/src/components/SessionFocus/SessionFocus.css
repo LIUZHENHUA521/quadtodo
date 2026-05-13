@@ -104,6 +104,31 @@
   color: var(--ai-running);
   background: color-mix(in srgb, var(--ai-running) 10%, transparent);
 }
+.pill-select.pending {
+  border-color: var(--ai-pending-confirm);
+  color: var(--ai-pending-confirm);
+  background: color-mix(in srgb, var(--ai-pending-confirm) 12%, transparent);
+}
+.pill-select.idle {
+  border-color: var(--ai-idle);
+  color: var(--ai-idle);
+  background: color-mix(in srgb, var(--ai-idle) 10%, transparent);
+}
+.focus-confirm-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--ai-pending-confirm);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--ai-pending-confirm) 14%, transparent);
+  color: var(--ai-pending-confirm);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--motion-fast) var(--ease-standard);
+}
+.focus-confirm-btn:hover {
+  background: color-mix(in srgb, var(--ai-pending-confirm) 22%, transparent);
+}
 .focus-icon-btn {
   width: 28px; height: 28px;
   display: grid;
@@ -149,4 +174,3 @@
   color: var(--accent-electric);
   border-bottom-color: var(--accent-electric);
 }
-

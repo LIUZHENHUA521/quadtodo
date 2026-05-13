@@ -1,19 +1,16 @@
 /**
- * 未读追踪：服务端记 lastTurnDoneAt（每次 AI turn_done 时更新到 session 内存
- * 与 todo.aiSessions 持久化），客户端记 lastSeenAt（localStorage，本浏览器维度）。
+ * 待确认追踪：服务端记 lastTurnDoneAt（每次 AI turn_done 时更新到 session 内存
+ * 与 todo.aiSessions 持久化），客户端记 confirmedTurnDoneAt（localStorage，本浏览器维度）。
  *
- * 未读判定：lastTurnDoneAt > lastSeenAt（lastSeenAt 缺省视为 0）。
+ * 待确认判定：lastTurnDoneAt > confirmedTurnDoneAt（confirmedTurnDoneAt 缺省视为 0）。
  *
- * 标记已读时机（由 AiTerminalMini 触发）：
- *   - 终端挂载且对应 dock tab 当前可见（active/secondary、未折叠、document 可见）
- *   - 收到 turn_done 时若同样可见
- *   - dock tab 被切回时
+ * 历史上旧 key `quadtodo:sessionLastSeen` 曾在打开/聚焦会话时自动写入 Date.now，
+ * 会把新一轮回复错误判成已确认。这里换新 key，只允许显式“确认”写入。
  */
 
 import { create } from 'zustand'
 
-// rebrand: localStorage key kept for backward compatibility
-const STORAGE_KEY = 'quadtodo:sessionLastSeen'
+const STORAGE_KEY = 'quadtodo:sessionConfirmedTurn'
 
 function loadFromStorage(): Map<string, number> {
   if (typeof window === 'undefined') return new Map()

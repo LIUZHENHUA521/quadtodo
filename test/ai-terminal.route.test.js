@@ -34,11 +34,10 @@ class FakePty extends EventEmitter {
       this._nativeIds.set(opts.sessionId, null)
     }
   }
-  startWithSize(sessionId, cols, rows) {
+  async startWithSize(sessionId, cols, rows) {
     this.startedWithSize.push({ sessionId, cols, rows })
   }
-  start(opts) {
-    // back-compat for any test or route path that still calls it directly
+  async start(opts) {
     this.started.push(opts)
     this._has.add(opts.sessionId)
   }
@@ -561,9 +560,32 @@ describe('routes/ai-terminal', () => {
     const exec = await request(ctx.app).post('/api/ai-terminal/exec')
       .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
     const r = await request(ctx.app).post('/api/ai-terminal/input')
-      .send({ sessionId: exec.body.sessionId, data: 'continue\r' })
+      .send({ sessionId: exec.body.sessionId, data: 'continue' })
     expect(r.status).toBe(200)
-    expect(ctx.pty.writes).toContainEqual({ id: exec.body.sessionId, data: 'continue\r' })
+    expect(ctx.pty.writes).toContainEqual({ id: exec.body.sessionId, data: 'continue' })
+  })
+
+  it('POST /input splits submitted conversation text from Enter so the TUI reliably submits it', async () => {
+    vi.useFakeTimers()
+    try {
+      const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+      const exec = await request(ctx.app).post('/api/ai-terminal/exec')
+        .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+      const sid = exec.body.sessionId
+
+      const r = await request(ctx.app).post('/api/ai-terminal/input')
+        .send({ sessionId: sid, data: 'continue\r' })
+      expect(r.status).toBe(200)
+      expect(ctx.pty.writes.at(-1)).toEqual({ id: sid, data: 'continue' })
+
+      await vi.advanceTimersByTimeAsync(100)
+      expect(ctx.pty.writes.slice(-2)).toEqual([
+        { id: sid, data: 'continue' },
+        { id: sid, data: '\r' },
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('POST /input 普通字符不翻 awaitingReply（防止 IM 消息死锁在队列里）', async () => {
@@ -1095,17 +1117,46 @@ describe('routes/ai-terminal', () => {
     })
   })
 
-  it('outputHistory enforces 512KB ceiling', async () => {
+  it('outputHistory enforces 5MB ceiling', async () => {
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
     const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
       .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
-    const big = 'x'.repeat(100 * 1024)
-    for (let i = 0; i < 10; i++) {
+    const big = 'x'.repeat(512 * 1024)
+    for (let i = 0; i < 12; i++) {
       ctx.pty.emit('output', { sessionId: body.sessionId, data: big })
     }
     const session = ctx.ait.sessions.get(body.sessionId)
-    expect(session.outputSize).toBeLessThanOrEqual(512 * 1024 + big.length)
-    expect(session.outputHistory.length).toBeLessThan(10)
+    expect(session.outputSize).toBe(5 * 1024 * 1024)
+    expect(session.outputHistory.length).toBeLessThan(12)
+  })
+
+  it('turn done changes a live session to real idle status until next submitted input', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+    const sid = body.sessionId
+
+    ctx.pty.emit('claude-turn-done', { sessionId: sid, nativeId: 'native-1' })
+
+    expect(ctx.ait.sessions.get(sid).status).toBe('idle')
+    expect(ctx.ait.isSessionAwaitingReply(sid)).toBe(true)
+    let updated = ctx.db.getTodo(todo.id)
+    expect(updated.status).toBe('ai_done')
+    expect(updated.aiSession.status).toBe('idle')
+
+    const sessions = await request(ctx.app).get('/api/ai-terminal/sessions')
+    expect(sessions.status).toBe(200)
+    expect(sessions.body.sessions.find(s => s.sessionId === sid).status).toBe('idle')
+
+    const input = await request(ctx.app).post('/api/ai-terminal/input')
+      .send({ sessionId: sid, data: '\r' })
+
+    expect(input.status).toBe(200)
+    expect(ctx.ait.sessions.get(sid).status).toBe('running')
+    expect(ctx.ait.isSessionAwaitingReply(sid)).toBe(false)
+    updated = ctx.db.getTodo(todo.id)
+    expect(updated.status).toBe('ai_running')
+    expect(updated.aiSession.status).toBe('running')
   })
 
   it('confirm-like output marks todo as ai_pending and broadcasts pending_confirm', async () => {
