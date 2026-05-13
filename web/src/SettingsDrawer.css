@@ -1,0 +1,19 @@
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-footer-path {
+  font-size: 12px;
+  color: var(--text-secondary);
+  user-select: all;
+}
+
+.settings-section-title {
+  font-weight: 600;
+  margin-top: 8px;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
