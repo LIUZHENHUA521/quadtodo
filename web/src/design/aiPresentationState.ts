@@ -22,6 +22,18 @@ export function deriveAiState(
   return 'idle'
 }
 
+const CLOSED_AI_STATUSES: ReadonlySet<AiStatus> = new Set<AiStatus>(['done', 'failed', 'stopped'])
+
+/**
+ * PTY 已退出的终态。这类 session 后端会保留至多 30 分钟才清理（见
+ * `src/routes/ai-terminal.js` 的 `cleanupTimer`），其间它们仍出现在
+ * `/api/ai-terminal/sessions` 返回中。顶栏 idle pill 用本函数把它们排除掉——
+ * 用户已经 kill 的 session 不应再显示为"空闲"。
+ */
+export function isClosedAiStatus(status: AiStatus | undefined | null): boolean {
+  return !!status && CLOSED_AI_STATUSES.has(status)
+}
+
 /** 卡片内联展示用，带图形字符 */
 export const AI_STATE_LABEL: Record<AiPresentationState, string> = {
   running: '● running',

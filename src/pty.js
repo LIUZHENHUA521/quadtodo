@@ -29,11 +29,12 @@ function buildPermissionArgs(tool, mode) {
     return []
   }
   if (tool === 'cursor') {
-    // cursor-agent 没有 claude 那种半托管模式；
+    // cursor-agent 交互模式只接受 --force / --yolo；--trust 仅 --print/headless 可用，
+    // 在 PTY 里跑会被 cursor-agent 直接拒掉（Error: --trust can only be used with --print/headless mode）。
     //   acceptEdits → --force（除非 deny 否则放行命令）
-    //   bypass     → --yolo --trust（同义于 force + 信任 workspace）
+    //   bypass     → --yolo（= --force 别名，cursor 没提供更细颗粒）
     if (mode === 'acceptEdits') return ['--force']
-    if (mode === 'bypass') return ['--yolo', '--trust']
+    if (mode === 'bypass') return ['--yolo']
     return []
   }
   return []

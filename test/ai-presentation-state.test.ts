@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { deriveAiState, AI_STATE_LABEL, AI_STATE_PILL_LABEL } from '../web/src/design/aiPresentationState.ts'
+import {
+  deriveAiState,
+  isClosedAiStatus,
+  AI_STATE_LABEL,
+  AI_STATE_PILL_LABEL,
+} from '../web/src/design/aiPresentationState.ts'
 
 describe('deriveAiState', () => {
   it('returns running when status is running, regardless of unread', () => {
@@ -23,6 +28,21 @@ describe('deriveAiState', () => {
     expect(deriveAiState('pending_confirm', false)).toBe('idle')
     expect(deriveAiState(undefined, false)).toBe('idle')
     expect(deriveAiState(null, false)).toBe('idle')
+  })
+})
+
+describe('isClosedAiStatus', () => {
+  it('returns true for terminal PTY states', () => {
+    expect(isClosedAiStatus('done')).toBe(true)
+    expect(isClosedAiStatus('failed')).toBe(true)
+    expect(isClosedAiStatus('stopped')).toBe(true)
+  })
+
+  it('returns false for live states and missing status', () => {
+    expect(isClosedAiStatus('running')).toBe(false)
+    expect(isClosedAiStatus('pending_confirm')).toBe(false)
+    expect(isClosedAiStatus(undefined)).toBe(false)
+    expect(isClosedAiStatus(null)).toBe(false)
   })
 })
 

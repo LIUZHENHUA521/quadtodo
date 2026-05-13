@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useFocusStore } from '../../store/focusStore'
 import { useAiSessionStore } from '../../store/aiSessionStore'
 import { useUnreadStore } from '../../store/unreadStore'
+import { useTodoSnapshotStore } from '../../store/todoSnapshotStore'
 import { FocusSubbar } from './FocusSubbar'
 import { FocusTabs } from './FocusTabs'
 import SessionViewer from '../../SessionViewer'
@@ -50,6 +51,14 @@ export function SessionFocus() {
   if (!focusedTodoId) return null
 
   const session = focusedSessionId ? sessions.get(focusedSessionId) : undefined
+  // live session 缺失时（首启动 3s 窗口）回退到 todo.aiSession.status，让 FocusSubbar
+  // 的 pill 不再闪 idle。
+  const fallbackTodo = useTodoSnapshotStore((s) =>
+    focusedSessionId ? s.bySessionId.get(focusedSessionId) : undefined,
+  )
+  const fallbackStatus = fallbackTodo?.aiSession?.sessionId === focusedSessionId
+    ? fallbackTodo?.aiSession?.status
+    : undefined
 
   // Map our 'conversation' | 'live' tab → SessionViewer's 'transcript' | 'live'
   const sessionViewerMode: 'transcript' | 'live' =
@@ -67,6 +76,7 @@ export function SessionFocus() {
         todoId={focusedTodoId}
         sessionId={focusedSessionId}
         session={session}
+        fallbackStatus={fallbackStatus}
         onClose={clearFocus}
       />
       <FocusTabs value={focusedTab} onChange={setTab} />

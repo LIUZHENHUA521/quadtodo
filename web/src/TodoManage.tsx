@@ -51,6 +51,7 @@ import { useWelcomeDismissed } from './onboarding/useWelcomeDismissed'
 import ForkDialog from './ForkDialog'
 import TranscriptSearchDrawer from './transcripts/TranscriptSearchDrawer'
 import { useAiSessionStore } from './store/aiSessionStore'
+import { useTodoSnapshotStore } from './store/todoSnapshotStore'
 import {
   buildUnreadSessionItems,
   type UnreadSessionItem,
@@ -358,6 +359,11 @@ export default function TodoManage() {
     liveSessions: [...liveSessionsMap.values()],
     lastSeenMap,
   }), [todos, liveSessionsMap, lastSeenMap])
+
+  // 把 todos 同步进 snapshot store，给 SessionFocus / TopbarDispatch 这些兄弟组件用作
+  // live session 缺失时的 fallback。
+  const setTodoSnapshot = useTodoSnapshotStore(s => s.setTodos)
+  useEffect(() => { setTodoSnapshot(todos) }, [todos, setTodoSnapshot])
 
   useEffect(() => {
     let cancelled = false

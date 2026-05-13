@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { useAiSessionStore } from '../store/aiSessionStore'
 import { useUnreadStore, isSessionUnread } from '../store/unreadStore'
-import { deriveAiState } from './aiPresentationState'
+import { useTodoSnapshotStore } from '../store/todoSnapshotStore'
+import { deriveAiState, isClosedAiStatus } from './aiPresentationState'
 
 export interface DispatchStats {
   /** status === 'running' 的 session 数 */
@@ -15,6 +16,7 @@ export interface DispatchStats {
 export function useDispatchStats(): DispatchStats {
   const sessions = useAiSessionStore((s) => s.sessions)
   const lastSeenMap = useUnreadStore((s) => s.lastSeenAt)
+  const todos = useTodoSnapshotStore((s) => s.todos)
 
   return useMemo(() => {
     let runningCount = 0
@@ -25,8 +27,20 @@ export function useDispatchStats(): DispatchStats {
       const state = deriveAiState(session.status, unread)
       if (state === 'running') runningCount += 1
       else if (state === 'pending') pendingCount += 1
-      else idleCount += 1
+      else if (!isClosedAiStatus(session.status)) idleCount += 1
     })
+    // 同 TodoCard 的 fallback：todos 里有 active aiSession 但 live store 还没 poll 到的，
+    // 按 todo.aiSession.status 计入，避免 running 计数延迟 3s。
+    for (const t of todos) {
+      const sid = t.aiSession?.sessionId
+      if (!sid || sessions.has(sid)) continue
+      const status = t.aiSession?.status
+      const unread = isSessionUnread(t.aiSession?.lastTurnDoneAt ?? null, lastSeenMap.get(sid))
+      const state = deriveAiState(status, unread)
+      if (state === 'running') runningCount += 1
+      else if (state === 'pending') pendingCount += 1
+      else if (!isClosedAiStatus(status)) idleCount += 1
+    }
     return { runningCount, pendingCount, idleCount }
-  }, [sessions, lastSeenMap])
+  }, [sessions, lastSeenMap, todos])
 }

@@ -743,7 +743,10 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     transcriptLiveSession?.lastTurnDoneAt,
     transcriptLastSeen,
   )
-  const transcriptState = deriveAiState(data?.session?.status, transcriptUnread)
+  // live session 比 fetched data.session 新；data.session 在 transcript fetch 那一刻
+  // 是 snapshot，可能没赶上后续 running → done 切换。live 优先，data 兜底（fetch 完成
+  // 但 live store 还没 poll 到的边角窗口）。
+  const transcriptState = deriveAiState(transcriptLiveSession?.status ?? data?.session?.status, transcriptUnread)
   const statusMeta = sessionStatusMeta(transcriptState)
 
   const wrapperClassName = [

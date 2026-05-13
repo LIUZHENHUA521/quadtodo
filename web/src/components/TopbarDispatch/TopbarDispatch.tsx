@@ -7,7 +7,8 @@ import { useDispatchStore } from '../../store/dispatchStore'
 import { useDispatchStats } from '../../design/useDispatchStats'
 import { useAiSessionStore } from '../../store/aiSessionStore'
 import { useUnreadStore, isSessionUnread } from '../../store/unreadStore'
-import { deriveAiState } from '../../design/aiPresentationState'
+import { useTodoSnapshotStore } from '../../store/todoSnapshotStore'
+import { deriveAiState, isClosedAiStatus } from '../../design/aiPresentationState'
 import type { UnreadSessionItem } from '../../replyHub'
 import './TopbarDispatch.css'
 
@@ -38,6 +39,7 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
 
   const sessions = useAiSessionStore((s) => s.sessions)
   const lastSeenMap = useUnreadStore((s) => s.lastSeenAt)
+  const todos = useTodoSnapshotStore((s) => s.todos)
   const runningList: SessionRowEntry[] = []
   const idleList: SessionRowEntry[] = []
   sessions.forEach((session) => {
@@ -50,8 +52,25 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
       tool: session.tool,
     }
     if (state === 'running') runningList.push(entry)
-    else if (state === 'idle') idleList.push(entry)
+    else if (state === 'idle' && !isClosedAiStatus(session.status)) idleList.push(entry)
   })
+  // Fallback: 把 todos 里有 active aiSession 但 live store 还没收到的，按 todo.aiSession.status
+  // 也归并进来，避免首启 3s 内 running pill 计数为 0、点开 popover 看不到这条新会话。
+  for (const t of todos) {
+    const sid = t.aiSession?.sessionId
+    if (!sid || sessions.has(sid)) continue
+    const status = t.aiSession?.status
+    const unread = isSessionUnread(t.aiSession?.lastTurnDoneAt ?? null, lastSeenMap.get(sid))
+    const state = deriveAiState(status, unread)
+    const entry: SessionRowEntry = {
+      id: sid,
+      todoId: t.id,
+      title: t.title,
+      tool: t.aiSession?.tool ?? 'ai',
+    }
+    if (state === 'running') runningList.push(entry)
+    else if (state === 'idle' && !isClosedAiStatus(status)) idleList.push(entry)
+  }
 
   const pendingCount = unreadItems.length
 

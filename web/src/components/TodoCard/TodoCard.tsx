@@ -167,7 +167,10 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
             const liveTurnDoneAt = liveSession?.lastTurnDoneAt ?? null
             const turnDoneAt = liveTurnDoneAt || todo.aiSession.lastTurnDoneAt || null
             const unread = isSessionUnread(turnDoneAt, lastSeenMap.get(todo.aiSession.sessionId))
-            const state = deriveAiState(liveSession?.status, unread)
+            // 新启动的 session 在 live store poll 到之前（最多 3s），liveSession 还是
+            // undefined。直接落 idle 会让卡片闪一下"○ 空闲"。回退到后端落 DB 的 todo
+            // .aiSession.status —— 启动时已经写入 'running'。
+            const state = deriveAiState(liveSession?.status ?? todo.aiSession?.status, unread)
             return (
               <div className="todo-ai-status-row" onClick={(e) => e.stopPropagation()}>
                 <span className="todo-ai-tag">{todo.aiSession.tool}</span>

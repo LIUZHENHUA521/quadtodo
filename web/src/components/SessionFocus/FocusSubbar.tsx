@@ -1,5 +1,6 @@
 import { Tooltip } from 'antd'
 import type { SessionMeta } from '../../store/aiSessionStore'
+import type { AiStatus } from '../../api'
 import { deriveAiState, AI_STATE_PILL_LABEL } from '../../design/aiPresentationState'
 import { useUnreadStore, isSessionUnread } from '../../store/unreadStore'
 
@@ -7,10 +8,12 @@ interface Props {
   todoId: string
   sessionId: string | null
   session?: SessionMeta
+  /** live session 还没出现时用 todo.aiSession.status 兜底，避免首启动闪 idle */
+  fallbackStatus?: AiStatus
   onClose: () => void
 }
 
-export function FocusSubbar({ session, onClose }: Props) {
+export function FocusSubbar({ session, fallbackStatus, onClose }: Props) {
   const title = session?.todoTitle ?? '(untitled)'
   const tool = session?.tool ?? 'ai'
   const sessionShortId = session?.sessionId?.slice(0, 8) ?? '—'
@@ -20,7 +23,7 @@ export function FocusSubbar({ session, onClose }: Props) {
     session?.sessionId ? s.lastSeenAt.get(session.sessionId) : undefined,
   )
   const unread = isSessionUnread(session?.lastTurnDoneAt, lastSeen)
-  const state = deriveAiState(session?.status, unread)
+  const state = deriveAiState(session?.status ?? fallbackStatus, unread)
   const statusLabel = AI_STATE_PILL_LABEL[state]
 
   const quadColor =
