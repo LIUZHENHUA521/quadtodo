@@ -1,5 +1,7 @@
 import { Tooltip } from 'antd'
 import type { SessionMeta } from '../../store/aiSessionStore'
+import { deriveAiState, AI_STATE_PILL_LABEL } from '../../design/aiPresentationState'
+import { useUnreadStore, isSessionUnread } from '../../store/unreadStore'
 
 interface Props {
   todoId: string
@@ -11,19 +13,18 @@ interface Props {
 export function FocusSubbar({ session, onClose }: Props) {
   const title = session?.todoTitle ?? '(untitled)'
   const tool = session?.tool ?? 'ai'
-  const status = session?.status ?? 'idle'
   const sessionShortId = session?.sessionId?.slice(0, 8) ?? '—'
   const quadrant = session?.quadrant ?? 0
 
+  const lastSeen = useUnreadStore((s) =>
+    session?.sessionId ? s.lastSeenAt.get(session.sessionId) : undefined,
+  )
+  const unread = isSessionUnread(session?.lastTurnDoneAt, lastSeen)
+  const state = deriveAiState(session?.status, unread)
+  const statusLabel = AI_STATE_PILL_LABEL[state]
+
   const quadColor =
     quadrant >= 1 && quadrant <= 4 ? `var(--q${quadrant})` : 'var(--text-tertiary)'
-
-  const statusLabel =
-    status === 'running' ? '运行中' :
-    status === 'pending_confirm' ? '待确认' :
-    status === 'done' ? '完成' :
-    status === 'failed' ? '失败' :
-    status === 'stopped' ? '停止' : 'idle'
 
   return (
     <div className="focus-subbar">
