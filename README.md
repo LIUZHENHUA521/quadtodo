@@ -243,6 +243,7 @@ agentquad/
 - **`node-pty` 安装报错**：通常是 node-gyp 找不到 C++ 工具链。macOS 装 Xcode Command Line Tools (`xcode-select --install`)
 - **终端显示 `session_not_found`**：会话已超时（30 分钟已结束的会话会被清理），重新点"启动 AI 终端"
 - **Live 终端排版乱（横线 / 中文混排 / 状态栏对不齐）**：默认情况下，AgentQuad 给 PTY 子进程注入 `LANG=LC_CTYPE=en_US.UTF-8`，让 wcwidth 与 xterm.js (Unicode 11) 对齐。如果某些 TUI 你必须保留 CJK locale，设环境变量 `AGENTQUAD_KEEP_CJK_LOCALE=1` 重启 agentquad 即可还原原行为。
+- **Multi-agent Pipeline 功能已移除**：之前的 Pipeline（coder ↔ reviewer 循环）特性已下线。升级后下次启动会自动 DROP `pipeline_runs` / `pipeline_templates` 两张表。仓库根目录里如果有遗留的 `.quadtodo-worktrees/` 目录（worktree 临时目录），可手动 `rm -rf .quadtodo-worktrees/` 清理；`.gitignore` 里的 `.quadtodo-worktrees/` 行可保留也可删除（保留无副作用）。
 
 
 
