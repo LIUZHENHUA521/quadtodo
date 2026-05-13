@@ -7,9 +7,9 @@ import {
 } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import hljs from 'highlight.js'
 import './design/highlight.css'
 import { getTranscript, ResumeSessionInput, sendAiInput, startAiExec, stopAiExec, TranscriptResponse, TranscriptTurn } from './api'
+import { markdownComponents } from './markdownComponents'
 import './TranscriptView.css'
 import { deriveAiState, type AiPresentationState } from './design/aiPresentationState'
 import { useUnreadStore, isSessionUnread } from './store/unreadStore'
@@ -66,25 +66,6 @@ function highlightKeyword(text: string, keyword: string): React.ReactNode {
     i = idx + keyword.length
   }
   return parts
-}
-
-function CodeBlock({ inline, className, children }: any) {
-  const code = String(children).replace(/\n$/, '')
-  if (inline) return <code className="tv-inline-code">{children}</code>
-  const lang = /language-(\w+)/.exec(className || '')?.[1]
-  let html = ''
-  try {
-    html = lang && hljs.getLanguage(lang)
-      ? hljs.highlight(code, { language: lang, ignoreIllegals: true }).value
-      : hljs.highlightAuto(code).value
-  } catch {
-    html = code
-  }
-  return (
-    <pre className="tv-code-pre hljs">
-      <code dangerouslySetInnerHTML={{ __html: html }} />
-    </pre>
-  )
 }
 
 interface TurnItemProps {
@@ -167,7 +148,7 @@ const TurnItem = React.memo(function TurnItem({ turn, index, keyword, canFork, c
     }
     return (
       <div className="tv-md">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock as any }}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
           {turn.content}
         </ReactMarkdown>
       </div>

@@ -167,25 +167,6 @@
   background: var(--surface-2);
 }
 
-.tv-code-pre {
-  background: var(--surface-2);
-  padding: 10px 12px;
-  border-radius: 6px;
-  overflow-x: auto;
-  font-size: 12px;
-  line-height: 1.55;
-  margin: 6px 0;
-  border: 1px solid var(--border-default);
-}
-
-.tv-inline-code {
-  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
-  padding: 1px 5px;
-  border-radius: 4px;
-  font-size: 12.5px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
 .tv-tool-pre, .tv-raw-pre {
   background: var(--surface-2);
   border-radius: 6px;
