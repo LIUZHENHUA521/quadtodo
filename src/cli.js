@@ -48,6 +48,24 @@ function pidFile(rootDir = DEFAULT_ROOT_DIR) {
   return join(rootDir, 'agentquad.pid')
 }
 
+export function writePidFile(rootDir, { pid, port, host }) {
+  const payload = { pid, port, host, startedAt: new Date().toISOString() }
+  writeFileSync(pidFile(rootDir), JSON.stringify(payload))
+}
+
+export function readPidFile(rootDir) {
+  const pf = pidFile(rootDir)
+  if (!existsSync(pf)) return null
+  const raw = readFileSync(pf, 'utf8').trim()
+  try {
+    const obj = JSON.parse(raw)
+    if (obj && typeof obj.pid === 'number') return obj
+  } catch { /* legacy plain-number */ }
+  const n = Number(raw)
+  if (Number.isFinite(n) && n > 0) return { pid: n }
+  return null
+}
+
 function isAlive(pid) {
   try { process.kill(pid, 0); return true } catch { return false }
 }
@@ -374,14 +392,13 @@ export async function runStart(cmdOpts = {}) {
   }
 
   const pf = pidFile(rootDir)
-  if (existsSync(pf)) {
-    const oldPid = Number(readFileSync(pf, 'utf8'))
-    if (oldPid && isAlive(oldPid)) {
-      console.error(`AgentQuad already running (pid ${oldPid}). Run 'agentquad stop' first.`)
-      process.exit(1)
-    }
-    try { unlinkSync(pf) } catch { /* ignore */ }
+  const existing = readPidFile(rootDir)
+  if (existing && isAlive(existing.pid)) {
+    const where = existing.port ? `http://${existing.host || '127.0.0.1'}:${existing.port}` : '(unknown port)'
+    console.error(`AgentQuad already running (pid ${existing.pid}) at ${where}. Run 'agentquad stop' first.`)
+    process.exit(1)
   }
+  if (existing) { try { unlinkSync(pf) } catch { /* ignore */ } }
 
   const port = cmdOpts.port || cfg.port
   const { createServer } = await import('./server.js')
@@ -409,7 +426,7 @@ export async function runStart(cmdOpts = {}) {
     process.exit(1)
   }
 
-  writeFileSync(pf, String(process.pid))
+  writePidFile(rootDir, { pid: process.pid, port: actualPort, host })
   console.log(buildStartupBanner({ port: actualPort, host }))
   console.log(`AI terminal default cwd: ${defaultCwd}`)
 
@@ -488,8 +505,9 @@ program.command('start')
 program.command('stop')
   .action(async () => {
     const pf = pidFile()
-    if (!existsSync(pf)) { console.log('AgentQuad is not running (no pid file)'); return }
-    const pid = Number(readFileSync(pf, 'utf8'))
+    const info = readPidFile(DEFAULT_ROOT_DIR)
+    if (!info) { console.log('AgentQuad is not running (no pid file)'); return }
+    const pid = info.pid
     if (!pid || !isAlive(pid)) {
       console.log('stale pid file, removing')
       try { unlinkSync(pf) } catch { /* ignore */ }
@@ -512,15 +530,14 @@ program.command('stop')
 
 program.command('status')
   .action(async () => {
-    const pf = pidFile()
-    if (!existsSync(pf)) { console.log('not running'); return }
-    const pid = Number(readFileSync(pf, 'utf8'))
+    const info = readPidFile(DEFAULT_ROOT_DIR)
+    if (!info) { console.log('not running'); return }
+    const pid = info.pid
     if (!isAlive(pid)) {
       console.log(`stale pid file (${pid}), not running`)
       return
     }
-    const cfg = loadConfig()
-    const port = cfg.port
+    const port = info.port ?? loadConfig().port
     try {
       const r = await fetch(`http://127.0.0.1:${port}/api/status`)
       const body = await r.json()
