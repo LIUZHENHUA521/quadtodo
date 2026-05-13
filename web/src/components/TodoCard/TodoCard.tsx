@@ -7,12 +7,9 @@ import {
   PlayCircleOutlined,
   CopyOutlined,
   CodeOutlined,
-  DesktopOutlined,
   EditOutlined,
   DownOutlined,
   RightOutlined,
-  ExportOutlined,
-  SwapOutlined,
 } from '@ant-design/icons'
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -118,11 +115,8 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
           className="todo-card-head"
           onClick={(e) => {
             e.stopPropagation()
-            if (todo.aiSession?.sessionId) {
-              useDispatchStore.getState().openFocus(todo.id, todo.aiSession.sessionId)
-            } else {
-              onClick(todo)
-            }
+            // 点卡片只开 detail drawer。要进 Focus Mode 走 ⌘K → "Focus session"。
+            onClick(todo)
           }}
         >
           <input
@@ -209,9 +203,6 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
               <Button size="small" icon={<CodeOutlined />} className="todo-primary-action" />
             </Tooltip>
           </Dropdown>
-          <Tooltip title="启动终端">
-            <Button size="small" icon={<DesktopOutlined />} onClick={() => onOpenTerminal(todo)} className="todo-primary-action" />
-          </Tooltip>
           <Dropdown
             menu={{
               items: aiMenuItems,
@@ -226,29 +217,11 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
           >
             <Button size="small" icon={<PlayCircleOutlined />} className="todo-primary-action">AI 终端</Button>
           </Dropdown>
-          {todo.aiSession?.sessionId && (
-            <Tooltip title="Open in Focus Mode (full-screen)">
-              <Button
-                size="small"
-                icon={<SwapOutlined />}
-                className="todo-primary-action"
-                onClick={() => {
-                  const sid = todo.aiSession?.sessionId
-                  if (sid) {
-                    useDispatchStore.getState().openFocus(todo.id, sid)
-                  }
-                }}
-              />
-            </Tooltip>
-          )}
           {!isSubtodo && onCreateSubtodo && (
             <Tooltip title="添加子待办">
               <Button size="small" icon={<PlusOutlined />} onClick={() => onCreateSubtodo(todo)} className="todo-primary-action" />
             </Tooltip>
           )}
-          <Tooltip title="导出 Markdown / 推送到飞书">
-            <Button size="small" icon={<ExportOutlined />} onClick={() => onExport(todo)} className="todo-primary-action" />
-          </Tooltip>
           <Popconfirm title="确认删除？" onConfirm={() => onDelete(todo)}>
             <Button size="small" danger icon={<DeleteOutlined />} onClick={(e) => e.stopPropagation()} className="todo-danger-action" />
           </Popconfirm>
