@@ -90,7 +90,7 @@ export function CommandPalette() {
             <>
               <Command.Group heading="Quick actions">
                 <Command.Item onSelect={() => {
-                  useDispatchStore.getState().requestNewTodoOpen()
+                  useDispatchStore.getState().signal('newTodo')
                   closePalette()
                 }}>
                   <span className="cmdk-icon">+</span>
@@ -170,7 +170,7 @@ export function CommandPalette() {
                   <span className="cmdk-icon">📋</span>
                   <span>Insert from Template…</span>
                 </Command.Item>
-                <Command.Item onSelect={() => { useDispatchStore.getState().requestTelegramSyncOpen(); closePalette() }}>
+                <Command.Item onSelect={() => { useDispatchStore.getState().signal('telegramSync'); closePalette() }}>
                   <span className="cmdk-icon">📨</span>
                   <span>Telegram sync</span>
                 </Command.Item>

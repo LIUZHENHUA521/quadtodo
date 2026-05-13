@@ -351,10 +351,9 @@ export default function TodoManage() {
   // M2 T9: react to dispatchStore signals (jump-to-todo + request-new-todo from CommandPalette)
   const jumpToTodoId = useDispatchStore((s) => s.jumpToTodoId)
   const setJumpTo = useDispatchStore((s) => s.setJumpTo)
-  const requestNewTodo = useDispatchStore((s) => s.requestNewTodo)
-  const consumeRequestNewTodo = useDispatchStore((s) => s.consumeRequestNewTodo)
-  const requestRecover = useDispatchStore((s) => s.requestRecover)
-  const consumeRequestRecover = useDispatchStore((s) => s.consumeRequestRecover)
+  const newTodoSignal = useDispatchStore((s) => s.signals.newTodo === true)
+  const recoverSignal = useDispatchStore((s) => s.signals.recover === true)
+  const consumeSignal = useDispatchStore((s) => s.consumeSignal)
 
   useEffect(() => {
     if (!jumpToTodoId) return
@@ -368,17 +367,17 @@ export default function TodoManage() {
   }, [jumpToTodoId, setJumpTo])
 
   useEffect(() => {
-    if (!requestNewTodo) return
+    if (!newTodoSignal) return
     // Reuse the existing new-todo entry (local state at line ~738).
     setDrawerOpen(true)
-    consumeRequestNewTodo()
-  }, [requestNewTodo, consumeRequestNewTodo])
+    consumeSignal('newTodo')
+  }, [newTodoSignal, consumeSignal])
 
   useEffect(() => {
-    if (!requestRecover) return
+    if (!recoverSignal) return
     setTranscriptDrawerOpen(true)
-    consumeRequestRecover()
-  }, [requestRecover, consumeRequestRecover])
+    consumeSignal('recover')
+  }, [recoverSignal, consumeSignal])
 
   useEffect(() => {
     let cancelled = false
@@ -1061,7 +1060,7 @@ export default function TodoManage() {
           >菜单</Button>
         ) : null}
         {/* Mounted invisibly so the CommandPalette "Telegram sync" command can trigger
-            its preview/sync flow via dispatchStore.requestTelegramSync (M4-T4). */}
+            its preview/sync flow via dispatchStore.signal('telegramSync') (M4-T4). */}
         <div style={{ display: 'none' }}>
           <TelegramSyncButton />
         </div>

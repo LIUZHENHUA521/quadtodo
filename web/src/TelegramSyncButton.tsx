@@ -35,14 +35,14 @@ export default function TelegramSyncButton() {
   const [executing, setExecuting] = useState(false)
 
   // M4-T4: react to CommandPalette "Telegram sync" command via dispatchStore signal.
-  const requestSync = useDispatchStore((s) => s.requestTelegramSync)
-  const consumeRequestSync = useDispatchStore((s) => s.consumeRequestTelegramSync)
+  const telegramSyncSignal = useDispatchStore((s) => s.signals.telegramSync === true)
+  const consumeSignal = useDispatchStore((s) => s.consumeSignal)
   useEffect(() => {
-    if (!requestSync) return
+    if (!telegramSyncSignal) return
     void preview()
-    consumeRequestSync()
+    consumeSignal('telegramSync')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestSync, consumeRequestSync])
+  }, [telegramSyncSignal, consumeSignal])
 
   async function preview() {
     setLoading(true)

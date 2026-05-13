@@ -117,7 +117,7 @@ export function TopbarDispatch() {
       <Tooltip title="历史会话找回">
         <button
           className="topbar-icon-btn"
-          onClick={() => useDispatchStore.getState().requestRecoverOpen()}
+          onClick={() => useDispatchStore.getState().signal('recover')}
           aria-label="Recover session"
           data-testid="topbar-recover-btn"
         >

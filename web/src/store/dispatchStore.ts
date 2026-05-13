@@ -34,24 +34,21 @@ interface DispatchState {
 
   /** When set, TodoManage should scroll/focus this todo and clear the field */
   jumpToTodoId: string | null
-  /** When true, TodoManage should open its new-todo drawer and clear the flag */
-  requestNewTodo: boolean
-  /** When true, TodoManage should open its transcript-recover drawer */
-  requestRecover: boolean
-  requestRecoverOpen: () => void
-  consumeRequestRecover: () => void
 
-  /** When true, the mounted TelegramSyncButton should fire its preview/sync flow (M4-T4). */
-  requestTelegramSync: boolean
-  requestTelegramSyncOpen: () => void
-  consumeRequestTelegramSync: () => void
+  /** Generic signal flags (key → has-pending-intent). Use signal()/consumeSignal(). */
+  signals: Record<string, boolean>
+  /** Set a signal flag to true (e.g. signal('newTodo'), signal('recover'), signal('telegramSync')).
+   *  Also closes the command palette (matches existing semantics). */
+  signal: (key: string) => void
+  /** Read AND clear a signal in one call. Returns true if it was set. */
+  consumeSignal: (key: string) => boolean
+  /** Read without consuming. Use in selectors with caution (won't trigger re-render predictably). */
+  hasSignal: (key: string) => boolean
 
   setJumpTo: (id: string | null) => void
-  requestNewTodoOpen: () => void
-  consumeRequestNewTodo: () => void
 }
 
-export const useDispatchStore = create<DispatchState>((set) => ({
+export const useDispatchStore = create<DispatchState>((set, get) => ({
   settings: false,
   stats: false,
   wiki: false,
@@ -75,16 +72,19 @@ export const useDispatchStore = create<DispatchState>((set) => ({
   },
 
   jumpToTodoId: null,
-  requestNewTodo: false,
-  requestRecover: false,
-  requestRecoverOpen: () => set(() => ({ requestRecover: true, palette: false })),
-  consumeRequestRecover: () => set(() => ({ requestRecover: false })),
 
-  requestTelegramSync: false,
-  requestTelegramSyncOpen: () => set(() => ({ requestTelegramSync: true, palette: false })),
-  consumeRequestTelegramSync: () => set(() => ({ requestTelegramSync: false })),
+  signals: {},
+  signal: (key) => set((s) => ({ signals: { ...s.signals, [key]: true }, palette: false })),
+  consumeSignal: (key) => {
+    const has = get().signals[key] === true
+    if (has) set((s) => {
+      const next = { ...s.signals }
+      delete next[key]
+      return { signals: next }
+    })
+    return has
+  },
+  hasSignal: (key) => get().signals[key] === true,
 
   setJumpTo: (id) => set(() => ({ jumpToTodoId: id })),
-  requestNewTodoOpen: () => set(() => ({ requestNewTodo: true })),
-  consumeRequestNewTodo: () => set(() => ({ requestNewTodo: false })),
 }))
