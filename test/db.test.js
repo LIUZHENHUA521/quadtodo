@@ -269,6 +269,41 @@ describe('db', () => {
       expect(out[0]).toHaveProperty('started_at')
     })
   })
+
+  it('createTodo defaults stageTag to null', () => {
+    const t = db.createTodo({ title: 'A', quadrant: 1 })
+    expect(t.stageTag).toBeNull()
+  })
+
+  it('updateTodo sets a valid stageTag', () => {
+    const t = db.createTodo({ title: 'A', quadrant: 1 })
+    const updated = db.updateTodo(t.id, { stageTag: 'dev' })
+    expect(updated.stageTag).toBe('dev')
+  })
+
+  it('updateTodo can clear stageTag back to null', () => {
+    const t = db.createTodo({ title: 'A', quadrant: 1 })
+    db.updateTodo(t.id, { stageTag: 'release' })
+    const cleared = db.updateTodo(t.id, { stageTag: null })
+    expect(cleared.stageTag).toBeNull()
+  })
+
+  it('listTodos returns stageTag for each row', () => {
+    const a = db.createTodo({ title: 'A', quadrant: 1 })
+    db.updateTodo(a.id, { stageTag: 'test' })
+    db.createTodo({ title: 'B', quadrant: 1 })
+    const list = db.listTodos({})
+    const byTitle = Object.fromEntries(list.map(t => [t.title, t.stageTag]))
+    expect(byTitle.A).toBe('test')
+    expect(byTitle.B).toBeNull()
+  })
+
+  it('stageTag is independent of status (does not change on done toggle)', () => {
+    const t = db.createTodo({ title: 'A', quadrant: 1 })
+    db.updateTodo(t.id, { stageTag: 'release' })
+    db.updateTodo(t.id, { status: 'done' })
+    expect(db.getTodo(t.id).stageTag).toBe('release')
+  })
 })
 
 describe('transcript_files usage columns', () => {

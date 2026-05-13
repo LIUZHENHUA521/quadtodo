@@ -407,6 +407,79 @@ body {
   color: var(--ai-running);
 }
 
+/* ─── stage tag chip (待开发 / 待评审 / 待测试 / 待发布 / 阻塞中) ─── */
+
+.stage-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  transition: filter 0.15s ease;
+}
+
+.stage-tag-chip:hover {
+  filter: brightness(1.05);
+}
+
+.stage-tag-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.stage-tag-chip--empty {
+  background: transparent;
+  border: 1px dashed var(--border-default);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.stage-tag-dev {
+  background: color-mix(in srgb, #2f80ed 20%, var(--surface-1));
+  color: #2f80ed;
+  border-color: color-mix(in srgb, #2f80ed 35%, transparent);
+}
+
+.stage-tag-review {
+  background: color-mix(in srgb, #9b51e0 20%, var(--surface-1));
+  color: #9b51e0;
+  border-color: color-mix(in srgb, #9b51e0 35%, transparent);
+}
+
+.stage-tag-test {
+  background: color-mix(in srgb, #f2994a 22%, var(--surface-1));
+  color: #f2994a;
+  border-color: color-mix(in srgb, #f2994a 35%, transparent);
+}
+
+.stage-tag-release {
+  background: color-mix(in srgb, #27ae60 22%, var(--surface-1));
+  color: #27ae60;
+  border-color: color-mix(in srgb, #27ae60 35%, transparent);
+}
+
+.stage-tag-blocked {
+  background: color-mix(in srgb, #eb5757 22%, var(--surface-1));
+  color: #eb5757;
+  border-color: color-mix(in srgb, #eb5757 35%, transparent);
+}
+
+/* keep detail-panel chip alignment consistent with other meta chips */
+.todo-detail-chip--stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .todo-meta-pill {
   display: inline-flex;
   align-items: center;

@@ -5,6 +5,8 @@ import { summarizeTurns } from '../summarize.js'
 import { buildTodoExport, renderTodoMarkdown } from '../export/todoMarkdown.js'
 import { SUPPORTED_TOOLS } from '../config.js'
 
+const ALLOWED_STAGE_TAGS = ['dev', 'review', 'test', 'release', 'blocked']
+
 export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSession, getPty }) {
   const router = Router()
 
@@ -68,6 +70,12 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
         return
       }
       const patch = req.body || {}
+      if (patch.stageTag !== undefined) {
+        if (patch.stageTag !== null && !ALLOWED_STAGE_TAGS.includes(patch.stageTag)) {
+          res.status(400).json({ ok: false, error: 'invalid_stage_tag' })
+          return
+        }
+      }
       if (patch.parentId !== undefined) {
         if (existing.parentId && patch.parentId !== existing.parentId) {
           res.status(400).json({ ok: false, error: 'reparent_not_allowed' })

@@ -171,6 +171,7 @@ function rowToTodo(row) {
     recurringRuleId: row.recurring_rule_id ?? null,
     instanceDate: row.instance_date ?? null,
     completedAt: row.completed_at ?? null,
+    stageTag: row.stage_tag ?? null,
     archivedAt: row.archived_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -288,6 +289,9 @@ export function openDb(file = ':memory:') {
   if (!columns.some(col => col.name === 'archived_at')) {
     db.exec(`ALTER TABLE todos ADD COLUMN archived_at INTEGER`)
   }
+  if (!columns.some(col => col.name === 'stage_tag')) {
+    db.exec(`ALTER TABLE todos ADD COLUMN stage_tag TEXT`)
+  }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_recurring ON todos(recurring_rule_id, instance_date)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_parent_sort ON todos(parent_id, sort_order)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_quad_parent_sort ON todos(quadrant, parent_id, sort_order)`)
@@ -385,6 +389,7 @@ export function openDb(file = ':memory:') {
       workDir: 'work_dir',
       brainstorm: 'brainstorm',
       sortOrder: 'sort_order',
+      stageTag: 'stage_tag',
     }
 
     let nextParentId = existing.parentId

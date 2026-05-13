@@ -261,4 +261,36 @@ describe('routes/todos', () => {
       expect(res.body.todo.status).toBe('done')
     })
   })
+
+  it('PUT /api/todos/:id accepts a valid stageTag', async () => {
+    const { body: c } = await request(app).post('/api/todos').send({ title: 'A', quadrant: 1 })
+    const res = await request(app).put(`/api/todos/${c.todo.id}`).send({ stageTag: 'dev' })
+    expect(res.status).toBe(200)
+    expect(res.body.todo.stageTag).toBe('dev')
+  })
+
+  it('PUT /api/todos/:id accepts null stageTag (clear)', async () => {
+    const { body: c } = await request(app).post('/api/todos').send({ title: 'A', quadrant: 1 })
+    await request(app).put(`/api/todos/${c.todo.id}`).send({ stageTag: 'release' })
+    const res = await request(app).put(`/api/todos/${c.todo.id}`).send({ stageTag: null })
+    expect(res.status).toBe(200)
+    expect(res.body.todo.stageTag).toBeNull()
+  })
+
+  it('PUT /api/todos/:id rejects an invalid stageTag', async () => {
+    const { body: c } = await request(app).post('/api/todos').send({ title: 'A', quadrant: 1 })
+    const res = await request(app).put(`/api/todos/${c.todo.id}`).send({ stageTag: 'shipped' })
+    expect(res.status).toBe(400)
+    expect(res.body.ok).toBe(false)
+    expect(res.body.error).toBe('invalid_stage_tag')
+  })
+
+  it('GET /api/todos returns stageTag in the list', async () => {
+    const { body: c } = await request(app).post('/api/todos').send({ title: 'A', quadrant: 1 })
+    await request(app).put(`/api/todos/${c.todo.id}`).send({ stageTag: 'test' })
+    const res = await request(app).get('/api/todos')
+    expect(res.status).toBe(200)
+    const tagged = res.body.list.find(t => t.id === c.todo.id)
+    expect(tagged.stageTag).toBe('test')
+  })
 })

@@ -3,6 +3,7 @@ const BASE = ''
 
 export type Quadrant = 1 | 2 | 3 | 4
 export type TodoStatus = 'todo' | 'ai_running' | 'ai_pending' | 'ai_done' | 'done' | 'missed'
+export type StageTag = 'dev' | 'review' | 'test' | 'release' | 'blocked'
 export type RecurringFrequency = 'daily' | 'weekly' | 'monthly'
 export type AiTool = 'claude' | 'codex' | 'cursor'
 export type AiStatus = 'running' | 'done' | 'failed' | 'stopped' | 'pending_confirm'
@@ -45,6 +46,7 @@ export interface Todo {
   recurringRuleId: string | null
   instanceDate: string | null
   completedAt: number | null
+  stageTag: StageTag | null
   createdAt: number
   updatedAt: number
 }
