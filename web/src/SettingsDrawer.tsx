@@ -1177,13 +1177,15 @@ export default function SettingsDrawer({ open, onClose }: Props) {
 
       <Form form={form} layout="vertical">
         <Tabs
+          tabPosition="left"
+          tabBarStyle={{ width: 132 }}
           activeKey={activeTab}
           onChange={(k) => setActiveTab(k as typeof activeTab)}
           items={[
-            { key: 'run', label: '运行', children: runTab },
+            { key: 'run', label: '通用', children: runTab },
             { key: 'tools', label: 'AI 工具', children: toolsTab },
             { key: 'telegram', label: 'Telegram', children: telegramTab },
-            { key: 'lark', label: 'Lark / 飞书', children: larkTab },
+            { key: 'lark', label: '飞书', children: larkTab },
             { key: 'pricing', label: '价目表', children: pricingTab },
           ]}
         />
