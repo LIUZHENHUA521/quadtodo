@@ -495,6 +495,23 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     return () => { ro.disconnect(); mo.disconnect() }
   }, [])
 
+  // 显式的"内容变就粘底"双保险：当 displayedTurns 或 liveOutput 变化触发 React 重渲染时，
+  // RO/MO 在某些场景会错过（比如 liveOutput 改变只让 .tv-raw-pre 内容变长但 max-height: 360px
+  // 截断后外层 .tv-turn 不再变高 → RO 不再触发；或 React 把多次 setData 合并为一次 commit
+  // 时 MO 只看到一次 childList 变化但 stickToBottom 在 layout 完成前读到 stale scrollHeight）。
+  // 用 rAF 等到 layout 完成后再 scroll，幂等无副作用。
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (!isAtBottomRef.current) return
+    const id = requestAnimationFrame(() => {
+      const node = scrollRef.current
+      if (!node) return
+      if (isAtBottomRef.current) node.scrollTop = node.scrollHeight
+    })
+    return () => cancelAnimationFrame(id)
+  }, [displayedTurns, liveOutput])
+
   // 未读计数：仅在 turn 数增加且用户不在底部时累加；首次 snapshot 不计
   const prevCountRef = useRef(0)
   useEffect(() => {
