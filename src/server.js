@@ -65,6 +65,31 @@ function loadVersion() {
 	}
 }
 
+export async function listenWithRetry(server, port, host, { maxAttempts = 2 } = {}) {
+	for (let i = 0; i < maxAttempts; i++) {
+		const tryPort = port + i
+		try {
+			await new Promise((resolve, reject) => {
+				const onError = (err) => {
+					server.off('listening', onListening)
+					reject(err)
+				}
+				const onListening = () => {
+					server.off('error', onError)
+					resolve()
+				}
+				server.once('error', onError)
+				server.once('listening', onListening)
+				server.listen(tryPort, host)
+			})
+			return server.address().port
+		} catch (err) {
+			if (err.code !== 'EADDRINUSE' || i === maxAttempts - 1) throw err
+			console.warn(`port ${tryPort} in use, retrying ${tryPort + 1}...`)
+		}
+	}
+}
+
 function pickDirectoryNative({ defaultPath, prompt = "选择目录" } = {}) {
 	if (process.platform !== "darwin") {
 		const error = new Error("directory_picker_unsupported");
@@ -1680,13 +1705,7 @@ export function createServer(opts = {}) {
 	}
 
 	function listen(port, host = "127.0.0.1") {
-		return new Promise((resolve, reject) => {
-			httpServer.once("error", reject);
-			httpServer.listen(port, host, () => {
-				httpServer.removeListener("error", reject);
-				resolve(httpServer.address());
-			});
-		});
+		return listenWithRetry(httpServer, port, host, { maxAttempts: 2 })
 	}
 
 	async function close() {

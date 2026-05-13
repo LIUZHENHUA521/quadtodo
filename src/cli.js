@@ -395,8 +395,9 @@ export async function runStart(cmdOpts = {}) {
     strictWebDist: true,
   })
 
+  let actualPort
   try {
-    await srv.listen(port, host)
+    actualPort = await srv.listen(port, host)
   } catch (e) {
     if (e.code === 'EADDRINUSE') {
       console.error(`port ${port} in use — run 'agentquad config set port <newPort>' or stop whoever holds it`)
@@ -409,7 +410,7 @@ export async function runStart(cmdOpts = {}) {
   }
 
   writeFileSync(pf, String(process.pid))
-  console.log(buildStartupBanner({ port, host }))
+  console.log(buildStartupBanner({ port: actualPort, host }))
   console.log(`AI terminal default cwd: ${defaultCwd}`)
 
   // ─── 自动 bootstrap Claude Code hook（部署 notify.js + 合入 settings.json）───
@@ -452,7 +453,7 @@ export async function runStart(cmdOpts = {}) {
     try {
       const { default: open } = await import('open')
       // 浏览器自动打开仍走 127.0.0.1（避免 0.0.0.0 在浏览器里非法）
-      open(`http://127.0.0.1:${port}`)
+      open(`http://127.0.0.1:${actualPort}`)
     } catch (e) {
       console.warn(`could not auto-open browser: ${e.message}`)
     }

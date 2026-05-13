@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Button, Tooltip, Dropdown, Popconfirm, Tag, Input } from 'antd'
-import { Plus, Trash2, Clock, Play, Copy, Code, Pencil, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Clock, Play, Copy, Code, Pencil, ChevronDown, ChevronRight, CornerDownLeft } from 'lucide-react'
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import dayjs from 'dayjs'
+import { useTranslation } from 'react-i18next'
 import { updateTodo, type Todo, type AiTool, type StageTag } from '../../api'
 import { StageTagChip } from '../StageTagChip'
 import { useAppMessages } from '../../design/useAppMessages'
@@ -63,6 +64,7 @@ const TERMINAL_AI_STATUSES = new Set<string>(['done', 'failed', 'stopped'])
 
 export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo = false, onCreateSubtodo, onClick, onToggleDone, onAiExec, onDeleteAiSession, onUpdateSessionLabel, onDelete, onOpenTrae, onOpenTerminal, onOpenNativeResume, onCopyPrompt, onExport, isNarrow, onRequestFork, onRefresh, highlightTodoId }: SortableTodoCardProps) {
   const { message } = useAppMessages()
+  const { t } = useTranslation(['todo', 'errors'])
   const [editingLabelSessionId, setEditingLabelSessionId] = useState<string | null>(null)
   const [editingLabelText, setEditingLabelText] = useState('')
   const [childrenExpanded, setChildrenExpanded] = useState(true)
@@ -81,9 +83,9 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
   const liveSessionsMap = useAiSessionStore(s => s.sessions)
 
   const aiMenuItems = [
-    { key: 'start:claude', label: '▶ 启动 Claude' },
-    { key: 'start:codex', label: '▶ 启动 Codex' },
-    { key: 'start:cursor', label: '▶ 启动 Cursor' },
+    { key: 'start:claude', label: t('todo:card.startClaude') },
+    { key: 'start:codex', label: t('todo:card.startCodex') },
+    { key: 'start:cursor', label: t('todo:card.startCursor') },
   ]
 
   const handleStageTagChange = async (next: StageTag | null) => {
@@ -91,7 +93,7 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
       await updateTodo(todo.id, { stageTag: next })
       onRefresh()
     } catch (e: any) {
-      message.error(e?.message || '阶段标签更新失败')
+      message.error(e?.message || t('errors:stageTagUpdateFailed'))
     }
   }
 
@@ -133,12 +135,12 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
           <div className="todo-card-meta">
             {todo.brainstorm && (
               <span className="todo-meta-pill" style={{ background: 'color-mix(in srgb, var(--ai-pending-confirm) 12%, var(--surface-1))', color: 'var(--ai-pending-confirm)', border: '1px solid color-mix(in srgb, var(--ai-pending-confirm) 40%, var(--surface-1))' }}>
-                脑爆
+                {t('todo:card.brainstorm')}
               </span>
             )}
             {todo.workDir && (
               <span className="todo-meta-pill" title={todo.workDir}>
-                目录 · {todo.workDir.split('/').filter(Boolean).slice(-1)[0] || todo.workDir}
+                {t('todo:card.workDirLabel', { name: todo.workDir.split('/').filter(Boolean).slice(-1)[0] || todo.workDir })}
               </span>
             )}
             {todo.dueDate && (
@@ -149,13 +151,13 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
             )}
             {hasHistory && (
               <span className="todo-meta-pill">
-                会话 {historySessions.length}
+                {t('todo:card.sessionCount', { count: historySessions.length })}
               </span>
             )}
           </div>
 
           <div className="todo-card-toolbar" onClick={(e) => e.stopPropagation()}>
-          <Tooltip title="复制标题和描述">
+          <Tooltip title={t('todo:card.copyTooltip')}>
             <Button size="small" icon={<Copy size={13} />} onClick={() => onCopyPrompt(todo)} className="todo-primary-action" />
           </Tooltip>
           <Dropdown
@@ -169,7 +171,7 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
             }}
             trigger={['click']}
           >
-            <Tooltip title="选择编辑器打开">
+            <Tooltip title={t('todo:card.openEditorTooltip')}>
               <Button size="small" icon={<Code size={13} />} className="todo-primary-action" />
             </Tooltip>
           </Dropdown>
@@ -185,14 +187,14 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
             }}
             trigger={['click']}
           >
-            <Button size="small" icon={<Play size={13} />} className="todo-primary-action">AI 终端</Button>
+            <Button size="small" icon={<Play size={13} />} className="todo-primary-action">{t('todo:card.aiTerminal')}</Button>
           </Dropdown>
           {!isSubtodo && onCreateSubtodo && (
-            <Tooltip title="添加子待办">
+            <Tooltip title={t('todo:card.addSubtodo')}>
               <Button size="small" icon={<Plus size={13} />} onClick={() => onCreateSubtodo(todo)} className="todo-primary-action" />
             </Tooltip>
           )}
-          <Popconfirm title="确认删除？" onConfirm={() => onDelete(todo)}>
+          <Popconfirm title={t('todo:card.deleteConfirm')} onConfirm={() => onDelete(todo)}>
             <Button size="small" danger icon={<Trash2 size={13} />} onClick={(e) => e.stopPropagation()} className="todo-danger-action" />
           </Popconfirm>
           </div>
@@ -200,7 +202,7 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
 
         {hasHistory && (
           <div className="todo-history-box" onClick={(e) => e.stopPropagation()}>
-            <div className="todo-history-title">历史会话 ({historySessions.length})</div>
+            <div className="todo-history-title">{t('todo:card.historyTitle', { count: historySessions.length })}</div>
             <div className="todo-history-list">
               {historySessions.map((session) => {
                 const nativeSessionId = session.nativeSessionId || ''
@@ -213,8 +215,9 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                 // 历史条目内的 AI 三态徽标（running / pending / idle，详见
                 // docs/superpowers/specs/2026-05-13-ai-state-3-state-strict-design.md）。
                 // idle（已结束 / 沉默中）不渲染徽标，避免给所有终态会话堆视觉噪音。
+                // 优先吃 effectiveStatus：后端兜底"PTY 还在喷但 hook/watcher 误判 idle"的边界。
                 const sessionState = deriveAiState(
-                  liveSession?.status ?? session.status,
+                  liveSession?.effectiveStatus ?? liveSession?.status ?? session.status,
                   sessionUnread,
                   liveSession?.awaitingReply ?? false,
                 )
@@ -244,7 +247,7 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                               onUpdateSessionLabel(todo, session, editingLabelText)
                               setEditingLabelSessionId(null)
                             }}
-                            placeholder="输入会话标题..."
+                            placeholder={t('todo:card.sessionLabelPlaceholder')}
                             autoFocus
                             style={{ flex: 1, fontSize: 11 }}
                           />
@@ -264,7 +267,7 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                               setEditingLabelSessionId(session.sessionId)
                               setEditingLabelText(session.label || '')
                             }}
-                            title="编辑标题"
+                            title={t('todo:card.editLabelTooltip')}
                             style={{ flexShrink: 0 }}
                           >
                             <Pencil size={10} />
@@ -277,24 +280,26 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                         {sessionState !== 'idle' && (
                           <span className={`todo-ai-state todo-ai-state-${sessionState}`}>{AI_STATE_ICON[sessionState]()}{' '}{AI_STATE_LABEL[sessionState]}</span>
                         )}
+                        {session.localResume?.openedAt && (
+                          <span
+                            className="todo-history-resumed"
+                            title={t('todo:card.localResumedTooltip', { time: dayjs(session.localResume.openedAt).format('YYYY-MM-DD HH:mm') })}
+                          >
+                            <CornerDownLeft size={10} />
+                            {t('todo:card.localResumedShort', { time: dayjs(session.localResume.openedAt).format('HH:mm') })}
+                          </span>
+                        )}
                         {!nativeSessionId && TERMINAL_AI_STATUSES.has(String(session.status)) && (
-                          <Tooltip title="该会话未正常结束，没有拿到原生 session ID，无法 resume/fork。请在 AI 完成后在终端里按 Ctrl+D 或 /exit 正常退出。">
-                            <Tag color="warning" style={{ marginLeft: 6 }}>未正常结束</Tag>
+                          <Tooltip title={t('todo:card.sessionNotFinishedTooltip')}>
+                            <Tag color="warning" style={{ marginLeft: 6 }}>{t('todo:card.sessionNotFinished')}</Tag>
                           </Tooltip>
                         )}
                         {nativeSessionId && !sessionCwd && (
-                          <Tooltip title="找不到此会话的原始 cwd，命令必须在创建该会话时所处的项目目录下执行，否则会报 'No conversation found'。">
-                            <Tag color="warning" style={{ marginLeft: 6 }}>缺少 cwd</Tag>
+                          <Tooltip title={t('todo:card.missingCwdTooltip')}>
+                            <Tag color="warning" style={{ marginLeft: 6 }}>{t('todo:card.missingCwd')}</Tag>
                           </Tooltip>
                         )}
                       </div>
-                      {session.localResume?.openedAt && (
-                        <div style={{ marginTop: 4 }}>
-                          <Tag color="blue" style={{ marginInlineEnd: 0 }}>
-                            已本地继续 · {dayjs(session.localResume.openedAt).format('HH:mm')}
-                          </Tag>
-                        </div>
-                      )}
                     </div>
                     {nativeSessionId && (
                       <div className="todo-history-actions">
@@ -305,9 +310,9 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                             e.stopPropagation()
                             onOpenNativeResume(todo, session)
                           }}
-                          title="在本地 Terminal 中 resume 当前 AI 会话"
+                          title={t('todo:card.localResumeTooltip')}
                         >
-                          本地继续
+                          {t('todo:card.localResume')}
                         </button>
                       </div>
                     )}
@@ -326,7 +331,7 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
               onClick={() => setChildrenExpanded(v => !v)}
             >
               {childrenExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-              <span>子待办 {children.length}</span>
+              <span>{t('todo:card.subtodoCount', { count: children.length })}</span>
             </button>
             {showChildren && (
               <SortableContext items={children.map(child => todoDndId(child))} strategy={verticalListSortingStrategy}>

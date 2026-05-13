@@ -3,6 +3,7 @@ import {
   Button, Space, Tag, Drawer, Form, Input, DatePicker, Empty, Image,
   Radio, Popconfirm, Spin, Tooltip, Select, Switch, Segmented, Modal,
 } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { useAppMessages } from './design/useAppMessages'
 import {
   PlusOutlined,
@@ -109,8 +110,10 @@ export function parseDescription(text: string | null | undefined): DescSegment[]
   )
 }
 
-export function formatDueDate(ts: number | null | undefined): { label: string; overdue: boolean } {
-  if (!ts) return { label: '无', overdue: false }
+export function formatDueDate(ts: number | null | undefined): { label: string | null; overdue: boolean } {
+  // Returns `label: null` when the todo has no due date; callers translate the
+  // empty placeholder via t('todo:detail.dueEmpty') so the helper stays UI-free.
+  if (!ts) return { label: null, overdue: false }
   return { label: dayjs(ts).format('MM-DD HH:mm'), overdue: ts < Date.now() }
 }
 
@@ -126,12 +129,14 @@ function buildTodoPrompt(todo: Todo, templates: PromptTemplate[] = []) {
   return templatePrefix ? `${templatePrefix}\n\n---\n\n${base}` : base
 }
 
-export function currentStatusLabel(status: Todo['status']) {
-  if (status === 'ai_running') return { text: '运行中', className: 'status-chip-running' }
-  if (status === 'ai_pending') return { text: '待交互', className: 'status-chip-pending' }
-  if (status === 'ai_done') return { text: '待验收', className: 'status-chip-done' }
-  if (status === 'done') return { text: '已完成', className: 'status-chip-complete' }
-  return { text: '待办', className: 'status-chip-idle' }
+export type StatusChipKey = 'running' | 'pendingInteract' | 'pendingAccept' | 'done' | 'todo'
+
+export function currentStatusLabel(status: Todo['status']): { key: StatusChipKey; className: string } {
+  if (status === 'ai_running') return { key: 'running', className: 'status-chip-running' }
+  if (status === 'ai_pending') return { key: 'pendingInteract', className: 'status-chip-pending' }
+  if (status === 'ai_done') return { key: 'pendingAccept', className: 'status-chip-done' }
+  if (status === 'done') return { key: 'done', className: 'status-chip-complete' }
+  return { key: 'todo', className: 'status-chip-idle' }
 }
 
 export function todoDndId(todo: Todo) {
@@ -150,6 +155,7 @@ function parseTodoDndId(id: string) {
 
 export default function TodoManage() {
   const { message, modal } = useAppMessages()
+  const { t } = useTranslation(['todo', 'errors', 'common'])
   // 数据
   const [todos, setTodos] = useState<Todo[]>([])
   const [welcomeDismissed, setWelcomeDismissed] = useWelcomeDismissed()
@@ -212,11 +218,11 @@ export default function TodoManage() {
           } catch {}
         })
       }
-      message.success(`已 attach: ${path.split('/').pop()}`)
+      message.success(t('todo:message.attachUploaded', { name: path.split('/').pop() }))
     } catch (err) {
-      message.error(`上传失败: ${(err as Error).message}`)
+      message.error(t('errors:uploadFailed', { msg: (err as Error).message }))
     }
-  }, [form])
+  }, [form, t])
 
   // 详情
   const [detailTodo, setDetailTodo] = useState<Todo | null>(null)
@@ -265,8 +271,8 @@ export default function TodoManage() {
   // WorkDir picker subsystem (extracted to dedicated hook in M4 cleanup).
   // Note: depends on `form` + `drawerOpen`, both declared earlier in this component.
   const onWorkDirLoadError = useCallback((e: unknown) => {
-    message.error((e as any)?.message || '读取目录失败')
-  }, [message])
+    message.error((e as any)?.message || t('errors:readDirFailed'))
+  }, [message, t])
   const {
     workDirOptions,
     workDirRoot,
@@ -491,10 +497,10 @@ export default function TodoManage() {
       setTodos(list)
       setLastFetchedFilter(filterStatus)
     } catch (e: any) {
-      message.error(e?.message || '网络错误')
+      message.error(e?.message || t('errors:network'))
     }
     setLoading(false)
-  }, [filterStatus, keyword])
+  }, [filterStatus, keyword, t])
 
   const childrenByParentId = useMemo(() => {
     const groups: Record<string, Todo[]> = {}
@@ -586,9 +592,9 @@ export default function TodoManage() {
     try {
       await pickWorkDir()
     } catch (e: any) {
-      message.error(e?.message || '选择目录失败')
+      message.error(e?.message || t('errors:pickDirFailed'))
     }
-  }, [pickWorkDir, message])
+  }, [pickWorkDir, message, t])
 
   const handleSave = async () => {
     try {
@@ -606,7 +612,7 @@ export default function TodoManage() {
 
       if (editingTodo) {
         await updateTodo(editingTodo.id, { ...data, parentId: editingTodo.parentId })
-        message.success('已更新')
+        message.success(t('todo:message.updated'))
         setDrawerOpen(false)
         setEditingTodo(null)
         setParentForCreate(null)
@@ -614,11 +620,11 @@ export default function TodoManage() {
       } else if (values.recurring && !parentForCreate) {
         const frequency = values.recurringFrequency as RecurringFrequency
         if (frequency === 'weekly' && !(values.recurringWeekdays || []).length) {
-          message.error('请至少选择一个星期几')
+          message.error(t('errors:needWeekday'))
           return
         }
         if (frequency === 'monthly' && !(values.recurringMonthDays || []).length) {
-          message.error('请至少选择一个月内日期')
+          message.error(t('errors:needMonthDay'))
           return
         }
         await createRecurringRule({
@@ -633,14 +639,14 @@ export default function TodoManage() {
           monthDays: frequency === 'monthly' ? values.recurringMonthDays : undefined,
           subtodos: [],
         })
-        message.success('已创建每日待办规则')
+        message.success(t('todo:message.ruleCreated'))
         setDrawerOpen(false)
         setEditingTodo(null)
         setParentForCreate(null)
         fetchTodos()
       } else {
         await createTodo(data)
-        message.success(parentForCreate ? '子待办已创建' : '已创建')
+        message.success(parentForCreate ? t('todo:message.subtodoCreated') : t('todo:message.created'))
         setDrawerOpen(false)
         setEditingTodo(null)
         setParentForCreate(null)
@@ -661,15 +667,15 @@ export default function TodoManage() {
         await updateTodo(todo.id, { status: newStatus })
         fetchTodos()
       } catch (e: any) {
-        message.error(e?.message || '操作失败')
+        message.error(e?.message || t('errors:opFailed'))
       }
     }
     if (liveCount > 0) {
       modal.confirm({
-        title: '该任务还有 AI 会话在运行',
-        content: `共有 ${liveCount} 个 Claude/Codex 终端正在运行。标记完成会同时关闭它们。确定继续？`,
-        okText: '确定，完成并关闭',
-        cancelText: '取消',
+        title: t('todo:confirm.runningTitle'),
+        content: t('todo:confirm.runningContent', { count: liveCount }),
+        okText: t('todo:confirm.runningOk'),
+        cancelText: t('common:cancel'),
         onOk: doUpdate,
       })
       return
@@ -680,10 +686,10 @@ export default function TodoManage() {
   const handleDelete = async (todo: Todo) => {
     try {
       await deleteTodo(todo.id)
-      message.success('已删除')
+      message.success(t('todo:message.deleted'))
       fetchTodos()
     } catch (e: any) {
-      message.error(e?.message || '删除失败')
+      message.error(e?.message || t('errors:deleteFailed'))
     }
   }
 
@@ -692,14 +698,14 @@ export default function TodoManage() {
       await updateSessionLabel(todo.id, session.sessionId, label)
       fetchTodos()
     } catch (e: any) {
-      message.error(e?.message || '更新标题失败')
+      message.error(e?.message || t('errors:updateTitleFailed'))
     }
-  }, [fetchTodos])
+  }, [fetchTodos, t])
 
   const handleDeleteAiSession = useCallback(async (todo: Todo, session: Todo['aiSessions'][number], currentSessionId?: string | null) => {
     try {
       const nextTodo = await deleteTodoAiSession(todo.id, session.sessionId)
-      message.success('历史会话已删除')
+      message.success(t('todo:message.historyDeleted'))
       if (currentSessionId === session.sessionId) {
         const nextSession = nextTodo.aiSessions[0]
         if (nextSession) {
@@ -708,9 +714,9 @@ export default function TodoManage() {
       }
       fetchTodos()
     } catch (e: any) {
-      message.error(e?.message || '删除历史会话失败')
+      message.error(e?.message || t('errors:deleteHistoryFailed'))
     }
-  }, [fetchTodos, handleOpenTerminalInDock])
+  }, [fetchTodos, handleOpenTerminalInDock, t])
 
   // ─── 重复规则 ───
   // Most logic now lives in useRecurringRule(). The wrappers below preserve
@@ -722,20 +728,20 @@ export default function TodoManage() {
       const res = await saveRule()
       if (res.status === 'invalid') { message.error(res.reason); return }
       if (res.status === 'noop') return
-      message.success('规则已更新（仅影响未来生成的实例）')
+      message.success(t('todo:message.ruleUpdated'))
     } catch (e: any) {
-      message.error(e?.message || '保存失败')
+      message.error(e?.message || t('errors:ruleSaveFailed'))
     }
-  }, [saveRule])
+  }, [saveRule, t])
 
   const handleStopRule = useCallback(async (ruleId: string) => {
     try {
       await stopRule(ruleId)
-      message.success('已停止重复，明天起不再生成')
+      message.success(t('todo:message.ruleStopped'))
     } catch (e: any) {
-      message.error(e?.message || '停止失败')
+      message.error(e?.message || t('errors:ruleStopFailed'))
     }
-  }, [stopRule])
+  }, [stopRule, t])
 
   // ─── 详情 ───
 
@@ -751,8 +757,8 @@ export default function TodoManage() {
     const already = todoCoverage[todo.id]
     if (already && !force) {
       modal.confirm({
-        title: '这条已经沉淀过',
-        content: '重新沉淀会再跑一次 claude（消耗 token）。确认吗？',
+        title: t('todo:confirm.memorizedTitle'),
+        content: t('todo:confirm.memorizedContent'),
         onOk: () => handleMemorize(todo, true),
       })
       return
@@ -760,12 +766,12 @@ export default function TodoManage() {
     setMemorizing(true)
     try {
       const res = await runWiki({ todoIds: [todo.id], dryRun: false })
-      message.success(`已沉淀到记忆：写了 ${res.sourcesWritten} 个 source`)
+      message.success(t('todo:message.memorizeOk', { count: res.sourcesWritten }))
       setTodoCoverage((prev) => ({ ...prev, [todo.id]: true }))
     } catch (e: any) {
-      message.error(`沉淀失败：${e.message}`)
+      message.error(t('errors:memorizeFailed', { msg: e.message }))
     } finally { setMemorizing(false) }
-  }, [memorizing, todoCoverage])
+  }, [memorizing, todoCoverage, t])
 
   useEffect(() => {
     if (!detailTodo) return
@@ -779,7 +785,7 @@ export default function TodoManage() {
     try {
       await submitComment()
     } catch (e: any) {
-      message.error(e?.message || '添加评论失败')
+      message.error(e?.message || t('errors:addCommentFailed'))
     }
   }
 
@@ -787,7 +793,7 @@ export default function TodoManage() {
     try {
       await removeComment(commentId)
     } catch (e: any) {
-      message.error(e?.message || '删除评论失败')
+      message.error(e?.message || t('errors:deleteCommentFailed'))
     }
   }
 
@@ -815,9 +821,9 @@ export default function TodoManage() {
         setToolMissing({ tool: e.body.tool, bin: e.body.bin, fix: e.body.fix })
         return
       }
-      message.error(e?.message || 'AI 启动失败')
+      message.error(e?.message || t('errors:aiStartFailed'))
     }
-  }, [fetchTodos, templates, handleOpenTerminalInDock])
+  }, [fetchTodos, templates, handleOpenTerminalInDock, t])
 
   // Expose handleAiExec to CommandPalette via dispatchStore. Register once on
   // mount; use refs so palette clicks always pick up the latest closure +
@@ -830,14 +836,14 @@ export default function TodoManage() {
     const fn = (todoId: string, tool: AiTool) => {
       const todo = todosForAiRef.current.find(t => t.id === todoId)
       if (!todo) {
-        message.error('未找到该 todo')
+        message.error(t('errors:todoNotFound'))
         return
       }
       void handleAiExecRef.current(todo, tool)
     }
     useDispatchStore.getState().registerStartAiSession(fn)
     return () => { useDispatchStore.getState().unregisterStartAiSession() }
-  }, [message])
+  }, [message, t])
 
   const handleRequestFork = useCallback((todo: Todo, sessionId: string) => {
     setForkTarget({ todo, sessionId })
@@ -858,15 +864,15 @@ export default function TodoManage() {
       const targetTodo = todos.find(t => t.id === r.targetTodoId)
       if (targetTodo) handleOpenTerminalInDock(targetTodo, sessionId)
       fetchTodos()
-      message.success('Fork 成功，新会话已启动')
+      message.success(t('todo:message.forkOk'))
     } catch (e: any) {
       if (e instanceof ApiError && e.status === 424 && e.body?.code === 'tool_missing') {
         setToolMissing({ tool: e.body.tool, bin: e.body.bin, fix: e.body.fix })
         return
       }
-      message.error(e?.message || 'Fork 启动失败')
+      message.error(e?.message || t('errors:forkStartFailed'))
     }
-  }, [fetchTodos, todos, handleOpenTerminalInDock])
+  }, [fetchTodos, todos, handleOpenTerminalInDock, t])
 
   // ─── 拖拽 ───
 
@@ -905,7 +911,7 @@ export default function TodoManage() {
       try {
         await Promise.all(updates.map(u => updateTodo(u.id, { sortOrder: u.sortOrder, parentId: draggedTodo.parentId })))
       } catch (e: any) {
-        message.error(e?.message || '子待办排序失败')
+        message.error(e?.message || t('errors:subtodoSortFailed'))
         fetchTodos()
       }
       return
@@ -923,7 +929,7 @@ export default function TodoManage() {
     if (!targetQuadrant) return
 
     if (viewMode === 'priority' && draggedTodo.quadrant !== targetQuadrant) {
-      message.info('优先级模式下不支持跨优先级拖拽，请到看板视图调整')
+      message.info(t('todo:message.crossQuadrantBlocked'))
       return
     }
 
@@ -935,7 +941,7 @@ export default function TodoManage() {
       try {
         await updateTodo(draggedTodo.id, { quadrant: targetQuadrant, sortOrder: newSort })
       } catch (e: any) {
-        message.error(e?.message || '移动失败')
+        message.error(e?.message || t('errors:moveFailed'))
         fetchTodos()
       }
       return
@@ -967,7 +973,7 @@ export default function TodoManage() {
       try {
         await updateTodo(draggedTodo.id, { sortOrder: newSort })
       } catch (e: any) {
-        message.error(e?.message || '排序失败')
+        message.error(e?.message || t('errors:sortFailed'))
         fetchTodos()
       }
     }
@@ -979,11 +985,11 @@ export default function TodoManage() {
     const label = editor === 'trae-cn' ? 'Trae CN' : editor === 'trae' ? 'Trae' : 'Cursor'
     try {
       await openTraeCN(cwd || '', editor)
-      message.success(`已打开 ${label}`)
+      message.success(t('todo:message.openedEditor', { label }))
     } catch (e: any) {
-      message.error(e?.message || `打开 ${label} 失败`)
+      message.error(e?.message || t('errors:openEditorFailed', { label }))
     }
-  }, [])
+  }, [t])
 
   const handleOpenTerminal = useCallback(async (todo: Todo) => {
     const cwd = todo.workDir || undefined
@@ -991,15 +997,15 @@ export default function TodoManage() {
       const { sessionId } = await openTerminal(cwd || '')
       handleOpenTerminalInDock(todo, sessionId)
     } catch (e: any) {
-      message.error(e?.message || '启动终端失败')
+      message.error(e?.message || t('errors:openTerminalFailed'))
     }
-  }, [handleOpenTerminalInDock])
+  }, [handleOpenTerminalInDock, t])
 
   const handleOpenNativeResume = useCallback(async (todo: Todo, session: Todo['aiSessions'][number]) => {
     const cwd = session.cwd || todo.workDir || undefined
     const nativeSessionId = session.nativeSessionId
     if (!nativeSessionId) {
-      message.error('当前会话缺少原生 session ID，无法在本地继续')
+      message.error(t('errors:missingNativeSessionId'))
       return
     }
     try {
@@ -1013,24 +1019,24 @@ export default function TodoManage() {
       await fetchTodos()
       const warnings = result.warnings || []
       if (warnings.includes('route_missing')) {
-        message.warning('已在本地 Terminal 中继续；当前会话未绑定 IM 路由（飞书/Telegram），不会同步消息')
+        message.warning(t('todo:message.localResumeNoRoute'))
       } else if (warnings.includes('hooks_not_installed') || warnings.includes('hook_script_missing')) {
-        message.warning('已在本地 Terminal 中继续；Claude Code hooks 未安装或脚本缺失，IM 推送可能不可用')
+        message.warning(t('todo:message.localResumeNoHooks'))
       } else {
-        message.success('已在本地 Terminal 中继续当前会话，IM 将接收后续回复')
+        message.success(t('todo:message.localResumeOk'))
       }
     } catch (e: any) {
-      message.error(e?.message || '本地继续失败')
+      message.error(e?.message || t('errors:localResumeFailed'))
     }
-  }, [fetchTodos])
+  }, [fetchTodos, t])
 
   const handleCopyPrompt = useCallback((todo: Todo) => {
     const text = buildTodoPrompt(todo, templates)
     navigator.clipboard.writeText(text).then(
-      () => message.success('已复制到剪贴板'),
-      () => message.error('复制失败')
+      () => message.success(t('todo:message.copied')),
+      () => message.error(t('errors:copyFailed')),
     )
-  }, [])
+  }, [templates, t])
 
   const [exportTarget, setExportTarget] = useState<Todo | null>(null)
   const handleExport = useCallback((todo: Todo) => {
@@ -1068,14 +1074,14 @@ export default function TodoManage() {
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
               options={[
-                { label: '待办', value: 'todo' },
-                { label: '已完成', value: 'done' },
-                { label: '全部', value: '' },
+                { label: t('todo:board.filterTodo'), value: 'todo' },
+                { label: t('todo:board.filterDone'), value: 'done' },
+                { label: t('todo:board.filterAll'), value: '' },
               ]}
               optionType="button"
             />
             <Input
-              placeholder="搜索标题..."
+              placeholder={t('todo:board.searchPlaceholder')}
               size="small"
               style={{ width: 200 }}
               prefix={<SearchOutlined />}
@@ -1086,14 +1092,14 @@ export default function TodoManage() {
             />
             <div style={{ flex: 1 }} />
             <Button type="primary" icon={<PlusOutlined />} size="small" onClick={handleCreate}>
-              新建
+              {t('todo:board.create')}
             </Button>
             <Button
               icon={<MenuOutlined />}
               size="small"
               onClick={() => setMobileMenuOpen(true)}
-              title="更多"
-            >菜单</Button>
+              title={t('todo:board.menuTooltip')}
+            >{t('todo:board.menu')}</Button>
           </div>
         </div>
       )}
@@ -1142,7 +1148,7 @@ export default function TodoManage() {
                     />
                   ))}
                   {priorityList.length === 0 && (
-                    <div className="todo-drop-placeholder">暂无待办</div>
+                    <div className="todo-drop-placeholder">{t('todo:board.emptyPlaceholder')}</div>
                   )}
                 </div>
               </SortableContext>
@@ -1216,7 +1222,7 @@ export default function TodoManage() {
 
       {/* 新建/编辑 Drawer */}
       <Drawer
-        title={editingTodo ? '编辑待办' : parentForCreate ? `新建子待办 · ${parentForCreate.title}` : '新建待办'}
+        title={editingTodo ? t('todo:drawer.editTitle') : parentForCreate ? t('todo:drawer.createSubtodoTitle', { title: parentForCreate.title }) : t('todo:drawer.createTitle')}
         open={drawerOpen}
         onClose={() => {
           setDrawerOpen(false)
@@ -1226,18 +1232,18 @@ export default function TodoManage() {
         }}
         width={640}
         extra={
-          <Button type="primary" onClick={handleSave}>保存</Button>
+          <Button type="primary" onClick={handleSave}>{t('common:save')}</Button>
         }
       >
         <Form form={form} layout="vertical" size="small">
-          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
-            <Input placeholder="待办事项标题" />
+          <Form.Item name="title" label={t('todo:form.titleLabel')} rules={[{ required: true, message: t('todo:form.titleRequired') }]}>
+            <Input placeholder={t('todo:form.titlePlaceholder')} />
           </Form.Item>
-          <Form.Item name="description" label="描述" extra="可粘贴或拖拽图片，自动上传并以 @path 形式 attach 到任务（AI 启动时自动识别）">
+          <Form.Item name="description" label={t('todo:form.descLabel')} extra={t('todo:form.descExtra')}>
             <TextArea
               ref={descTextAreaRef}
               rows={3}
-              placeholder="详细描述（可选） · 粘贴 / 拖拽图片自动 attach"
+              placeholder={t('todo:form.descPlaceholder')}
               onPaste={(e) => {
                 const items = Array.from(e.clipboardData?.items || [])
                 const imageItem = items.find((it) => it.kind === 'file' && it.type.startsWith('image/'))
@@ -1254,37 +1260,37 @@ export default function TodoManage() {
               }}
             />
           </Form.Item>
-          <Form.Item name="useTemplates" label="启用模板" valuePropName="checked" extra="开启后 AI 启动时会在 prompt 前按顺序拼接所选模板">
+          <Form.Item name="useTemplates" label={t('todo:form.useTemplatesLabel')} valuePropName="checked" extra={t('todo:form.useTemplatesExtra')}>
             <Switch />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(p, n) => p.useTemplates !== n.useTemplates}>
             {({ getFieldValue }) => getFieldValue('useTemplates') ? (
-              <Form.Item name="appliedTemplateIds" label="应用的模板（按顺序拼接）">
+              <Form.Item name="appliedTemplateIds" label={t('todo:form.appliedTemplatesLabel')}>
                 <Select
                   mode="multiple"
-                  placeholder={templates.length ? '选择要应用的模板' : '暂无模板，请先在模板管理中创建'}
-                  options={templates.map(t => ({ value: t.id, label: t.builtin ? `${t.name}（内置）` : t.name }))}
+                  placeholder={templates.length ? t('todo:form.appliedTemplatesPlaceholder') : t('todo:form.appliedTemplatesEmpty')}
+                  options={templates.map(tpl => ({ value: tpl.id, label: tpl.builtin ? t('todo:form.templateBuiltinLabel', { name: tpl.name }) : tpl.name }))}
                   optionFilterProp="label"
                 />
               </Form.Item>
             ) : null}
           </Form.Item>
           <Form.Item
-            label="工作目录"
-            extra={workDirRoot ? `默认根目录：${workDirRoot}` : '未加载到默认启动目录'}
+            label={t('todo:form.workDirLabel')}
+            extra={workDirRoot ? t('todo:form.workDirRootHint', { root: workDirRoot }) : t('todo:form.workDirRootMissing')}
           >
             <Space.Compact block>
               <Form.Item name="workDir" noStyle>
-                <Input allowClear placeholder="不填则使用默认启动目录" />
+                <Input allowClear placeholder={t('todo:form.workDirPlaceholder')} />
               </Form.Item>
-              <Button loading={pickingWorkDir} onClick={handlePickWorkDir}>选择目录</Button>
+              <Button loading={pickingWorkDir} onClick={handlePickWorkDir}>{t('todo:form.pickWorkDir')}</Button>
             </Space.Compact>
             <div style={{ marginTop: 8 }}>
               <Select
                 allowClear
                 showSearch
                 loading={workDirLoading}
-                placeholder="快速选择默认目录下的子文件夹"
+                placeholder={t('todo:form.workDirSubfolderPlaceholder')}
                 options={workDirOptions}
                 optionFilterProp="label"
                 value={workDirOptions.some(item => item.value === selectedWorkDir) ? selectedWorkDir : undefined}
@@ -1292,7 +1298,7 @@ export default function TodoManage() {
               />
             </div>
           </Form.Item>
-          <Form.Item name="quadrant" label="象限">
+          <Form.Item name="quadrant" label={t('todo:form.quadrantLabel')}>
             <Radio.Group disabled={!!parentForCreate}>
               {QUADRANT_CONFIG.map(c => (
                 <Radio.Button key={c.q} value={c.q} style={{ fontSize: 12 }}>
@@ -1305,9 +1311,9 @@ export default function TodoManage() {
             <>
               <Form.Item
                 name="recurring"
-                label="重复"
+                label={t('todo:form.recurringLabel')}
                 valuePropName="checked"
-                extra="开启后会按规则每天生成一条当天待办；未完成的旧实例会自动标记为错过"
+                extra={t('todo:form.recurringExtra')}
               >
                 <Switch />
               </Form.Item>
@@ -1317,37 +1323,37 @@ export default function TodoManage() {
                   const freq = getFieldValue('recurringFrequency') as RecurringFrequency
                   return (
                     <>
-                      <Form.Item name="recurringFrequency" label="频率">
+                      <Form.Item name="recurringFrequency" label={t('todo:form.frequencyLabel')}>
                         <Segmented
                           options={[
-                            { label: '每天', value: 'daily' },
-                            { label: '每周', value: 'weekly' },
-                            { label: '每月', value: 'monthly' },
+                            { label: t('todo:form.frequencyDaily'), value: 'daily' },
+                            { label: t('todo:form.frequencyWeekly'), value: 'weekly' },
+                            { label: t('todo:form.frequencyMonthly'), value: 'monthly' },
                           ]}
                         />
                       </Form.Item>
                       {freq === 'weekly' && (
-                        <Form.Item name="recurringWeekdays" label="星期几">
+                        <Form.Item name="recurringWeekdays" label={t('todo:form.weekdaysLabel')}>
                           <Select
                             mode="multiple"
-                            placeholder="选择星期几"
+                            placeholder={t('todo:form.weekdaysPlaceholder')}
                             options={[
-                              { value: 1, label: '一' },
-                              { value: 2, label: '二' },
-                              { value: 3, label: '三' },
-                              { value: 4, label: '四' },
-                              { value: 5, label: '五' },
-                              { value: 6, label: '六' },
-                              { value: 0, label: '日' },
+                              { value: 1, label: t('todo:form.weekday.mon') },
+                              { value: 2, label: t('todo:form.weekday.tue') },
+                              { value: 3, label: t('todo:form.weekday.wed') },
+                              { value: 4, label: t('todo:form.weekday.thu') },
+                              { value: 5, label: t('todo:form.weekday.fri') },
+                              { value: 6, label: t('todo:form.weekday.sat') },
+                              { value: 0, label: t('todo:form.weekday.sun') },
                             ]}
                           />
                         </Form.Item>
                       )}
                       {freq === 'monthly' && (
-                        <Form.Item name="recurringMonthDays" label="每月几号">
+                        <Form.Item name="recurringMonthDays" label={t('todo:form.monthDaysLabel')}>
                           <Select
                             mode="multiple"
-                            placeholder="选择日期"
+                            placeholder={t('todo:form.monthDaysPlaceholder')}
                             options={Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: String(i + 1) }))}
                           />
                         </Form.Item>
@@ -1358,7 +1364,7 @@ export default function TodoManage() {
               </Form.Item>
             </>
           )}
-          <Form.Item name="dueDate" label="截止日期">
+          <Form.Item name="dueDate" label={t('todo:form.dueDateLabel')}>
             <DatePicker showTime style={{ width: '100%' }} />
           </Form.Item>
         </Form>
@@ -1366,7 +1372,7 @@ export default function TodoManage() {
 
       {/* 详情 Drawer */}
       <Drawer
-        title={detailTodo?.title || '待办详情'}
+        title={detailTodo?.title || t('todo:drawer.detailTitle')}
         open={detailOpen}
         onClose={closeDetail}
         width={720}
@@ -1377,10 +1383,10 @@ export default function TodoManage() {
               <Button size="small" type="primary" icon={<CheckOutlined />} onClick={async () => {
                 if (!detailTodo) return
                 await updateTodo(detailTodo.id, { status: 'done' })
-                message.success('已验收')
+                message.success(t('todo:message.accepted'))
                 closeDetail()
                 fetchTodos()
-              }}>验收通过</Button>
+              }}>{t('todo:detail.accept')}</Button>
             )}
             {detailTodo && (
               <Button
@@ -1388,11 +1394,11 @@ export default function TodoManage() {
                 onClick={() => handleMemorize(detailTodo)}
                 loading={memorizing}
               >
-                {todoCoverage[detailTodo.id] ? '已沉淀' : '沉淀'}
+                {todoCoverage[detailTodo.id] ? t('todo:detail.memorized') : t('todo:detail.memorize')}
               </Button>
             )}
             {detailTodo && (
-              <Button size="small" icon={<EditOutlined />} onClick={() => { closeDetail(); handleEdit(detailTodo) }}>编辑</Button>
+              <Button size="small" icon={<EditOutlined />} onClick={() => { closeDetail(); handleEdit(detailTodo) }}>{t('common:edit')}</Button>
             )}
           </Space>
         }
@@ -1418,23 +1424,23 @@ export default function TodoManage() {
             <div className="todo-detail">
               {/* Section A — meta chips */}
               <div className="todo-detail-meta">
-                <Tooltip title="点击编辑象限">
+                <Tooltip title={t('todo:detail.quadrantTooltip')}>
                   <button type="button" className="todo-detail-chip todo-detail-chip--quadrant" onClick={handleChipClick}>
                     <span className="todo-detail-chip__dot" style={{ background: quad?.color }} />
-                    <span className="todo-detail-chip__label">象限</span>
+                    <span className="todo-detail-chip__label">{t('todo:detail.quadrantLabel')}</span>
                     <span className="todo-detail-chip__value">{quad?.label}</span>
                   </button>
                 </Tooltip>
                 <span className={`todo-detail-chip todo-detail-chip--status ${status.className}`}>
-                  <span className="todo-detail-chip__label">状态</span>
-                  <span className="todo-detail-chip__value">{status.text}</span>
+                  <span className="todo-detail-chip__label">{t('todo:detail.statusLabel')}</span>
+                  <span className="todo-detail-chip__value">{t(`todo:status.${status.key}`)}</span>
                 </span>
                 <span className="todo-detail-chip todo-detail-chip--level">
-                  <span className="todo-detail-chip__label">层级</span>
-                  <span className="todo-detail-chip__value">{detailTodo.parentId ? '子待办' : '顶级待办'}</span>
+                  <span className="todo-detail-chip__label">{t('todo:detail.levelLabel')}</span>
+                  <span className="todo-detail-chip__value">{detailTodo.parentId ? t('todo:detail.levelSubtodo') : t('todo:detail.levelTop')}</span>
                 </span>
                 <span className="todo-detail-chip todo-detail-chip--stage" onClick={(e) => e.stopPropagation()}>
-                  <span className="todo-detail-chip__label">阶段</span>
+                  <span className="todo-detail-chip__label">{t('todo:detail.stageLabel')}</span>
                   <StageTagChip
                     value={detailTodo.stageTag}
                     onChange={async (next: StageTag | null) => {
@@ -1442,23 +1448,23 @@ export default function TodoManage() {
                         await updateTodo(detailTodo.id, { stageTag: next })
                         await fetchTodos()
                       } catch (e: any) {
-                        message.error(e?.message || '阶段标签更新失败')
+                        message.error(e?.message || t('errors:stageTagUpdateFailed'))
                       }
                     }}
                   />
                 </span>
-                <Tooltip title="点击编辑截止时间">
+                <Tooltip title={t('todo:detail.dueTooltip')}>
                   <button
                     type="button"
                     className={`todo-detail-chip todo-detail-chip--due ${due.overdue ? 'is-overdue' : ''}`}
                     onClick={handleChipClick}
                   >
                     {due.overdue && <WarningOutlined />}
-                    <span className="todo-detail-chip__label">截止</span>
-                    <span className="todo-detail-chip__value">{due.label}</span>
+                    <span className="todo-detail-chip__label">{t('todo:detail.dueLabel')}</span>
+                    <span className="todo-detail-chip__value">{due.label ?? t('todo:detail.dueEmpty')}</span>
                   </button>
                 </Tooltip>
-                <Tooltip title="点击复制路径">
+                <Tooltip title={t('todo:detail.workDirTooltip')}>
                   <button
                     type="button"
                     className="todo-detail-chip todo-detail-chip--workdir"
@@ -1466,13 +1472,13 @@ export default function TodoManage() {
                       const v = detailTodo.workDir || ''
                       if (!v) return
                       navigator.clipboard?.writeText(v).then(
-                        () => message.success('已复制工作目录'),
-                        () => message.error('复制失败'),
+                        () => message.success(t('todo:message.workDirCopied')),
+                        () => message.error(t('errors:copyFailed')),
                       )
                     }}
                   >
-                    <span className="todo-detail-chip__label">工作目录</span>
-                    <code className="todo-detail-chip__value">{detailTodo.workDir || '默认目录'}</code>
+                    <span className="todo-detail-chip__label">{t('todo:detail.workDirLabel')}</span>
+                    <code className="todo-detail-chip__value">{detailTodo.workDir || t('todo:detail.workDirDefault')}</code>
                     <CopyOutlined />
                   </button>
                 </Tooltip>
@@ -1482,14 +1488,14 @@ export default function TodoManage() {
               {detailRule && (
                 <div className="todo-detail-recurring">
                   <Space size="small" wrap>
-                    <Tag color={detailRule.active ? 'green' : 'default'}>{detailRule.active ? '重复中' : '已停止'}</Tag>
+                    <Tag color={detailRule.active ? 'green' : 'default'}>{detailRule.active ? t('todo:detail.recurringActive') : t('todo:detail.recurringStopped')}</Tag>
                     <span className="todo-detail-recurring__text">{describeRule(detailRule)}</span>
                   </Space>
                   {detailRule.active && (
                     <Space size="small">
-                      <Button size="small" onClick={() => openRuleEdit(detailRule)}>编辑规则</Button>
-                      <Popconfirm title="停止后今天的待办保留，明天起不再重复" onConfirm={() => handleStopRule(detailRule.id)}>
-                        <Button size="small" danger>停止重复</Button>
+                      <Button size="small" onClick={() => openRuleEdit(detailRule)}>{t('todo:detail.editRule')}</Button>
+                      <Popconfirm title={t('todo:detail.stopRuleConfirm')} onConfirm={() => handleStopRule(detailRule.id)}>
+                        <Button size="small" danger>{t('todo:detail.stopRule')}</Button>
                       </Popconfirm>
                     </Space>
                   )}
@@ -1499,7 +1505,7 @@ export default function TodoManage() {
               {/* Section C — description card */}
               <div className="todo-detail-description">
                 {!hasText && !hasImage && (
-                  <p className="todo-detail-description__empty">无描述</p>
+                  <p className="todo-detail-description__empty">{t('todo:detail.emptyDescription')}</p>
                 )}
                 {hasText && (
                   <p className="todo-detail-description__text">{textValue}</p>
@@ -1522,13 +1528,13 @@ export default function TodoManage() {
 
               {/* Section D — comments */}
               <div className="todo-detail-comments">
-                <div className="todo-detail-comments__header">评论 ({comments.length})</div>
+                <div className="todo-detail-comments__header">{t('todo:detail.commentsHeader', { count: comments.length })}</div>
 
                 <div className="todo-detail-comments__composer">
                   <Input.TextArea
                     value={commentText}
                     onChange={e => setCommentText(e.target.value)}
-                    placeholder="添加评论..."
+                    placeholder={t('todo:detail.commentPlaceholder')}
                     autoSize={{ minRows: 1, maxRows: 4 }}
                     onPressEnter={e => {
                       const ke = e as React.KeyboardEvent
@@ -1546,7 +1552,7 @@ export default function TodoManage() {
 
                 <Spin spinning={commentsLoading}>
                   {comments.length === 0 && !commentsLoading && (
-                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无评论" />
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('todo:detail.commentEmpty')} />
                   )}
                   <div className="todo-detail-comments__list">
                     {comments.map(c => (
@@ -1555,7 +1561,7 @@ export default function TodoManage() {
                         <div className="todo-detail-comment__body">
                           <div className="todo-detail-comment__meta">
                             <span className="todo-detail-comment__time">{dayjs(c.createdAt).format('YYYY-MM-DD HH:mm')}</span>
-                            <Popconfirm title="删除该评论？" onConfirm={() => handleDeleteComment(c.id)}>
+                            <Popconfirm title={t('todo:detail.commentDeleteConfirm')} onConfirm={() => handleDeleteComment(c.id)}>
                               <Button type="text" size="small" danger icon={<DeleteOutlined />} className="todo-detail-comment__delete" />
                             </Popconfirm>
                           </div>
@@ -1572,27 +1578,27 @@ export default function TodoManage() {
       </Drawer>
 
       <Modal
-        title="编辑重复规则"
+        title={t('todo:drawer.ruleModalTitle')}
         open={ruleModalOpen}
         onCancel={closeRuleEdit}
         onOk={handleRuleSave}
-        okText="保存"
-        cancelText="取消"
+        okText={t('common:save')}
+        cancelText={t('common:cancel')}
         destroyOnClose
       >
         <Form form={ruleForm} layout="vertical" size="small">
-          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
-            <Input placeholder="未来生成的实例会用这个标题" />
+          <Form.Item name="title" label={t('todo:form.titleLabel')} rules={[{ required: true, message: t('todo:form.titleRequired') }]}>
+            <Input placeholder={t('todo:form.ruleTitlePlaceholder')} />
           </Form.Item>
-          <Form.Item name="description" label="描述">
-            <TextArea rows={2} placeholder="可选" />
+          <Form.Item name="description" label={t('todo:form.descLabel')}>
+            <TextArea rows={2} placeholder={t('todo:form.ruleDescPlaceholder')} />
           </Form.Item>
-          <Form.Item name="frequency" label="频率">
+          <Form.Item name="frequency" label={t('todo:form.frequencyLabel')}>
             <Segmented
               options={[
-                { label: '每天', value: 'daily' },
-                { label: '每周', value: 'weekly' },
-                { label: '每月', value: 'monthly' },
+                { label: t('todo:form.frequencyDaily'), value: 'daily' },
+                { label: t('todo:form.frequencyWeekly'), value: 'weekly' },
+                { label: t('todo:form.frequencyMonthly'), value: 'monthly' },
               ]}
             />
           </Form.Item>
@@ -1601,17 +1607,17 @@ export default function TodoManage() {
               const freq = getFieldValue('frequency') as RecurringFrequency
               if (freq === 'weekly') {
                 return (
-                  <Form.Item name="weekdays" label="星期几">
+                  <Form.Item name="weekdays" label={t('todo:form.weekdaysLabel')}>
                     <Select
                       mode="multiple"
                       options={[
-                        { value: 1, label: '一' },
-                        { value: 2, label: '二' },
-                        { value: 3, label: '三' },
-                        { value: 4, label: '四' },
-                        { value: 5, label: '五' },
-                        { value: 6, label: '六' },
-                        { value: 0, label: '日' },
+                        { value: 1, label: t('todo:form.weekday.mon') },
+                        { value: 2, label: t('todo:form.weekday.tue') },
+                        { value: 3, label: t('todo:form.weekday.wed') },
+                        { value: 4, label: t('todo:form.weekday.thu') },
+                        { value: 5, label: t('todo:form.weekday.fri') },
+                        { value: 6, label: t('todo:form.weekday.sat') },
+                        { value: 0, label: t('todo:form.weekday.sun') },
                       ]}
                     />
                   </Form.Item>
@@ -1619,7 +1625,7 @@ export default function TodoManage() {
               }
               if (freq === 'monthly') {
                 return (
-                  <Form.Item name="monthDays" label="每月几号">
+                  <Form.Item name="monthDays" label={t('todo:form.monthDaysLabel')}>
                     <Select
                       mode="multiple"
                       options={Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: String(i + 1) }))}
@@ -1630,13 +1636,13 @@ export default function TodoManage() {
               return null
             }}
           </Form.Item>
-          <div style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>保存后只影响未来新生成的实例，不会回写已存在的待办。</div>
+          <div style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{t('todo:form.ruleHint')}</div>
         </Form>
       </Modal>
 
       {/* 移动端菜单：承载被折叠的次级工具按钮 */}
       <Drawer
-        title="菜单"
+        title={t('todo:mobileMenu.title')}
         placement="right"
         open={mobileMenuOpen}
         onClose={() => setMobileMenuOpen(false)}
@@ -1646,32 +1652,32 @@ export default function TodoManage() {
             icon={<SearchOutlined />}
             onClick={() => { setMobileMenuOpen(false); setTranscriptDrawerOpen(true) }}
             block
-          >找回历史会话</Button>
+          >{t('todo:mobileMenu.recoverTranscript')}</Button>
           <Button
             icon={<FileTextOutlined />}
             onClick={() => { setMobileMenuOpen(false); openDrawer('template') }}
             block
-          >Prompt 模板</Button>
+          >{t('todo:mobileMenu.promptTemplate')}</Button>
           <Button
             icon={<TrophyOutlined />}
             onClick={() => { setMobileMenuOpen(false); openDrawer('report') }}
             block
-          >每日报表</Button>
+          >{t('todo:mobileMenu.dailyReport')}</Button>
           <Button
             icon={<BookOutlined />}
             onClick={() => { setMobileMenuOpen(false); openDrawer('wiki') }}
             block
-          >记忆</Button>
+          >{t('todo:mobileMenu.wiki')}</Button>
           <Button
             icon={<LineChartOutlined />}
             onClick={() => { setMobileMenuOpen(false); openDrawer('stats') }}
             block
-          >统计</Button>
+          >{t('todo:mobileMenu.stats')}</Button>
           <Button
             icon={<SettingOutlined />}
             onClick={() => { setMobileMenuOpen(false); openDrawer('settings') }}
             block
-          >设置</Button>
+          >{t('todo:mobileMenu.settings')}</Button>
         </div>
       </Drawer>
 
@@ -1707,7 +1713,7 @@ export default function TodoManage() {
       <Modal
         open={!!toolMissing}
         onCancel={() => setToolMissing(null)}
-        title={toolMissing ? `AI 工具 ${toolMissing.tool} 未安装` : ''}
+        title={toolMissing ? t('todo:toolMissing.title', { tool: toolMissing.tool }) : ''}
         footer={[
           <Button
             key="copy"
@@ -1715,18 +1721,18 @@ export default function TodoManage() {
             onClick={() => {
               if (toolMissing) {
                 navigator.clipboard.writeText(toolMissing.fix)
-                message.success('已复制到剪贴板')
+                message.success(t('todo:message.copied'))
               }
             }}
           >
-            复制命令
+            {t('todo:toolMissing.copyCommand')}
           </Button>,
-          <Button key="close" onClick={() => setToolMissing(null)}>关闭</Button>,
+          <Button key="close" onClick={() => setToolMissing(null)}>{t('common:close')}</Button>,
         ]}
       >
         {toolMissing && (
           <>
-            <p>未找到可执行文件 <code>{toolMissing.bin}</code>。请在终端运行：</p>
+            <p>{t('todo:toolMissing.notFound')} <code>{toolMissing.bin}</code>。{t('todo:toolMissing.runInTerminal')}</p>
             <pre style={{
               fontFamily: 'ui-monospace, monospace',
               background: '#f5f5f5',
