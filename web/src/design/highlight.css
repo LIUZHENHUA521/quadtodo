@@ -1,0 +1,88 @@
+/* highlight.js token-driven theme.
+   Replaces highlight.js/styles/github.css. Auto-flips with our [data-theme]
+   attribute because all colors come from design tokens. */
+
+.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 0;
+  background: transparent;
+  color: var(--text-primary);
+}
+
+/* Comments — muted */
+.hljs-comment,
+.hljs-quote,
+.hljs-meta {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* Keywords / control / language constructs — accent electric */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-subst,
+.hljs-doctag,
+.hljs-formula {
+  color: var(--accent-electric);
+  font-weight: 500;
+}
+
+/* Strings — green */
+.hljs-string,
+.hljs-attr,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-regexp,
+.hljs-template-variable,
+.hljs-template-tag {
+  color: var(--ai-running);
+}
+
+/* Numbers / literals / constants — amber */
+.hljs-number,
+.hljs-literal,
+.hljs-variable,
+.hljs-link {
+  color: var(--ai-pending-confirm);
+}
+
+/* Names / titles / functions / sections — accent (with weight) */
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-selector-attr,
+.hljs-selector-pseudo,
+.hljs-attribute {
+  color: var(--accent-electric);
+  font-weight: 600;
+}
+
+/* Tags / built-ins / types — secondary text */
+.hljs-tag,
+.hljs-type,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-class .hljs-title {
+  color: var(--text-secondary);
+}
+
+/* Params / variables defined inline */
+.hljs-params {
+  color: var(--text-primary);
+}
+
+/* Diff additions / deletions */
+.hljs-addition {
+  background: color-mix(in srgb, var(--ai-running) 18%, transparent);
+  color: var(--ai-running);
+}
+.hljs-deletion {
+  background: color-mix(in srgb, var(--ai-error) 18%, transparent);
+  color: var(--ai-error);
+}
+
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; }

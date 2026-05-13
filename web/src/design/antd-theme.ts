@@ -57,7 +57,12 @@ export function getAntdTheme(mode: ThemeMode): ThemeConfig {
       Drawer: { colorBgElevated: t.surface[1] },
       Modal: { colorBgElevated: t.surface[3] },
       Popover: { colorBgElevated: t.surface[3] },
-      Tooltip: { colorBgSpotlight: t.surface[3] },
+      // Tooltip: AntD default text color is white. In dark mode our surface[3]
+      // is dark enough for white text. In light mode surface[3] is white →
+      // white-on-white invisible. Use text.primary as the inverse-of-bg color.
+      Tooltip: {
+        colorBgSpotlight: mode === 'dark' ? t.surface[3] : t.text.primary,
+      },
     },
   }
 }

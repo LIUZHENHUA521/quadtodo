@@ -8,7 +8,7 @@ import {
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import hljs from 'highlight.js'
-import 'highlight.js/styles/github.css'
+import './design/highlight.css'
 import { getTranscript, ResumeSessionInput, sendAiInput, startAiExec, stopAiExec, TranscriptResponse, TranscriptTurn } from './api'
 import './TranscriptView.css'
 
