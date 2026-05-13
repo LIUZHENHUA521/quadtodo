@@ -5,6 +5,7 @@ import { ThemeToggle } from '../ThemeToggle'
 import { useDispatchStore } from '../../store/dispatchStore'
 import { useDispatchStats } from '../../design/useDispatchStats'
 import { useAiSessionStore } from '../../store/aiSessionStore'
+import { useUnreadStore, isSessionUnread } from '../../store/unreadStore'
 import './TopbarDispatch.css'
 
 export function TopbarDispatch() {
@@ -12,10 +13,12 @@ export function TopbarDispatch() {
   const openDrawer = useDispatchStore((s) => s.openDrawer)
   const togglePalette = useDispatchStore((s) => s.togglePalette)
 
-  // Build the active-sessions tooltip from live store data
+  // Build the active-sessions tooltip from live store data.
+  // 待确认 = real pending_confirm OR unread reply (matches TodoCard + useDispatchStats).
   const sessions = useAiSessionStore((s) => s.sessions)
+  const lastSeenMap = useUnreadStore((s) => s.lastSeenAt)
   const activeList: { id: string; title: string; tool: string; status: string }[] = []
-  const pendingList: { id: string; title: string; tool: string }[] = []
+  const pendingList: { id: string; title: string; tool: string; reason: 'pending_confirm' | 'unread' }[] = []
   sessions.forEach((session) => {
     if (session.status === 'running') {
       activeList.push({
@@ -25,11 +28,13 @@ export function TopbarDispatch() {
         status: session.status,
       })
     }
-    if (session.status === 'pending_confirm') {
+    const unread = isSessionUnread(session.lastTurnDoneAt, lastSeenMap.get(session.sessionId))
+    if (session.status === 'pending_confirm' || unread) {
       pendingList.push({
         id: session.sessionId,
         title: session.todoTitle,
         tool: session.tool,
+        reason: session.status === 'pending_confirm' ? 'pending_confirm' : 'unread',
       })
     }
   })
@@ -90,15 +95,17 @@ export function TopbarDispatch() {
         data-testid="stat-pending"
         tooltip={
           pendingList.length === 0 ? (
-            <div className="topbar-tooltip-empty">No pending confirmations</div>
+            <div className="topbar-tooltip-empty">No pending</div>
           ) : (
             <>
-              <div className="topbar-tooltip-title">Pending confirm ({pendingList.length})</div>
+              <div className="topbar-tooltip-title">待确认 ({pendingList.length})</div>
               {pendingList.map((s) => (
                 <div key={s.id} className="topbar-tooltip-row">
                   <span className="topbar-tooltip-dot" style={{ background: 'var(--ai-pending-confirm)' }} />
                   <span className="topbar-tooltip-name">{s.title}</span>
-                  <span className="topbar-tooltip-meta">{s.tool}</span>
+                  <span className="topbar-tooltip-meta">
+                    {s.tool} · {s.reason === 'pending_confirm' ? '待批准' : '未读'}
+                  </span>
                 </div>
               ))}
             </>
