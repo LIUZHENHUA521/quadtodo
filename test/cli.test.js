@@ -196,24 +196,33 @@ describe('cli helpers', () => {
 import { TOOL_PACKAGES, planInstallTools } from '../src/cli.js'
 
 describe('install-tools planning', () => {
-  it('TOOL_PACKAGES maps claude → @anthropic-ai/claude-code (bin: claude) and codex → @openai/codex (bin: codex)', () => {
-    expect(TOOL_PACKAGES.claude).toEqual({ pkg: '@anthropic-ai/claude-code', bin: 'claude' })
-    expect(TOOL_PACKAGES.codex).toEqual({ pkg: '@openai/codex', bin: 'codex' })
+  it('TOOL_PACKAGES describes claude/codex as npm and cursor as shell installer', () => {
+    expect(TOOL_PACKAGES.claude).toEqual({ kind: 'npm', pkg: '@anthropic-ai/claude-code', bin: 'claude' })
+    expect(TOOL_PACKAGES.codex).toEqual({ kind: 'npm', pkg: '@openai/codex', bin: 'codex' })
+    expect(TOOL_PACKAGES.cursor).toEqual({
+      kind: 'shell',
+      script: 'curl https://cursor.com/install -fsSL | bash',
+      bin: 'cursor-agent',
+    })
   })
 
-  it('planInstallTools({ all: true }) returns both tools in declared order', () => {
-    expect(planInstallTools({ all: true })).toEqual(['claude', 'codex'])
+  it('planInstallTools({ all: true }) returns all three tools in declared order', () => {
+    expect(planInstallTools({ all: true })).toEqual(['claude', 'codex', 'cursor'])
   })
 
   it('planInstallTools({ claude: true }) returns only claude', () => {
     expect(planInstallTools({ claude: true })).toEqual(['claude'])
   })
 
-  it('planInstallTools({}) defaults to all', () => {
-    expect(planInstallTools({})).toEqual(['claude', 'codex'])
+  it('planInstallTools({ cursor: true }) returns only cursor', () => {
+    expect(planInstallTools({ cursor: true })).toEqual(['cursor'])
   })
 
-  it('planInstallTools({ claude: true, codex: true }) returns both', () => {
+  it('planInstallTools({}) defaults to all', () => {
+    expect(planInstallTools({})).toEqual(['claude', 'codex', 'cursor'])
+  })
+
+  it('planInstallTools({ claude: true, codex: true }) returns the two requested', () => {
     expect(planInstallTools({ claude: true, codex: true })).toEqual(['claude', 'codex'])
   })
 })

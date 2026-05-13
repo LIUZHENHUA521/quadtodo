@@ -3,6 +3,7 @@ import { watch as fsWatch } from 'node:fs'
 import { loadTranscript, renderPtyLogText } from '../transcript.js'
 import { summarizeTurns } from '../summarize.js'
 import { buildTodoExport, renderTodoMarkdown } from '../export/todoMarkdown.js'
+import { SUPPORTED_TOOLS } from '../config.js'
 
 export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSession, getPty }) {
   const router = Router()
@@ -523,7 +524,7 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
         summarize = true,
       } = req.body || {}
 
-      if (!['claude', 'codex'].includes(tool)) {
+      if (!SUPPORTED_TOOLS.includes(tool)) {
         res.status(400).json({ ok: false, error: 'invalid tool' })
         return
       }

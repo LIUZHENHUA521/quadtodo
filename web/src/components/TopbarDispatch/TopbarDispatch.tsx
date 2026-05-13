@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { Popover, Tooltip } from 'antd'
-import { SearchOutlined } from '@ant-design/icons'
+import { useState, useCallback } from 'react'
+import { Popover, Tooltip, message } from 'antd'
+import { CloseOutlined, SearchOutlined } from '@ant-design/icons'
 import { StatPill } from '../StatPill'
 import { ThemeToggle } from '../ThemeToggle'
 import { useDispatchStore } from '../../store/dispatchStore'
@@ -13,25 +13,42 @@ import './TopbarDispatch.css'
 
 const IDLE_TOOLTIP_LIMIT = 8
 
+interface SessionRowEntry {
+  id: string
+  todoId: string
+  title: string
+  tool: string
+}
+
 export interface TopbarDispatchProps {
   unreadItems: UnreadSessionItem[]
   onJump: (item: UnreadSessionItem) => void
+  onFocusSession: (todoId: string, sessionId: string) => void
+  onStopSession: (sessionId: string) => Promise<void> | void
 }
 
-export function TopbarDispatch({ unreadItems, onJump }: TopbarDispatchProps) {
+export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSession }: TopbarDispatchProps) {
   const { runningCount, idleCount } = useDispatchStats()
   const openDrawer = useDispatchStore((s) => s.openDrawer)
   const togglePalette = useDispatchStore((s) => s.togglePalette)
   const [pendingOpen, setPendingOpen] = useState(false)
+  const [runningOpen, setRunningOpen] = useState(false)
+  const [idleOpen, setIdleOpen] = useState(false)
+  const [stoppingId, setStoppingId] = useState<string | null>(null)
 
   const sessions = useAiSessionStore((s) => s.sessions)
   const lastSeenMap = useUnreadStore((s) => s.lastSeenAt)
-  const runningList: { id: string; title: string; tool: string }[] = []
-  const idleList: { id: string; title: string; tool: string }[] = []
+  const runningList: SessionRowEntry[] = []
+  const idleList: SessionRowEntry[] = []
   sessions.forEach((session) => {
     const unread = isSessionUnread(session.lastTurnDoneAt, lastSeenMap.get(session.sessionId))
     const state = deriveAiState(session.status, unread)
-    const entry = { id: session.sessionId, title: session.todoTitle, tool: session.tool }
+    const entry: SessionRowEntry = {
+      id: session.sessionId,
+      todoId: session.todoId,
+      title: session.todoTitle,
+      tool: session.tool,
+    }
     if (state === 'running') runningList.push(entry)
     else if (state === 'idle') idleList.push(entry)
   })
@@ -42,6 +59,77 @@ export function TopbarDispatch({ unreadItems, onJump }: TopbarDispatchProps) {
     setPendingOpen(false)
     onJump(item)
   }
+
+  const handleFocusRow = useCallback(
+    (entry: SessionRowEntry, closePopover: () => void) => {
+      closePopover()
+      onFocusSession(entry.todoId, entry.id)
+    },
+    [onFocusSession],
+  )
+
+  const handleStopRow = useCallback(
+    async (entry: SessionRowEntry) => {
+      if (stoppingId === entry.id) return
+      setStoppingId(entry.id)
+      try {
+        await onStopSession(entry.id)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        message.error(`停止失败: ${msg}`)
+      } finally {
+        setStoppingId((cur) => (cur === entry.id ? null : cur))
+      }
+    },
+    [onStopSession, stoppingId],
+  )
+
+  const renderSessionList = (
+    entries: SessionRowEntry[],
+    dotColor: string,
+    closePopover: () => void,
+    options?: { remainder?: number },
+  ) => (
+    <div className="topbar-pending-list">
+      {entries.map((entry) => {
+        const stopping = stoppingId === entry.id
+        return (
+          <div key={entry.id} className="topbar-session-row-wrap">
+            <button
+              type="button"
+              className="topbar-tooltip-row topbar-pending-row topbar-session-row"
+              onClick={() => handleFocusRow(entry, closePopover)}
+              data-testid="topbar-session-row"
+            >
+              <span className="topbar-tooltip-dot" style={{ background: dotColor }} />
+              <span className="topbar-tooltip-name">{entry.title}</span>
+              <span className="topbar-tooltip-meta">{entry.tool}</span>
+            </button>
+            <Tooltip title="停止该会话的 PTY 终端">
+              <button
+                type="button"
+                className="topbar-row-close-btn"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void handleStopRow(entry)
+                }}
+                disabled={stopping}
+                aria-label="Stop session"
+                data-testid="topbar-session-row-close"
+              >
+                <CloseOutlined />
+              </button>
+            </Tooltip>
+          </div>
+        )
+      })}
+      {options?.remainder && options.remainder > 0 ? (
+        <div className="topbar-tooltip-row topbar-session-remainder">
+          <span className="topbar-tooltip-meta">还有 {options.remainder} 条</span>
+        </div>
+      ) : null}
+    </div>
+  )
 
   const pendingPopoverContent =
     pendingCount === 0 ? (
@@ -70,8 +158,29 @@ export function TopbarDispatch({ unreadItems, onJump }: TopbarDispatchProps) {
       </>
     )
 
+  const runningPopoverContent =
+    runningList.length === 0 ? (
+      <div className="topbar-tooltip-empty">No running sessions</div>
+    ) : (
+      <>
+        <div className="topbar-tooltip-title">Running sessions ({runningList.length})</div>
+        {renderSessionList(runningList, 'var(--ai-running)', () => setRunningOpen(false))}
+      </>
+    )
+
   const idleListVisible = idleList.slice(0, IDLE_TOOLTIP_LIMIT)
   const idleRemainder = idleList.length - idleListVisible.length
+  const idlePopoverContent =
+    idleList.length === 0 ? (
+      <div className="topbar-tooltip-empty">No idle sessions</div>
+    ) : (
+      <>
+        <div className="topbar-tooltip-title">Idle sessions ({idleList.length})</div>
+        {renderSessionList(idleListVisible, 'var(--ai-idle)', () => setIdleOpen(false), {
+          remainder: idleRemainder,
+        })}
+      </>
+    )
 
   return (
     <div className="topbar-dispatch">
@@ -80,58 +189,45 @@ export function TopbarDispatch({ unreadItems, onJump }: TopbarDispatchProps) {
         <span>AgentQuad</span>
       </div>
 
-      <StatPill
-        icon="pulse-dot"
-        iconColor="var(--ai-running)"
-        value={runningCount}
-        label="running"
-        data-testid="stat-running"
-        tooltip={
-          runningList.length === 0 ? (
-            <div className="topbar-tooltip-empty">No running sessions</div>
-          ) : (
-            <>
-              <div className="topbar-tooltip-title">Running sessions ({runningList.length})</div>
-              {runningList.map((s) => (
-                <div key={s.id} className="topbar-tooltip-row">
-                  <span className="topbar-tooltip-dot" style={{ background: 'var(--ai-running)' }} />
-                  <span className="topbar-tooltip-name">{s.title}</span>
-                  <span className="topbar-tooltip-meta">{s.tool}</span>
-                </div>
-              ))}
-            </>
-          )
-        }
-      />
+      <Popover
+        open={runningOpen}
+        onOpenChange={setRunningOpen}
+        trigger="click"
+        placement="bottomLeft"
+        overlayClassName="topbar-pending-popover"
+        content={runningPopoverContent}
+      >
+        <span data-testid="stat-running-trigger">
+          <StatPill
+            icon="pulse-dot"
+            iconColor="var(--ai-running)"
+            value={runningCount}
+            label="running"
+            data-testid="stat-running"
+            onClick={() => setRunningOpen((v) => !v)}
+          />
+        </span>
+      </Popover>
 
-      <StatPill
-        icon="pulse-dot"
-        iconColor="var(--ai-idle)"
-        value={idleCount}
-        label="idle"
-        data-testid="stat-idle"
-        tooltip={
-          idleList.length === 0 ? (
-            <div className="topbar-tooltip-empty">No idle sessions</div>
-          ) : (
-            <>
-              <div className="topbar-tooltip-title">Idle sessions ({idleList.length})</div>
-              {idleListVisible.map((s) => (
-                <div key={s.id} className="topbar-tooltip-row">
-                  <span className="topbar-tooltip-dot" style={{ background: 'var(--ai-idle)' }} />
-                  <span className="topbar-tooltip-name">{s.title}</span>
-                  <span className="topbar-tooltip-meta">{s.tool}</span>
-                </div>
-              ))}
-              {idleRemainder > 0 && (
-                <div className="topbar-tooltip-row">
-                  <span className="topbar-tooltip-meta">还有 {idleRemainder} 条</span>
-                </div>
-              )}
-            </>
-          )
-        }
-      />
+      <Popover
+        open={idleOpen}
+        onOpenChange={setIdleOpen}
+        trigger="click"
+        placement="bottomLeft"
+        overlayClassName="topbar-pending-popover"
+        content={idlePopoverContent}
+      >
+        <span data-testid="stat-idle-trigger">
+          <StatPill
+            icon="pulse-dot"
+            iconColor="var(--ai-idle)"
+            value={idleCount}
+            label="idle"
+            data-testid="stat-idle"
+            onClick={() => setIdleOpen((v) => !v)}
+          />
+        </span>
+      </Popover>
 
       <Popover
         open={pendingOpen}

@@ -18,9 +18,13 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 // Bin names verified via `npm view <pkg> bin`.
+// kind:
+//   - 'npm'   → installed via `npm install -g <pkg>` (claude / codex)
+//   - 'shell' → installed via piping `<script>` to a shell (cursor; upstream installer)
 export const TOOL_PACKAGES = {
-  claude: { pkg: '@anthropic-ai/claude-code', bin: 'claude' },
-  codex:  { pkg: '@openai/codex',             bin: 'codex'  },
+  claude: { kind: 'npm',   pkg: '@anthropic-ai/claude-code',                   bin: 'claude'        },
+  codex:  { kind: 'npm',   pkg: '@openai/codex',                               bin: 'codex'         },
+  cursor: { kind: 'shell', script: 'curl https://cursor.com/install -fsSL | bash', bin: 'cursor-agent' },
 }
 
 export function planInstallTools(opts) {
@@ -28,7 +32,8 @@ export function planInstallTools(opts) {
   const explicit = []
   if (flags.claude) explicit.push('claude')
   if (flags.codex)  explicit.push('codex')
-  if (flags.all || explicit.length === 0) return ['claude', 'codex']
+  if (flags.cursor) explicit.push('cursor')
+  if (flags.all || explicit.length === 0) return ['claude', 'codex', 'cursor']
   return explicit
 }
 
@@ -531,7 +536,7 @@ program.command('doctor')
     }
 
     const missing = report.checks
-      .filter(c => !c.ok && /^(claude|codex) binary$/.test(c.name))
+      .filter(c => !c.ok && /^(claude|codex|cursor) binary$/.test(c.name))
       .map(c => c.name.split(' ')[0])
 
     if (missing.length > 0) {
@@ -556,18 +561,21 @@ program.command('doctor')
   })
 
 program.command('install-tools')
-  .description('Install missing AI CLIs (claude / codex) globally via npm')
-  .option('--claude', 'install only @anthropic-ai/claude-code')
-  .option('--codex',  'install only @openai/codex')
-  .option('--all',    'install both (default if no flag given)')
+  .description('Install missing AI CLIs (claude / codex / cursor)')
+  .option('--claude', 'install only @anthropic-ai/claude-code (npm)')
+  .option('--codex',  'install only @openai/codex (npm)')
+  .option('--cursor', 'install only cursor-agent (upstream shell installer)')
+  .option('--all',    'install all (default if no flag given)')
   .option('-y, --yes', 'skip the y/N confirmation')
   .action(async (opts) => {
     const tools = planInstallTools(opts)
     const items = tools.map((t) => ({ tool: t, ...TOOL_PACKAGES[t] }))
 
     console.log('About to install:')
-    for (const it of items) console.log(`  - ${it.pkg}  (binary: ${it.bin})`)
-    console.log('Each one will be installed via:  npm install -g <pkg>')
+    for (const it of items) {
+      if (it.kind === 'shell') console.log(`  - ${it.bin}  via: ${it.script}`)
+      else console.log(`  - ${it.pkg}  (binary: ${it.bin})  via npm install -g`)
+    }
 
     if (!opts.yes && process.stdin.isTTY) {
       const ok = await prompt('Continue? [y/N] ')
@@ -579,18 +587,33 @@ program.command('install-tools')
 
     let allOk = true
     for (const it of items) {
-      console.log(`\n>> npm install -g ${it.pkg}`)
-      const r = spawnSync('npm', ['install', '-g', it.pkg], { stdio: 'inherit' })
-      if (r.status !== 0) {
-        console.error(`\n✗ npm install -g ${it.pkg} exited ${r.status}`)
-        printInstallFailureFix(it)
-        allOk = false
-        break
+      if (it.kind === 'shell') {
+        console.log(`\n>> ${it.script}`)
+        const r = spawnSync('/bin/sh', ['-lc', it.script], { stdio: 'inherit' })
+        if (r.status !== 0) {
+          console.error(`\n✗ shell installer for ${it.bin} exited ${r.status}`)
+          console.error(`  Manual fix: re-run "${it.script}" in your shell, then check PATH.`)
+          allOk = false
+          break
+        }
+      } else {
+        console.log(`\n>> npm install -g ${it.pkg}`)
+        const r = spawnSync('npm', ['install', '-g', it.pkg], { stdio: 'inherit' })
+        if (r.status !== 0) {
+          console.error(`\n✗ npm install -g ${it.pkg} exited ${r.status}`)
+          printInstallFailureFix(it)
+          allOk = false
+          break
+        }
       }
       const w = spawnSync('command', ['-v', it.bin], { encoding: 'utf8', shell: '/bin/sh' })
       if (w.status !== 0 || !w.stdout.trim()) {
-        console.error(`\n✗ npm reported success but \`${it.bin}\` is not in PATH.`)
-        printInstallFailureFix(it)
+        console.error(`\n✗ installer reported success but \`${it.bin}\` is not in PATH.`)
+        if (it.kind === 'shell') {
+          console.error(`  You may need to restart your shell, or run the installer manually:  ${it.script}`)
+        } else {
+          printInstallFailureFix(it)
+        }
         allOk = false
         break
       }

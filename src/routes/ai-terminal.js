@@ -4,7 +4,7 @@ import { Router } from 'express'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import pidusage from 'pidusage'
-import { loadConfig, resolveToolsConfig, DEFAULT_ROOT_DIR } from '../config.js'
+import { loadConfig, resolveToolsConfig, SUPPORTED_TOOLS, DEFAULT_ROOT_DIR } from '../config.js'
 
 const MAX_OUTPUT_BUFFER = 512 * 1024
 const CLEANUP_MS = 30 * 60_000
@@ -342,7 +342,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       const err = new Error('missing todoId, prompt, or tool'); err.code = 'bad_request'
       throw err
     }
-    if (!['claude', 'codex'].includes(tool)) {
+    if (!SUPPORTED_TOOLS.includes(tool)) {
       const err = new Error('invalid tool'); err.code = 'bad_request'
       throw err
     }

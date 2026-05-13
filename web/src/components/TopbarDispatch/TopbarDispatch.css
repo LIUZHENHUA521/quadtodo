@@ -160,3 +160,47 @@
   outline: none;
   border-color: var(--accent-electric);
 }
+
+/* Running / Idle session rows with trailing close button */
+.topbar-session-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.topbar-session-row-wrap .topbar-session-row {
+  flex: 1;
+  min-width: 0;
+}
+.topbar-row-close-btn {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-tertiary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity var(--motion-fast) var(--ease-standard),
+              background var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard);
+  font-size: var(--text-xs);
+  padding: 0;
+}
+.topbar-session-row-wrap:hover .topbar-row-close-btn {
+  opacity: 1;
+}
+.topbar-row-close-btn:hover {
+  background: var(--surface-2);
+  color: var(--ai-pending-confirm);
+  border-color: var(--border-subtle);
+}
+.topbar-row-close-btn:disabled {
+  cursor: progress;
+  opacity: 0.3;
+}
+.topbar-session-remainder {
+  padding: 4px 8px;
+}

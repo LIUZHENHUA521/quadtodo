@@ -542,7 +542,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
     field: 'perUser' | 'perChat',
     placeholder: string,
   ) => {
-    const map = (dispatchDraft[channel]?.[field] as Record<string, 'claude' | 'codex'>) || {}
+    const map = (dispatchDraft[channel]?.[field] as Record<string, ToolKey>) || {}
     const entries = Object.entries(map)
     return (
       <div style={{ marginTop: 8 }}>
@@ -571,6 +571,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
             >
               <Radio.Button value="claude">claude</Radio.Button>
               <Radio.Button value="codex">codex</Radio.Button>
+              <Radio.Button value="cursor">cursor</Radio.Button>
             </Radio.Group>
             <Button
               type="text"
@@ -656,6 +657,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
                 >
                   <Radio.Button value="claude">claude</Radio.Button>
                   <Radio.Button value="codex">codex</Radio.Button>
+                  <Radio.Button value="cursor">cursor</Radio.Button>
                 </Radio.Group>
               </Form.Item>
               {channel === 'lark' && (

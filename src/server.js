@@ -318,7 +318,7 @@ function openNativeTerminalNative({ cwd, command, title } = {}) {
 }
 
 function buildNativeResumeCommand(tool, nativeSessionId, tools = {}) {
-	if (!["claude", "codex"].includes(tool)) {
+	if (!SUPPORTED_TOOLS.includes(tool)) {
 		const error = new Error("invalid_tool");
 		error.code = "invalid_tool";
 		throw error;

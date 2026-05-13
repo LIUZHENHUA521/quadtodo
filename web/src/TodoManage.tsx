@@ -36,6 +36,7 @@ import {
   Todo, Quadrant, AiTool,
   runWiki, getWikiPending,
   uploadImage,
+  stopAiExec,
   ApiError,
 } from './api'
 import { renderAppliedTemplates } from './promptRender'
@@ -376,6 +377,15 @@ export default function TodoManage() {
   // see M3-T2 cleanup notes.
   const handleOpenTerminalInDock = useCallback((todo: Todo, sessionId: string) => {
     useDispatchStore.getState().openFocus(todo.id, sessionId)
+  }, [])
+
+  const handleFocusSessionById = useCallback((todoId: string, sessionId: string) => {
+    const todo = todos.find(t => t.id === todoId)
+    if (todo) handleOpenTerminalInDock(todo, sessionId)
+  }, [todos, handleOpenTerminalInDock])
+
+  const handleStopSession = useCallback(async (sessionId: string) => {
+    await stopAiExec(sessionId)
   }, [])
 
   const handleOpenAttentionItem = useCallback((item: UnreadSessionItem) => {
@@ -996,6 +1006,8 @@ export default function TodoManage() {
         <TopbarDispatch
           unreadItems={unreadItems}
           onJump={handleOpenAttentionItem}
+          onFocusSession={handleFocusSessionById}
+          onStopSession={handleStopSession}
         />
       )}
       {isMobile && (

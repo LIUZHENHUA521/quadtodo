@@ -23,7 +23,7 @@ export function CommandPalette() {
   const { toggle: toggleTheme } = useTheme()
 
   const [page, setPage] = useState<Page>('default')
-  const [aiTool, setAiTool] = useState<'claude' | 'codex'>('claude')
+  const [aiTool, setAiTool] = useState<'claude' | 'codex' | 'cursor'>('claude')
   const [search, setSearch] = useState('')
 
   // Reset to default page each time the palette opens
@@ -108,6 +108,12 @@ export function CommandPalette() {
                 >
                   <span className="cmdk-icon">▶</span>
                   <span>Start AI session (codex) →</span>
+                </Command.Item>
+                <Command.Item
+                  onSelect={() => { setAiTool('cursor'); setPage('aiPicker'); setSearch('') }}
+                >
+                  <span className="cmdk-icon">▶</span>
+                  <span>Start AI session (cursor) →</span>
                 </Command.Item>
               </Command.Group>
 

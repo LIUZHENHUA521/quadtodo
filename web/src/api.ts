@@ -172,9 +172,9 @@ export interface AppConfig {
 }
 
 export interface DispatchChannelConfig {
-  default?: 'claude' | 'codex'
-  perUser?: Record<string, 'claude' | 'codex'>
-  perChat?: Record<string, 'claude' | 'codex'>
+  default?: AiTool
+  perUser?: Record<string, AiTool>
+  perChat?: Record<string, AiTool>
 }
 
 export interface ToolDiagnostic {
