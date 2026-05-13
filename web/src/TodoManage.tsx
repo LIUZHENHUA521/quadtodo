@@ -15,6 +15,7 @@ import {
   MenuOutlined, WarningOutlined,
 } from '@ant-design/icons'
 import { useIsMobile } from './hooks/useIsMobile'
+import { useComments } from './hooks/useComments'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
   useSensor, useSensors, DragOverlay, DragStartEvent,
@@ -26,12 +27,11 @@ import {
   listTodos, createTodo, updateTodo, deleteTodo,
   startAiExec, getWorkDirOptions, pickDirectory, deleteTodoAiSession,
   openTraeCN, openTerminal, openNativeAiResume, updateSessionLabel,
-  listComments, addComment, deleteComment,
   listLiveSessions,
   listTemplates, PromptTemplate,
   createRecurringRule, getRecurringRule, updateRecurringRule, deactivateRecurringRule,
   RecurringFrequency, RecurringRule,
-  Todo, Quadrant, AiTool, Comment,
+  Todo, Quadrant, AiTool,
   runWiki, getWikiPending,
   uploadImage,
   ApiError,
@@ -263,10 +263,17 @@ export default function TodoManage() {
   const [ruleModalOpen, setRuleModalOpen] = useState(false)
   const [ruleEditing, setRuleEditing] = useState<RecurringRule | null>(null)
   const [ruleForm] = Form.useForm()
-  const [comments, setComments] = useState<Comment[]>([])
-  const [commentsLoading, setCommentsLoading] = useState(false)
-  const [commentText, setCommentText] = useState('')
-  const [commentSubmitting, setCommentSubmitting] = useState(false)
+
+  // Comments subsystem (extracted to dedicated hook in M4 cleanup)
+  const {
+    comments,
+    loading: commentsLoading,
+    text: commentText,
+    setText: setCommentText,
+    submitting: commentSubmitting,
+    submit: submitComment,
+    remove: removeComment,
+  } = useComments(detailTodo?.id ?? null, { active: detailOpen })
 
   // 设置 (4 drawers lifted to dispatchStore in M2 T9)
   const settingsOpen = useDispatchStore((s) => s.settings)
@@ -774,14 +781,11 @@ export default function TodoManage() {
   const openDetail = (todo: Todo) => {
     setDetailTodo(todo)
     setDetailOpen(true)
-    setCommentText('')
-    setComments([])
-    setCommentsLoading(true)
     setDetailRule(null)
     if (todo.recurringRuleId) {
       getRecurringRule(todo.recurringRuleId).then(setDetailRule).catch(() => {})
     }
-    listComments(todo.id).then(setComments).catch(() => {}).finally(() => setCommentsLoading(false))
+    // Comments are loaded by useComments() once detailOpen + detailTodo.id flip.
   }
 
   const handleMemorize = useCallback(async (todo: Todo, force = false) => {
@@ -814,23 +818,16 @@ export default function TodoManage() {
   }, [detailTodo?.id])
 
   const handleAddComment = async () => {
-    if (!detailTodo || !commentText.trim()) return
-    setCommentSubmitting(true)
     try {
-      const c = await addComment(detailTodo.id, commentText.trim())
-      setComments(prev => [...prev, c])
-      setCommentText('')
+      await submitComment()
     } catch (e: any) {
       message.error(e?.message || '添加评论失败')
     }
-    setCommentSubmitting(false)
   }
 
   const handleDeleteComment = async (commentId: string) => {
-    if (!detailTodo) return
     try {
-      await deleteComment(detailTodo.id, commentId)
-      setComments(prev => prev.filter(c => c.id !== commentId))
+      await removeComment(commentId)
     } catch (e: any) {
       message.error(e?.message || '删除评论失败')
     }
