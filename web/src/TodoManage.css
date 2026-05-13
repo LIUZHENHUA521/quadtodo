@@ -609,8 +609,30 @@ body {
 .todo-history-headline {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
   min-width: 0;
+}
+
+.todo-history-resumed {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--accent-electric);
+  background: var(--accent-electric-soft);
+  border: 1px solid color-mix(in srgb, var(--accent-electric) 28%, transparent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.todo-history-resumed svg {
+  display: block;
+  flex-shrink: 0;
+  opacity: 0.85;
 }
 
 .todo-history-tool {

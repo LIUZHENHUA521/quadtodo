@@ -82,6 +82,29 @@ export function readLatestAssistantTurn(jsonlPath) {
 }
 
 /**
+ * 取最后一条 assistant 消息的 stop_reason（'end_turn' / 'tool_use' / 'max_tokens' / null）。
+ *
+ * 用途：Stop hook 校验门。Claude 自家的 Stop hook 在中间停顿、子代理、内部 transition 等场景下
+ * 也会 fire，但只有 stop_reason === 'end_turn' 才是"真的本轮结束"。openclaw-hook.js 用这个
+ * 函数判断要不要把会话状态翻成 idle。
+ *
+ * 读不到文件或解析失败时返回 null，调用方应把 null 视作"不可判定"（一般兜底为 true 不阻塞）。
+ */
+export function readLatestAssistantStopReason(jsonlPath) {
+  const lines = readJsonlLines(jsonlPath)
+  if (lines.length === 0) return null
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const obj = parseJsonlLine(lines[i])
+    if (!obj) continue
+    if (obj.type !== 'assistant') continue
+    if (obj.isMeta || obj.isSidechain) continue
+    const sr = obj.message?.stop_reason
+    return typeof sr === 'string' ? sr : null
+  }
+  return null
+}
+
+/**
  * 取最后一条 user 消息的时间戳（不含 isMeta / sidechain）。
  * 用于 Stop hook 识别 "AI 是否已经回应到最新 user 输入"。
  */

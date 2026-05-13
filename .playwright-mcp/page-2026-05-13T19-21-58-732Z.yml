@@ -1,0 +1,411 @@
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - img "AgentQuad" [ref=e8]
+        - generic [ref=e9]: AgentQuad
+      - generic [ref=e11] [cursor=pointer]:
+        - img [ref=e13]
+        - generic [ref=e15]: "5"
+        - generic [ref=e16]: 运行中
+      - generic [ref=e18] [cursor=pointer]:
+        - img [ref=e20]
+        - generic [ref=e23]: "3"
+        - generic [ref=e24]: 空闲
+      - generic [ref=e26] [cursor=pointer]:
+        - img [ref=e28]
+        - generic [ref=e30]: "2"
+        - generic [ref=e31]: 待确认
+      - button "⌘ 搜索或输入命令 ⌘K" [ref=e32] [cursor=pointer]:
+        - generic [ref=e33]: ⌘
+        - generic [ref=e34]: 搜索或输入命令
+        - generic [ref=e35]: ⌘K
+      - button "新建待办" [ref=e36] [cursor=pointer]:
+        - img [ref=e37]
+      - button "模板" [ref=e38] [cursor=pointer]:
+        - img [ref=e39]
+      - button "找回会话" [ref=e42] [cursor=pointer]:
+        - img [ref=e43]
+      - button [ref=e46] [cursor=pointer]:
+        - img [ref=e47]
+      - button [ref=e49] [cursor=pointer]:
+        - img [ref=e50]
+      - button [ref=e52] [cursor=pointer]:
+        - img [ref=e53]
+      - button "Toggle theme" [ref=e56] [cursor=pointer]:
+        - img [ref=e57]
+    - generic [ref=e64]:
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - generic [ref=e68]:
+            - generic [ref=e69]:
+              - generic [ref=e70]: P0
+              - generic [ref=e71]: 重要且紧急
+              - generic [ref=e72]: "4"
+            - generic [ref=e73]:
+              - button "我想在home页面，做一个玩家游戏圈动态的功能，要求垂直方向轮博2或者3个玩家的的动态，这些动态需要管理后台去配置， 加阶段 会话 1 AI 终端 历史会话 (1) 编辑标题 Claude Code 04/21 09:28" [ref=e104]:
+                - generic [ref=e105]:
+                  - generic [ref=e106]:
+                    - checkbox [ref=e107]
+                    - generic [ref=e109]:
+                      - generic [ref=e110]: 我想在home页面，做一个玩家游戏圈动态的功能，要求垂直方向轮博2或者3个玩家的的动态，这些动态需要管理后台去配置，
+                      - button "加阶段" [ref=e112] [cursor=pointer]:
+                        - img [ref=e113]
+                        - generic [ref=e114]: 加阶段
+                  - generic [ref=e115]:
+                    - generic [ref=e117]: 会话 1
+                    - generic [ref=e118]:
+                      - button [ref=e119] [cursor=pointer]:
+                        - img [ref=e121]
+                      - button [ref=e124] [cursor=pointer]:
+                        - img [ref=e126]
+                      - button "AI 终端" [ref=e129] [cursor=pointer]:
+                        - img [ref=e131]
+                        - generic [ref=e133]: AI 终端
+                      - button [ref=e134] [cursor=pointer]:
+                        - img [ref=e136]
+                      - button [ref=e137] [cursor=pointer]:
+                        - img [ref=e139]
+                  - generic [ref=e142]:
+                    - generic [ref=e143]: 历史会话 (1)
+                    - button "编辑标题 Claude Code 04/21 09:28" [ref=e145] [cursor=pointer]:
+                      - generic [ref=e146]:
+                        - button "编辑标题" [ref=e148]:
+                          - img [ref=e149]
+                        - generic [ref=e152]:
+                          - generic [ref=e153]: Claude Code
+                          - generic [ref=e154]: 04/21 09:28
+              - button "软著那边申请名字变更 加阶段 AI 终端" [ref=e155]:
+                - generic [ref=e156]:
+                  - generic [ref=e157]:
+                    - checkbox [ref=e158]
+                    - generic [ref=e160]:
+                      - generic [ref=e161]: 软著那边申请名字变更
+                      - button "加阶段" [ref=e163] [cursor=pointer]:
+                        - img [ref=e164]
+                        - generic [ref=e165]: 加阶段
+                  - generic [ref=e167]:
+                    - button [ref=e168] [cursor=pointer]:
+                      - img [ref=e170]
+                    - button [ref=e173] [cursor=pointer]:
+                      - img [ref=e175]
+                    - button "AI 终端" [ref=e178] [cursor=pointer]:
+                      - img [ref=e180]
+                      - generic [ref=e182]: AI 终端
+                    - button [ref=e183] [cursor=pointer]:
+                      - img [ref=e185]
+                    - button [ref=e186] [cursor=pointer]:
+                      - img [ref=e188]
+              - button "小红书推广尝试一下 加阶段 会话 1 AI 终端 历史会话 (1) 编辑标题 Claude Code 05/13 12:05 running 本地继续" [ref=e191]:
+                - generic [ref=e192]:
+                  - generic [ref=e193]:
+                    - checkbox [ref=e194]
+                    - generic [ref=e196]:
+                      - generic [ref=e197]: 小红书推广尝试一下
+                      - button "加阶段" [ref=e199] [cursor=pointer]:
+                        - img [ref=e200]
+                        - generic [ref=e201]: 加阶段
+                  - generic [ref=e202]:
+                    - generic [ref=e204]: 会话 1
+                    - generic [ref=e205]:
+                      - button [ref=e206] [cursor=pointer]:
+                        - img [ref=e208]
+                      - button [ref=e211] [cursor=pointer]:
+                        - img [ref=e213]
+                      - button "AI 终端" [ref=e216] [cursor=pointer]:
+                        - img [ref=e218]
+                        - generic [ref=e220]: AI 终端
+                      - button [ref=e221] [cursor=pointer]:
+                        - img [ref=e223]
+                      - button [ref=e224] [cursor=pointer]:
+                        - img [ref=e226]
+                  - generic [ref=e229]:
+                    - generic [ref=e230]: 历史会话 (1)
+                    - button "编辑标题 Claude Code 05/13 12:05 running 本地继续" [ref=e232] [cursor=pointer]:
+                      - generic [ref=e233]:
+                        - button "编辑标题" [ref=e235]:
+                          - img [ref=e236]
+                        - generic [ref=e239]:
+                          - generic [ref=e240]: Claude Code
+                          - generic [ref=e241]: 05/13 12:05
+                          - generic [ref=e242]:
+                            - img [ref=e243]
+                            - text: running
+                      - button "本地继续" [ref=e246]
+              - button "宝子，我这个cli发版后，用户安装下来，可以一键启动吗？ 加阶段 目录 · quadtodo 会话 1 AI 终端 历史会话 (1) 编辑标题 Claude Code 05/13 12:05 running 本地继续" [ref=e247]:
+                - generic [ref=e248]:
+                  - generic [ref=e249]:
+                    - checkbox [ref=e250]
+                    - generic [ref=e252]:
+                      - generic [ref=e253]: 宝子，我这个cli发版后，用户安装下来，可以一键启动吗？
+                      - button "加阶段" [ref=e255] [cursor=pointer]:
+                        - img [ref=e256]
+                        - generic [ref=e257]: 加阶段
+                  - generic [ref=e258]:
+                    - generic [ref=e259]:
+                      - generic "/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo" [ref=e260]: 目录 · quadtodo
+                      - generic [ref=e261]: 会话 1
+                    - generic [ref=e262]:
+                      - button [ref=e263] [cursor=pointer]:
+                        - img [ref=e265]
+                      - button [ref=e268] [cursor=pointer]:
+                        - img [ref=e270]
+                      - button "AI 终端" [ref=e273] [cursor=pointer]:
+                        - img [ref=e275]
+                        - generic [ref=e277]: AI 终端
+                      - button [ref=e278] [cursor=pointer]:
+                        - img [ref=e280]
+                      - button [ref=e281] [cursor=pointer]:
+                        - img [ref=e283]
+                  - generic [ref=e286]:
+                    - generic [ref=e287]: 历史会话 (1)
+                    - button "编辑标题 Claude Code 05/13 12:05 running 本地继续" [ref=e289] [cursor=pointer]:
+                      - generic [ref=e290]:
+                        - button "编辑标题" [ref=e292]:
+                          - img [ref=e293]
+                        - generic [ref=e296]:
+                          - generic [ref=e297]: Claude Code
+                          - generic [ref=e298]: 05/13 12:05
+                          - generic [ref=e299]:
+                            - img [ref=e300]
+                            - text: running
+                      - button "本地继续" [ref=e303]
+          - generic [ref=e77]:
+            - generic [ref=e78]:
+              - generic [ref=e79]: P1
+              - generic [ref=e80]: 重要不紧急
+              - generic [ref=e81]: "3"
+            - generic [ref=e82]:
+              - button "command + k区域，帮我改成中文版本，现在全是英文，或者可以做一下国际化也行 加阶段 目录 · quadtodo 会话 1 AI 终端 历史会话 (1) runtime:bypass 编辑标题 Claude Code 05/13 12:17 running 本地继续" [ref=e304]:
+                - generic [ref=e305]:
+                  - generic [ref=e306]:
+                    - checkbox [ref=e307]
+                    - generic [ref=e309]:
+                      - generic [ref=e310]: command + k区域，帮我改成中文版本，现在全是英文，或者可以做一下国际化也行
+                      - button "加阶段" [ref=e312] [cursor=pointer]:
+                        - img [ref=e313]
+                        - generic [ref=e314]: 加阶段
+                  - generic [ref=e315]:
+                    - generic [ref=e316]:
+                      - generic "/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo" [ref=e317]: 目录 · quadtodo
+                      - generic [ref=e318]: 会话 1
+                    - generic [ref=e319]:
+                      - button [ref=e320] [cursor=pointer]:
+                        - img [ref=e322]
+                      - button [ref=e325] [cursor=pointer]:
+                        - img [ref=e327]
+                      - button "AI 终端" [ref=e330] [cursor=pointer]:
+                        - img [ref=e332]
+                        - generic [ref=e334]: AI 终端
+                      - button [ref=e335] [cursor=pointer]:
+                        - img [ref=e337]
+                      - button [ref=e338] [cursor=pointer]:
+                        - img [ref=e340]
+                  - generic [ref=e343]:
+                    - generic [ref=e344]: 历史会话 (1)
+                    - button "runtime:bypass 编辑标题 Claude Code 05/13 12:17 running 本地继续" [ref=e346] [cursor=pointer]:
+                      - generic [ref=e347]:
+                        - generic [ref=e348]:
+                          - generic "runtime:bypass" [ref=e349]
+                          - button "编辑标题" [ref=e350]:
+                            - img [ref=e351]
+                        - generic [ref=e354]:
+                          - generic [ref=e355]: Claude Code
+                          - generic [ref=e356]: 05/13 12:17
+                          - generic [ref=e357]:
+                            - img [ref=e358]
+                            - text: running
+                      - button "本地继续" [ref=e361]
+              - button "现在的设置页面，整体上有点乱宝子，布局什么的，帮我看看怎么改合适 加阶段 目录 · quadtodo 会话 1 AI 终端 历史会话 (1) 编辑标题 Claude Code 05/13 12:05 running 本地继续" [ref=e362]:
+                - generic [ref=e363]:
+                  - generic [ref=e364]:
+                    - checkbox [ref=e365]
+                    - generic [ref=e367]:
+                      - generic [ref=e368]: 现在的设置页面，整体上有点乱宝子，布局什么的，帮我看看怎么改合适
+                      - button "加阶段" [ref=e370] [cursor=pointer]:
+                        - img [ref=e371]
+                        - generic [ref=e372]: 加阶段
+                  - generic [ref=e373]:
+                    - generic [ref=e374]:
+                      - generic "/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo" [ref=e375]: 目录 · quadtodo
+                      - generic [ref=e376]: 会话 1
+                    - generic [ref=e377]:
+                      - button [ref=e378] [cursor=pointer]:
+                        - img [ref=e380]
+                      - button [ref=e383] [cursor=pointer]:
+                        - img [ref=e385]
+                      - button "AI 终端" [ref=e388] [cursor=pointer]:
+                        - img [ref=e390]
+                        - generic [ref=e392]: AI 终端
+                      - button [ref=e393] [cursor=pointer]:
+                        - img [ref=e395]
+                      - button [ref=e396] [cursor=pointer]:
+                        - img [ref=e398]
+                  - generic [ref=e401]:
+                    - generic [ref=e402]: 历史会话 (1)
+                    - button "编辑标题 Claude Code 05/13 12:05 running 本地继续" [ref=e404] [cursor=pointer]:
+                      - generic [ref=e405]:
+                        - button "编辑标题" [ref=e407]:
+                          - img [ref=e408]
+                        - generic [ref=e411]:
+                          - generic [ref=e412]: Claude Code
+                          - generic [ref=e413]: 05/13 12:05
+                          - generic [ref=e414]:
+                            - img [ref=e415]
+                            - text: running
+                      - button "本地继续" [ref=e418]
+              - button "宝子，我发现这个agent 状态有时候还是不对，比如这个，现在claude code正在运行，但是没提醒，你看看是什么原因导致的 加阶段 目录 · quadtodo 会话 1 AI 终端 历史会话 (1) 编辑标题 Claude Code 05/13 12:05 待确认 本地继续" [ref=e419]:
+                - generic [ref=e420]:
+                  - generic [ref=e421]:
+                    - checkbox [ref=e422]
+                    - generic [ref=e424]:
+                      - generic [ref=e425]: 宝子，我发现这个agent 状态有时候还是不对，比如这个，现在claude code正在运行，但是没提醒，你看看是什么原因导致的
+                      - button "加阶段" [ref=e427] [cursor=pointer]:
+                        - img [ref=e428]
+                        - generic [ref=e429]: 加阶段
+                  - generic [ref=e430]:
+                    - generic [ref=e431]:
+                      - generic "/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo" [ref=e432]: 目录 · quadtodo
+                      - generic [ref=e433]: 会话 1
+                    - generic [ref=e434]:
+                      - button [ref=e435] [cursor=pointer]:
+                        - img [ref=e437]
+                      - button [ref=e440] [cursor=pointer]:
+                        - img [ref=e442]
+                      - button "AI 终端" [ref=e445] [cursor=pointer]:
+                        - img [ref=e447]
+                        - generic [ref=e449]: AI 终端
+                      - button [ref=e450] [cursor=pointer]:
+                        - img [ref=e452]
+                      - button [ref=e453] [cursor=pointer]:
+                        - img [ref=e455]
+                  - generic [ref=e458]:
+                    - generic [ref=e459]: 历史会话 (1)
+                    - button "编辑标题 Claude Code 05/13 12:05 待确认 本地继续" [ref=e461] [cursor=pointer]:
+                      - generic [ref=e462]:
+                        - button "编辑标题" [ref=e464]:
+                          - img [ref=e465]
+                        - generic [ref=e468]:
+                          - generic [ref=e469]: Claude Code
+                          - generic [ref=e470]: 05/13 12:05
+                          - generic [ref=e471]:
+                            - img [ref=e472]
+                            - text: 待确认
+                      - button "本地继续" [ref=e475]
+        - generic [ref=e85]:
+          - generic [ref=e87]:
+            - generic [ref=e88]:
+              - generic [ref=e89]: P2
+              - generic [ref=e90]: 紧急不重要
+              - generic [ref=e91]: "0"
+            - generic [ref=e93]: 拖拽任务到此处
+          - generic [ref=e96]:
+            - generic [ref=e97]:
+              - generic [ref=e98]: P3
+              - generic [ref=e99]: 不重要不紧急
+              - generic [ref=e100]: "1"
+            - button "我一会发你一个视频，你帮我看看内容 加阶段 目录 · crazyCombo 会话 1 AI 终端 历史会话 (1) 编辑标题 Codex 05/13 12:05 running 本地继续" [ref=e476]:
+              - generic [ref=e477]:
+                - generic [ref=e478]:
+                  - checkbox [ref=e479]
+                  - generic [ref=e481]:
+                    - generic [ref=e482]: 我一会发你一个视频，你帮我看看内容
+                    - button "加阶段" [ref=e484] [cursor=pointer]:
+                      - img [ref=e485]
+                      - generic [ref=e486]: 加阶段
+                - generic [ref=e487]:
+                  - generic [ref=e488]:
+                    - generic /Users/liuzhenhua/Desktop/code/crazyCombo/ [ref=e489]: 目录 · crazyCombo
+                    - generic [ref=e490]: 会话 1
+                  - generic [ref=e491]:
+                    - button [ref=e492] [cursor=pointer]:
+                      - img [ref=e494]
+                    - button [ref=e497] [cursor=pointer]:
+                      - img [ref=e499]
+                    - button "AI 终端" [ref=e502] [cursor=pointer]:
+                      - img [ref=e504]
+                      - generic [ref=e506]: AI 终端
+                    - button [ref=e507] [cursor=pointer]:
+                      - img [ref=e509]
+                    - button [ref=e510] [cursor=pointer]:
+                      - img [ref=e512]
+                - generic [ref=e515]:
+                  - generic [ref=e516]: 历史会话 (1)
+                  - button "编辑标题 Codex 05/13 12:05 running 本地继续" [ref=e518] [cursor=pointer]:
+                    - generic [ref=e519]:
+                      - button "编辑标题" [ref=e521]:
+                        - img [ref=e522]
+                      - generic [ref=e525]:
+                        - generic [ref=e526]: Codex
+                        - generic [ref=e527]: 05/13 12:05
+                        - generic [ref=e528]:
+                          - img [ref=e529]
+                          - text: running
+                    - button "本地继续" [ref=e532]
+      - status [ref=e103]
+  - dialog "AgentQuad 设置" [ref=e534]:
+    - generic [ref=e536]:
+      - button "关闭" [ref=e537] [cursor=pointer]:
+        - img "close" [ref=e538]:
+          - img [ref=e539]
+      - generic [ref=e541]: AgentQuad 设置
+    - generic [ref=e544]:
+      - tablist [ref=e545]:
+        - generic [ref=e547]:
+          - tab "通用" [selected] [ref=e549] [cursor=pointer]
+          - tab "AI 工具" [ref=e551] [cursor=pointer]
+          - tab "Telegram" [ref=e553] [cursor=pointer]
+          - tab "飞书" [ref=e555] [cursor=pointer]
+          - tab "价目表" [ref=e557] [cursor=pointer]
+      - tabpanel "通用" [ref=e560]:
+        - generic [ref=e561]: 启动
+        - generic [ref=e563]:
+          - generic "默认启动目录" [ref=e565]
+          - generic [ref=e566]:
+            - generic [ref=e569]:
+              - generic [ref=e570]:
+                - textbox "/Users/liuzhenhua/Desktop/code/crazyCombo" [ref=e571]: /Users/liuzhenhua/Desktop/code/crazyCombo/
+                - button "close-circle" [ref=e573] [cursor=pointer]:
+                  - img "close-circle" [ref=e574]:
+                    - img [ref=e575]
+              - button "选择目录" [ref=e577] [cursor=pointer]:
+                - generic [ref=e578]: 选择目录
+            - generic [ref=e580]: 新开的 AI 会话会默认在这个目录里启动。保存后立即对新会话生效。
+        - generic [ref=e582]:
+          - generic "终端链接打开编辑器" [ref=e584]
+          - generic [ref=e585]:
+            - generic [ref=e588]:
+              - generic [ref=e589] [cursor=pointer]:
+                - generic [ref=e590]:
+                  - radio "Trae CN" [checked]
+                - text: Trae CN
+              - generic [ref=e591] [cursor=pointer]:
+                - generic [ref=e592]:
+                  - radio "Trae"
+                - text: Trae
+              - generic [ref=e593] [cursor=pointer]:
+                - generic [ref=e594]:
+                  - radio "Cursor"
+                - text: Cursor
+            - generic [ref=e596]: 终端中的文件路径点击时会使用该编辑器打开；也是卡片「代码」按钮的默认项。
+        - generic [ref=e597]: 服务
+        - generic [ref=e599]:
+          - generic "服务端口" [ref=e601]: "* 服务端口"
+          - generic [ref=e602]:
+            - generic [ref=e605]:
+              - generic:
+                - button "Increase Value" [ref=e606] [cursor=pointer]:
+                  - img "up" [ref=e607]:
+                    - img [ref=e608]
+                - button "Decrease Value" [ref=e610] [cursor=pointer]:
+                  - img "down" [ref=e611]:
+                    - img [ref=e612]
+              - spinbutton "* 服务端口" [ref=e615]: "5677"
+            - generic [ref=e617]: 端口会保存到配置文件，重启 AgentQuad 后生效。
+    - generic [ref=e619]:
+      - code [ref=e621]: ~/.agentquad/config.json
+      - generic [ref=e622]:
+        - button "关 闭" [ref=e624] [cursor=pointer]:
+          - generic [ref=e625]: 关 闭
+        - button "保 存" [ref=e627] [cursor=pointer]:
+          - generic [ref=e628]: 保 存

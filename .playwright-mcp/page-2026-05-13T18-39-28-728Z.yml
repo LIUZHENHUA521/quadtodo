@@ -1,0 +1,1831 @@
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - img "AgentQuad" [ref=e8]
+        - generic [ref=e9]: AgentQuad
+      - generic [ref=e11] [cursor=pointer]:
+        - img [ref=e13]
+        - generic [ref=e15]: "5"
+        - generic [ref=e16]: running
+      - generic [ref=e18] [cursor=pointer]:
+        - img [ref=e20]
+        - generic [ref=e23]: "4"
+        - generic [ref=e24]: idle
+      - generic [ref=e26] [cursor=pointer]:
+        - img [ref=e28]
+        - generic [ref=e30]: "12"
+        - generic [ref=e31]: 待确认
+      - button "⌘ Search or run a command ⌘K" [ref=e32] [cursor=pointer]:
+        - generic [ref=e33]: ⌘
+        - generic [ref=e34]: Search or run a command
+        - generic [ref=e35]: ⌘K
+      - button "New todo" [ref=e36] [cursor=pointer]:
+        - img [ref=e37]
+      - button "Templates" [ref=e38] [cursor=pointer]:
+        - img [ref=e39]
+      - button "Recover session" [ref=e42] [cursor=pointer]:
+        - img [ref=e43]
+      - button [ref=e46] [cursor=pointer]:
+        - img [ref=e47]
+      - button [ref=e49] [cursor=pointer]:
+        - img [ref=e50]
+      - button [ref=e52] [cursor=pointer]:
+        - img [ref=e53]
+      - button "Toggle theme" [ref=e56] [cursor=pointer]:
+        - img [ref=e57]
+    - generic [ref=e107]:
+      - generic [ref=e108]:
+        - generic [ref=e109]:
+          - generic [ref=e111]:
+            - generic [ref=e112]:
+              - generic [ref=e113]: P0
+              - generic [ref=e114]: 重要且紧急
+              - generic [ref=e115]: "5"
+            - generic [ref=e116]:
+              - button "我想在home页面，做一个玩家游戏圈动态的功能，要求垂直方向轮博2或者3个玩家的的动态，这些动态需要管理后台去配置， 加阶段 会话 1 AI 终端 历史会话 (1) 编辑标题 Claude Code 04/21 09:28" [ref=e117]:
+                - generic [ref=e118]:
+                  - generic [ref=e119]:
+                    - checkbox [ref=e120]
+                    - generic [ref=e122]:
+                      - generic [ref=e123]: 我想在home页面，做一个玩家游戏圈动态的功能，要求垂直方向轮博2或者3个玩家的的动态，这些动态需要管理后台去配置，
+                      - button "加阶段" [ref=e125] [cursor=pointer]:
+                        - img [ref=e126]
+                        - generic [ref=e127]: 加阶段
+                  - generic [ref=e128]:
+                    - generic [ref=e130]: 会话 1
+                    - generic [ref=e131]:
+                      - button [ref=e132] [cursor=pointer]:
+                        - img [ref=e134]
+                      - button [ref=e137] [cursor=pointer]:
+                        - img [ref=e139]
+                      - button "AI 终端" [ref=e142] [cursor=pointer]:
+                        - img [ref=e144]
+                        - generic [ref=e146]: AI 终端
+                      - button [ref=e147] [cursor=pointer]:
+                        - img [ref=e149]
+                      - button [ref=e150] [cursor=pointer]:
+                        - img [ref=e152]
+                  - generic [ref=e155]:
+                    - generic [ref=e156]: 历史会话 (1)
+                    - button "编辑标题 Claude Code 04/21 09:28" [ref=e158] [cursor=pointer]:
+                      - generic [ref=e159]:
+                        - button "编辑标题" [ref=e161]:
+                          - img [ref=e162]
+                        - generic [ref=e165]:
+                          - generic [ref=e166]: Claude Code
+                          - generic [ref=e167]: 04/21 09:28
+              - button "软著那边申请名字变更 加阶段 AI 终端" [ref=e168]:
+                - generic [ref=e169]:
+                  - generic [ref=e170]:
+                    - checkbox [ref=e171]
+                    - generic [ref=e173]:
+                      - generic [ref=e174]: 软著那边申请名字变更
+                      - button "加阶段" [ref=e176] [cursor=pointer]:
+                        - img [ref=e177]
+                        - generic [ref=e178]: 加阶段
+                  - generic [ref=e180]:
+                    - button [ref=e181] [cursor=pointer]:
+                      - img [ref=e183]
+                    - button [ref=e186] [cursor=pointer]:
+                      - img [ref=e188]
+                    - button "AI 终端" [ref=e191] [cursor=pointer]:
+                      - img [ref=e193]
+                      - generic [ref=e195]: AI 终端
+                    - button [ref=e196] [cursor=pointer]:
+                      - img [ref=e198]
+                    - button [ref=e199] [cursor=pointer]:
+                      - img [ref=e201]
+              - button "小红书推广尝试一下 加阶段 会话 1 AI 终端 历史会话 (1) 编辑标题 Claude Code 05/13 10:44 本地继续" [ref=e204]:
+                - generic [ref=e205]:
+                  - generic [ref=e206]:
+                    - checkbox [ref=e207]
+                    - generic [ref=e209]:
+                      - generic [ref=e210]: 小红书推广尝试一下
+                      - button "加阶段" [ref=e212] [cursor=pointer]:
+                        - img [ref=e213]
+                        - generic [ref=e214]: 加阶段
+                  - generic [ref=e215]:
+                    - generic [ref=e217]: 会话 1
+                    - generic [ref=e218]:
+                      - button [ref=e219] [cursor=pointer]:
+                        - img [ref=e221]
+                      - button [ref=e224] [cursor=pointer]:
+                        - img [ref=e226]
+                      - button "AI 终端" [ref=e229] [cursor=pointer]:
+                        - img [ref=e231]
+                        - generic [ref=e233]: AI 终端
+                      - button [ref=e234] [cursor=pointer]:
+                        - img [ref=e236]
+                      - button [ref=e237] [cursor=pointer]:
+                        - img [ref=e239]
+                  - generic [ref=e242]:
+                    - generic [ref=e243]: 历史会话 (1)
+                    - button "编辑标题 Claude Code 05/13 10:44 本地继续" [ref=e245] [cursor=pointer]:
+                      - generic [ref=e246]:
+                        - button "编辑标题" [ref=e248]:
+                          - img [ref=e249]
+                        - generic [ref=e252]:
+                          - generic [ref=e253]: Claude Code
+                          - generic [ref=e254]: 05/13 10:44
+                      - button "本地继续" [ref=e256]
+              - button "新建待办后，如果选择cursor，有2个bug，1.延迟高 ，2.conversation会展示一个历史会话，但是如果首轮ai回复了，就恢复正常了，帮我修复一下 加阶段 目录 · quadtodo 会话 1 AI 终端 历史会话 (1) 编辑标题 Cursor 05/13 10:44 待确认 已本地继续 · 11:17 本地继续" [ref=e257]:
+                - generic [ref=e258]:
+                  - generic [ref=e259]:
+                    - checkbox [ref=e260]
+                    - generic [ref=e262]:
+                      - generic [ref=e263]: 新建待办后，如果选择cursor，有2个bug，1.延迟高 ，2.conversation会展示一个历史会话，但是如果首轮ai回复了，就恢复正常了，帮我修复一下
+                      - button "加阶段" [ref=e265] [cursor=pointer]:
+                        - img [ref=e266]
+                        - generic [ref=e267]: 加阶段
+                  - generic [ref=e268]:
+                    - generic [ref=e269]:
+                      - generic "/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo" [ref=e270]: 目录 · quadtodo
+                      - generic [ref=e271]: 会话 1
+                    - generic [ref=e272]:
+                      - button [ref=e273] [cursor=pointer]:
+                        - img [ref=e275]
+                      - button [ref=e278] [cursor=pointer]:
+                        - img [ref=e280]
+                      - button "AI 终端" [ref=e283] [cursor=pointer]:
+                        - img [ref=e285]
+                        - generic [ref=e287]: AI 终端
+                      - button [ref=e288] [cursor=pointer]:
+                        - img [ref=e290]
+                      - button [ref=e291] [cursor=pointer]:
+                        - img [ref=e293]
+                  - generic [ref=e296]:
+                    - generic [ref=e297]: 历史会话 (1)
+                    - button "编辑标题 Cursor 05/13 10:44 待确认 已本地继续 · 11:17 本地继续" [ref=e299] [cursor=pointer]:
+                      - generic [ref=e300]:
+                        - button "编辑标题" [ref=e302]:
+                          - img [ref=e303]
+                        - generic [ref=e306]:
+                          - generic [ref=e307]: Cursor
+                          - generic [ref=e308]: 05/13 10:44
+                          - generic [ref=e309]:
+                            - img [ref=e310]
+                            - text: 待确认
+                          - generic "已在本地 Terminal 继续：2026-05-13 11:17" [ref=e312]:
+                            - img [ref=e313]
+                            - text: 已本地继续 · 11:17
+                      - button "本地继续" [ref=e317]
+              - button "宝子，我这个cli发版后，用户安装下来，可以一键启动吗？ 加阶段 目录 · quadtodo 会话 1 AI 终端 历史会话 (1) 编辑标题 Claude Code 05/13 11:27 待确认 本地继续" [ref=e2654]:
+                - generic [ref=e319]:
+                  - generic [ref=e320]:
+                    - checkbox [ref=e321]
+                    - generic [ref=e323]:
+                      - generic [ref=e324]: 宝子，我这个cli发版后，用户安装下来，可以一键启动吗？
+                      - button "加阶段" [ref=e326] [cursor=pointer]:
+                        - img [ref=e327]
+                        - generic [ref=e328]: 加阶段
+                  - generic [ref=e329]:
+                    - generic [ref=e330]:
+                      - generic "/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo" [ref=e331]: 目录 · quadtodo
+                      - generic [ref=e332]: 会话 1
+                    - generic [ref=e333]:
+                      - button [ref=e334] [cursor=pointer]:
+                        - img [ref=e336]
+                      - button [ref=e339] [cursor=pointer]:
+                        - img [ref=e341]
+                      - button "AI 终端" [ref=e344] [cursor=pointer]:
+                        - img [ref=e346]
+                        - generic [ref=e348]: AI 终端
+                      - button [ref=e349] [cursor=pointer]:
+                        - img [ref=e351]
+                      - button [ref=e352] [cursor=pointer]:
+                        - img [ref=e354]
+                  - generic [ref=e357]:
+                    - generic [ref=e358]: 历史会话 (1)
+                    - button "编辑标题 Claude Code 05/13 11:27 待确认 本地继续" [ref=e2655] [cursor=pointer]:
+                      - generic [ref=e361]:
+                        - button "编辑标题" [ref=e363]:
+                          - img [ref=e364]
+                        - generic [ref=e367]:
+                          - generic [ref=e368]: Claude Code
+                          - generic [ref=e369]: 05/13 11:27
+                          - generic [ref=e370]:
+                            - img [ref=e2656]
+                            - text: 待确认
+                      - button "本地继续" [ref=e374]
+          - generic [ref=e377]:
+            - generic [ref=e378]:
+              - generic [ref=e379]: P1
+              - generic [ref=e380]: 重要不紧急
+              - generic [ref=e381]: "4"
+            - generic [ref=e382]:
+              - button "command + k区域，帮我改成中文版本，现在全是英文，或者可以做一下国际化也行 加阶段 目录 · quadtodo 会话 1 AI 终端 历史会话 (1) 编辑标题 Claude Code 05/13 10:46 running 本地继续" [ref=e383]:
+                - generic [ref=e384]:
+                  - generic [ref=e385]:
+                    - checkbox [ref=e386]
+                    - generic [ref=e388]:
+                      - generic [ref=e389]: command + k区域，帮我改成中文版本，现在全是英文，或者可以做一下国际化也行
+                      - button "加阶段" [ref=e391] [cursor=pointer]:
+                        - img [ref=e392]
+                        - generic [ref=e393]: 加阶段
+                  - generic [ref=e394]:
+                    - generic [ref=e395]:
+                      - generic "/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo" [ref=e396]: 目录 · quadtodo
+                      - generic [ref=e397]: 会话 1
+                    - generic [ref=e398]:
+                      - button [ref=e399] [cursor=pointer]:
+                        - img [ref=e401]
+                      - button [ref=e404] [cursor=pointer]:
+                        - img [ref=e406]
+                      - button "AI 终端" [ref=e409] [cursor=pointer]:
+                        - img [ref=e411]
+                        - generic [ref=e413]: AI 终端
+                      - button [ref=e414] [cursor=pointer]:
+                        - img [ref=e416]
+                      - button [ref=e417] [cursor=pointer]:
+                        - img [ref=e419]
+                  - generic [ref=e422]:
+                    - generic [ref=e423]: 历史会话 (1)
+                    - button "编辑标题 Claude Code 05/13 10:46 running 本地继续" [ref=e425] [cursor=pointer]:
+                      - generic [ref=e426]:
+                        - button "编辑标题" [ref=e428]:
+                          - img [ref=e429]
+                        - generic [ref=e432]:
+                          - generic [ref=e433]: Claude Code
+                          - generic [ref=e434]: 05/13 10:46
+                          - generic [ref=e435]:
+                            - img [ref=e436]
+                            - text: running
+                      - button "本地继续" [ref=e439]
+              - button "现在的设置页面，整体上有点乱宝子，布局什么的，帮我看看怎么改合适 加阶段 目录 · quadtodo 会话 1 AI 终端 历史会话 (1) 编辑标题 Claude Code 05/13 11:15 running 本地继续" [ref=e440]:
+                - generic [ref=e441]:
+                  - generic [ref=e442]:
+                    - checkbox [ref=e443]
+                    - generic [ref=e445]:
+                      - generic [ref=e446]: 现在的设置页面，整体上有点乱宝子，布局什么的，帮我看看怎么改合适
+                      - button "加阶段" [ref=e448] [cursor=pointer]:
+                        - img [ref=e449]
+                        - generic [ref=e450]: 加阶段
+                  - generic [ref=e451]:
+                    - generic [ref=e452]:
+                      - generic "/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo" [ref=e453]: 目录 · quadtodo
+                      - generic [ref=e454]: 会话 1
+                    - generic [ref=e455]:
+                      - button [ref=e456] [cursor=pointer]:
+                        - img [ref=e458]
+                      - button [ref=e461] [cursor=pointer]:
+                        - img [ref=e463]
+                      - button "AI 终端" [ref=e466] [cursor=pointer]:
+                        - img [ref=e468]
+                        - generic [ref=e470]: AI 终端
+                      - button [ref=e471] [cursor=pointer]:
+                        - img [ref=e473]
+                      - button [ref=e474] [cursor=pointer]:
+                        - img [ref=e476]
+                  - generic [ref=e479]:
+                    - generic [ref=e480]: 历史会话 (1)
+                    - button "编辑标题 Claude Code 05/13 11:15 running 本地继续" [ref=e482] [cursor=pointer]:
+                      - generic [ref=e483]:
+                        - button "编辑标题" [ref=e485]:
+                          - img [ref=e486]
+                        - generic [ref=e489]:
+                          - generic [ref=e490]: Claude Code
+                          - generic [ref=e491]: 05/13 11:15
+                          - generic [ref=e492]:
+                            - img [ref=e493]
+                            - text: running
+                      - button "本地继续" [ref=e496]
+              - button "宝子，我发现这个agent 状态有时候还是不对，比如这个，现在claude code正在运行，但是没提醒，你看看是什么原因导致的 加阶段 目录 · quadtodo 会话 1 AI 终端 历史会话 (1) 编辑标题 Claude Code 05/13 11:25 running 本地继续" [ref=e497]:
+                - generic [ref=e498]:
+                  - generic [ref=e499]:
+                    - checkbox [ref=e500]
+                    - generic [ref=e502]:
+                      - generic [ref=e503]: 宝子，我发现这个agent 状态有时候还是不对，比如这个，现在claude code正在运行，但是没提醒，你看看是什么原因导致的
+                      - button "加阶段" [ref=e505] [cursor=pointer]:
+                        - img [ref=e506]
+                        - generic [ref=e507]: 加阶段
+                  - generic [ref=e508]:
+                    - generic [ref=e509]:
+                      - generic "/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo" [ref=e510]: 目录 · quadtodo
+                      - generic [ref=e511]: 会话 1
+                    - generic [ref=e512]:
+                      - button [ref=e513] [cursor=pointer]:
+                        - img [ref=e515]
+                      - button [ref=e518] [cursor=pointer]:
+                        - img [ref=e520]
+                      - button "AI 终端" [ref=e523] [cursor=pointer]:
+                        - img [ref=e525]
+                        - generic [ref=e527]: AI 终端
+                      - button [ref=e528] [cursor=pointer]:
+                        - img [ref=e530]
+                      - button [ref=e531] [cursor=pointer]:
+                        - img [ref=e533]
+                  - generic [ref=e536]:
+                    - generic [ref=e537]: 历史会话 (1)
+                    - button "编辑标题 Claude Code 05/13 11:25 running 本地继续" [ref=e539] [cursor=pointer]:
+                      - generic [ref=e540]:
+                        - button "编辑标题" [ref=e542]:
+                          - img [ref=e543]
+                        - generic [ref=e546]:
+                          - generic [ref=e547]: Claude Code
+                          - generic [ref=e548]: 05/13 11:25
+                          - generic [ref=e549]:
+                            - img [ref=e550]
+                            - text: running
+                      - button "本地继续" [ref=e553]
+              - button "记忆中的这几个按钮，点不动，看看原因 加阶段 目录 · quadtodo 会话 1 AI 终端 历史会话 (1) 编辑标题 Claude Code 05/13 11:30 running 本地继续" [ref=e554]:
+                - generic [ref=e555]:
+                  - generic [ref=e556]:
+                    - checkbox [ref=e557]
+                    - generic [ref=e559]:
+                      - generic [ref=e560]: 记忆中的这几个按钮，点不动，看看原因
+                      - button "加阶段" [ref=e562] [cursor=pointer]:
+                        - img [ref=e563]
+                        - generic [ref=e564]: 加阶段
+                  - generic [ref=e565]:
+                    - generic [ref=e566]:
+                      - generic "/Users/liuzhenhua/Desktop/code/crazyCombo/quadtodo" [ref=e567]: 目录 · quadtodo
+                      - generic [ref=e568]: 会话 1
+                    - generic [ref=e569]:
+                      - button [ref=e570] [cursor=pointer]:
+                        - img [ref=e572]
+                      - button [ref=e575] [cursor=pointer]:
+                        - img [ref=e577]
+                      - button "AI 终端" [ref=e580] [cursor=pointer]:
+                        - img [ref=e582]
+                        - generic [ref=e584]: AI 终端
+                      - button [ref=e585] [cursor=pointer]:
+                        - img [ref=e587]
+                      - button [ref=e588] [cursor=pointer]:
+                        - img [ref=e590]
+                  - generic [ref=e593]:
+                    - generic [ref=e594]: 历史会话 (1)
+                    - button "编辑标题 Claude Code 05/13 11:30 running 本地继续" [ref=e596] [cursor=pointer]:
+                      - generic [ref=e597]:
+                        - button "编辑标题" [ref=e599]:
+                          - img [ref=e600]
+                        - generic [ref=e603]:
+                          - generic [ref=e604]: Claude Code
+                          - generic [ref=e605]: 05/13 11:30
+                          - generic [ref=e606]:
+                            - img [ref=e607]
+                            - text: running
+                      - button "本地继续" [ref=e610]
+        - generic [ref=e612]:
+          - generic [ref=e614]:
+            - generic [ref=e615]:
+              - generic [ref=e616]: P2
+              - generic [ref=e617]: 紧急不重要
+              - generic [ref=e618]: "0"
+            - generic [ref=e620]: 拖拽任务到此处
+          - generic [ref=e623]:
+            - generic [ref=e624]:
+              - generic [ref=e625]: P3
+              - generic [ref=e626]: 不重要不紧急
+              - generic [ref=e627]: "1"
+            - button "我一会发你一个视频，你帮我看看内容 加阶段 目录 · crazyCombo 会话 1 AI 终端 历史会话 (1) 编辑标题 Codex 05/13 10:44 running 本地继续" [ref=e629]:
+              - generic [ref=e630]:
+                - generic [ref=e631]:
+                  - checkbox [ref=e632]
+                  - generic [ref=e634]:
+                    - generic [ref=e635]: 我一会发你一个视频，你帮我看看内容
+                    - button "加阶段" [ref=e637] [cursor=pointer]:
+                      - img [ref=e638]
+                      - generic [ref=e639]: 加阶段
+                - generic [ref=e640]:
+                  - generic [ref=e641]:
+                    - generic /Users/liuzhenhua/Desktop/code/crazyCombo/ [ref=e642]: 目录 · crazyCombo
+                    - generic [ref=e643]: 会话 1
+                  - generic [ref=e644]:
+                    - button [ref=e645] [cursor=pointer]:
+                      - img [ref=e647]
+                    - button [ref=e650] [cursor=pointer]:
+                      - img [ref=e652]
+                    - button "AI 终端" [ref=e655] [cursor=pointer]:
+                      - img [ref=e657]
+                      - generic [ref=e659]: AI 终端
+                    - button [ref=e660] [cursor=pointer]:
+                      - img [ref=e662]
+                    - button [ref=e663] [cursor=pointer]:
+                      - img [ref=e665]
+                - generic [ref=e668]:
+                  - generic [ref=e669]: 历史会话 (1)
+                  - button "编辑标题 Codex 05/13 10:44 running 本地继续" [ref=e671] [cursor=pointer]:
+                    - generic [ref=e672]:
+                      - button "编辑标题" [ref=e674]:
+                        - img [ref=e675]
+                      - generic [ref=e678]:
+                        - generic [ref=e679]: Codex
+                        - generic [ref=e680]: 05/13 10:44
+                        - generic [ref=e681]:
+                          - img [ref=e682]
+                          - text: running
+                    - button "本地继续" [ref=e685]
+      - status [ref=e686]
+  - dialog "book 记忆（Wiki）" [ref=e692]:
+    - generic [ref=e693]:
+      - generic [ref=e694]:
+        - button "关闭" [ref=e695] [cursor=pointer]:
+          - img "close" [ref=e696]:
+            - img [ref=e697]
+        - generic [ref=e700]:
+          - img "book" [ref=e701]:
+            - img [ref=e702]
+          - text: 记忆（Wiki）
+      - generic [ref=e705]:
+        - generic [ref=e707]: 上次沉淀：04-22 11:26 · 成功
+        - button "sync 刷新" [ref=e709] [cursor=pointer]:
+          - img "sync" [ref=e2659]:
+            - img [ref=e2660]
+          - generic [ref=e714]: 刷新
+        - button "folder-open 打开目录" [active] [ref=e716] [cursor=pointer]:
+          - img "folder-open" [ref=e718]:
+            - img [ref=e719]
+          - generic [ref=e721]: 打开目录
+    - generic [ref=e722]:
+      - generic [ref=e723]:
+        - generic [ref=e724]:
+          - text: 未沉淀 done todo（270）
+          - button "全选" [ref=e725] [cursor=pointer]:
+            - generic [ref=e726]: 全选
+        - generic [ref=e727]:
+          - generic [ref=e728] [cursor=pointer]:
+            - checkbox "帮我看一下为什么这里拿到的缓存一直是旧的，我刚才排查日志发现这里的缓存用的一直不是线上最新的，你看看原因" [ref=e730]
+            - generic [ref=e732]: 帮我看一下为什么这里拿到的缓存一直是旧的，我刚才排查日志发现这里的缓存用的一直不是线上最新的，你看看原因
+          - generic [ref=e733]: · 05-13
+        - generic [ref=e734]:
+          - generic [ref=e735] [cursor=pointer]:
+            - checkbox "live终端问题修复" [ref=e737]
+            - generic [ref=e739]: live终端问题修复
+          - generic [ref=e740]: quadtodo · 05-13
+        - generic [ref=e741]:
+          - generic [ref=e742] [cursor=pointer]:
+            - checkbox "这个本地继续有点丑，看看怎么优化一下布局" [ref=e744]
+            - generic [ref=e746]: 这个本地继续有点丑，看看怎么优化一下布局
+          - generic [ref=e747]: quadtodo · 05-13
+        - generic [ref=e748]:
+          - generic [ref=e749] [cursor=pointer]:
+            - checkbox "这里的icon，能不能优化一下，现在太丑了" [ref=e751]
+            - generic [ref=e753]: 这里的icon，能不能优化一下，现在太丑了
+          - generic [ref=e754]: quadtodo · 05-13
+        - generic [ref=e755]:
+          - generic [ref=e756] [cursor=pointer]:
+            - checkbox "conversation中发消息后，实际上并没有发过去，只是在输入框中，你看一下bug原因" [ref=e758]
+            - generic [ref=e760]: conversation中发消息后，实际上并没有发过去，只是在输入框中，你看一下bug原因
+          - generic [ref=e761]: quadtodo · 05-13
+        - generic [ref=e762]:
+          - generic [ref=e763] [cursor=pointer]:
+            - checkbox "宝子，现在我们converstation这边好丑呀，你看我给你的图，人家的效果就特别好，你看看你怎么兼容一下呀" [ref=e765]
+            - generic [ref=e767]: 宝子，现在我们converstation这边好丑呀，你看我给你的图，人家的效果就特别好，你看看你怎么兼容一下呀
+          - generic [ref=e768]: quadtodo · 05-13
+        - generic [ref=e769]:
+          - generic [ref=e770] [cursor=pointer]:
+            - checkbox "现在running和idle这2个状态，你是如何区分的，我发现这两个状态显示的经常是错的" [ref=e772]
+            - generic [ref=e774]: 现在running和idle这2个状态，你是如何区分的，我发现这两个状态显示的经常是错的
+          - generic [ref=e775]: quadtodo · 05-13
+        - generic [ref=e776]:
+          - generic [ref=e777] [cursor=pointer]:
+            - checkbox "宝子，这个icon，我想换一个，我用gpt iamge2帮我生成，提示词帮我想一下" [ref=e779]
+            - generic [ref=e781]: 宝子，这个icon，我想换一个，我用gpt iamge2帮我生成，提示词帮我想一下
+          - generic [ref=e782]: quadtodo · 05-13
+        - generic [ref=e783]:
+          - generic [ref=e784] [cursor=pointer]:
+            - checkbox "宝子，cursor-agent这边的ai终端经常无法滚动到最顶部，只能看部分上下文就无法滚动了" [ref=e786]
+            - generic [ref=e788]: 宝子，cursor-agent这边的ai终端经常无法滚动到最顶部，只能看部分上下文就无法滚动了
+          - generic [ref=e789]: quadtodo · 05-13
+        - generic [ref=e790]:
+          - generic [ref=e791] [cursor=pointer]:
+            - checkbox "把这里padding去掉" [ref=e793]
+            - generic [ref=e795]: 把这里padding去掉
+          - generic [ref=e796]: quadtodo · 05-13
+        - generic [ref=e797]:
+          - generic [ref=e798] [cursor=pointer]:
+            - checkbox "修复bug" [ref=e800]
+            - generic [ref=e802]: 修复bug
+          - generic [ref=e803]: quadtodo · 05-13
+        - generic [ref=e804]:
+          - generic [ref=e805] [cursor=pointer]:
+            - checkbox "这个区域可以删掉了，留一个思考中的loading状态就行，改一下" [ref=e807]
+            - generic [ref=e809]: 这个区域可以删掉了，留一个思考中的loading状态就行，改一下
+          - generic [ref=e810]: quadtodo · 05-13
+        - generic [ref=e811]:
+          - generic [ref=e812] [cursor=pointer]:
+            - checkbox "为什么这里状态展示的不对呀，明明claude在runing呀" [ref=e814]
+            - generic [ref=e816]: 为什么这里状态展示的不对呀，明明claude在runing呀
+          - generic [ref=e817]: quadtodo · 05-13
+        - generic [ref=e818]:
+          - generic [ref=e819] [cursor=pointer]:
+            - checkbox "现在新建待办后，如果再新建会携带上一次的内容，而且有时候会一直处于编辑态，修复一下" [ref=e821]
+            - generic [ref=e823]: 现在新建待办后，如果再新建会携带上一次的内容，而且有时候会一直处于编辑态，修复一下
+          - generic [ref=e824]: quadtodo · 05-13
+        - generic [ref=e825]:
+          - generic [ref=e826] [cursor=pointer]:
+            - checkbox "宝子，修复一下这个bug，conversation中，如果我加了图片，然后发送，就发送不了，会变成换行" [ref=e828]
+            - generic [ref=e830]: 宝子，修复一下这个bug，conversation中，如果我加了图片，然后发送，就发送不了，会变成换行
+          - generic [ref=e831]: quadtodo · 05-13
+        - generic [ref=e832]:
+          - generic [ref=e833] [cursor=pointer]:
+            - checkbox "宝子，为什么我感觉，只有这个本地继续有用，别的我用不上都" [ref=e835]
+            - generic [ref=e837]: 宝子，为什么我感觉，只有这个本地继续有用，别的我用不上都
+          - generic [ref=e838]: quadtodo · 05-13
+        - generic [ref=e839]:
+          - generic [ref=e840] [cursor=pointer]:
+            - checkbox "这里只保留这2个功能吧，其他的都删掉，没什么用" [ref=e842]
+            - generic [ref=e844]: 这里只保留这2个功能吧，其他的都删掉，没什么用
+          - generic [ref=e845]: quadtodo · 05-13
+        - generic [ref=e846]:
+          - generic [ref=e847] [cursor=pointer]:
+            - checkbox "AI终端这里的圆角帮我删掉" [ref=e849]
+            - generic [ref=e851]: AI终端这里的圆角帮我删掉
+          - generic [ref=e852]: quadtodo · 05-13
+        - generic [ref=e853]:
+          - generic [ref=e854] [cursor=pointer]:
+            - checkbox "这两个按钮没什么用，删掉吧" [ref=e856]
+            - generic [ref=e858]: 这两个按钮没什么用，删掉吧
+          - generic [ref=e859]: quadtodo · 05-13
+        - generic [ref=e860]:
+          - generic [ref=e861] [cursor=pointer]:
+            - checkbox "宝子，我想给这个系统的UI，整体上做一个升级，你看看有没有推荐的方向" [ref=e863]
+            - generic [ref=e865]: 宝子，我想给这个系统的UI，整体上做一个升级，你看看有没有推荐的方向
+          - generic [ref=e866]: quadtodo · 05-13
+        - generic [ref=e867]:
+          - generic [ref=e868] [cursor=pointer]:
+            - checkbox "fetch失败修复" [ref=e870]
+            - generic [ref=e872]: fetch失败修复
+          - generic [ref=e873]: quadtodo · 05-12
+        - generic [ref=e874]:
+          - generic [ref=e875] [cursor=pointer]:
+            - checkbox "宝子，帮我定为一下，今天有人反馈，挑战模式通关了，给了奖状，但是没给简单模式通关的红包，也就是2元红包，你看一下原因" [ref=e877]
+            - generic [ref=e879]: 宝子，帮我定为一下，今天有人反馈，挑战模式通关了，给了奖状，但是没给简单模式通关的红包，也就是2元红包，你看一下原因
+          - generic [ref=e880]: · 05-12
+        - generic [ref=e881]:
+          - generic [ref=e882] [cursor=pointer]:
+            - checkbox "宝子，我这个cli，能不能给我装一个一键安装依赖，一键build的命令，这样能省好多事情" [ref=e884]
+            - generic [ref=e886]: 宝子，我这个cli，能不能给我装一个一键安装依赖，一键build的命令，这样能省好多事情
+          - generic [ref=e887]: quadtodo · 05-12
+        - generic [ref=e888]:
+          - generic [ref=e889] [cursor=pointer]:
+            - checkbox "卡片布局帮我优化一下，这两可以放在同一行" [ref=e891]
+            - generic [ref=e893]: 卡片布局帮我优化一下，这两可以放在同一行
+          - generic [ref=e894]: quadtodo · 05-12
+        - generic [ref=e895]:
+          - generic [ref=e896] [cursor=pointer]:
+            - checkbox "抖音小游戏这边软著一直下不来，" [ref=e898]
+            - generic [ref=e900]: 抖音小游戏这边软著一直下不来，
+          - generic [ref=e901]: "- · 05-12"
+        - generic [ref=e902]:
+          - generic [ref=e903] [cursor=pointer]:
+            - checkbox "看看抖音那边进度" [ref=e905]
+            - generic [ref=e907]: 看看抖音那边进度
+          - generic [ref=e908]: "- · 05-12"
+        - generic [ref=e909]:
+          - generic [ref=e910] [cursor=pointer]:
+            - checkbox "神奇卡牌的教程，我想测一下，不弹和弹的AB效果，帮我做一下" [ref=e912]
+            - generic [ref=e914]: 神奇卡牌的教程，我想测一下，不弹和弹的AB效果，帮我做一下
+          - generic [ref=e915]: · 05-12
+        - generic [ref=e916]:
+          - generic [ref=e917] [cursor=pointer]:
+            - checkbox "帮我做一个AB，弹小程序推荐卡牌，和不弹推荐卡牌的AB效果，我看看" [ref=e919]
+            - generic [ref=e921]: 帮我做一个AB，弹小程序推荐卡牌，和不弹推荐卡牌的AB效果，我看看
+          - generic [ref=e922]: · 05-12
+        - generic [ref=e923]:
+          - generic [ref=e924] [cursor=pointer]:
+            - checkbox "帮我看一下，游戏端有人反馈，通关了，进入回放的时候，提示回放未上传" [ref=e926]
+            - generic [ref=e928]: 帮我看一下，游戏端有人反馈，通关了，进入回放的时候，提示回放未上传
+          - generic [ref=e929]: · 05-11
+        - generic [ref=e930]:
+          - generic [ref=e931] [cursor=pointer]:
+            - checkbox "现在管理端只能修改AB结果，不能为之前没命中AB的人改为命中，测试起来不方便，你看下游戏怎么改合适" [ref=e933]
+            - generic [ref=e935]: 现在管理端只能修改AB结果，不能为之前没命中AB的人改为命中，测试起来不方便，你看下游戏怎么改合适
+          - generic [ref=e936]: · 05-11
+        - generic [ref=e937]:
+          - generic [ref=e938] [cursor=pointer]:
+            - checkbox "帮我看一下现在如果发npm，其他人可以一键启动吗？还是说要配环境，如果有node环境" [ref=e940]
+            - generic [ref=e942]: 帮我看一下现在如果发npm，其他人可以一键启动吗？还是说要配环境，如果有node环境
+          - generic [ref=e943]: quadtodo · 05-11
+        - generic [ref=e944]:
+          - generic [ref=e945] [cursor=pointer]:
+            - checkbox "修复bug" [ref=e947]
+            - generic [ref=e949]: 修复bug
+          - generic [ref=e950]: quadtodo · 05-11
+        - generic [ref=e951]:
+          - generic [ref=e952] [cursor=pointer]:
+            - checkbox "我一会发你一个视频，你看看内容" [ref=e954]
+            - generic [ref=e956]: 我一会发你一个视频，你看看内容
+          - generic [ref=e957]: · 05-11
+        - generic [ref=e958]:
+          - generic [ref=e959] [cursor=pointer]:
+            - checkbox "现在不管是飞书还是telegram只支持发图片，不支持视频，你帮我兼容一下" [ref=e961]
+            - generic [ref=e963]: 现在不管是飞书还是telegram只支持发图片，不支持视频，你帮我兼容一下
+          - generic [ref=e964]: quadtodo · 05-11
+        - generic [ref=e965]:
+          - generic [ref=e966] [cursor=pointer]:
+            - checkbox "宝子，我问个问题，如果把现在claude code和飞书，telegram打通这一套，支持codex，成本高吗？你看下" [ref=e968]
+            - generic [ref=e970]: 宝子，我问个问题，如果把现在claude code和飞书，telegram打通这一套，支持codex，成本高吗？你看下
+          - generic [ref=e971]: quadtodo · 05-11
+        - generic [ref=e972]:
+          - generic [ref=e973] [cursor=pointer]:
+            - checkbox "我一会发你一个视频，你看一下内容" [ref=e975]
+            - generic [ref=e977]: 我一会发你一个视频，你看一下内容
+          - generic [ref=e978]: · 05-10
+        - generic [ref=e979]:
+          - generic [ref=e980] [cursor=pointer]:
+            - checkbox "识别一个视频内容，我一会发你" [ref=e982]
+            - generic [ref=e984]: 识别一个视频内容，我一会发你
+          - generic [ref=e985]: · 05-10
+        - generic [ref=e986]:
+          - generic [ref=e987] [cursor=pointer]:
+            - checkbox "测试一下" [ref=e989]
+            - generic [ref=e991]: 测试一下
+          - generic [ref=e992]: · 05-10
+        - generic [ref=e993]:
+          - generic [ref=e994] [cursor=pointer]:
+            - checkbox "测试" [ref=e996]
+            - generic [ref=e998]: 测试
+          - generic [ref=e999]: lzh · 05-10
+        - generic [ref=e1000]:
+          - generic [ref=e1001] [cursor=pointer]:
+            - checkbox "测试1" [ref=e1003]
+            - generic [ref=e1005]: 测试1
+          - generic [ref=e1006]: · 05-10
+        - generic [ref=e1007]:
+          - generic [ref=e1008] [cursor=pointer]:
+            - checkbox "客服系统接入ai能力" [ref=e1010]
+            - generic [ref=e1012]: 客服系统接入ai能力
+          - generic [ref=e1013]: · 05-10
+        - generic [ref=e1014]:
+          - generic [ref=e1015] [cursor=pointer]:
+            - checkbox "为什么从telegram发消息，发不出去了，修复一下" [ref=e1017]
+            - generic [ref=e1019]: 为什么从telegram发消息，发不出去了，修复一下
+          - generic [ref=e1020]: quadtodo · 05-10
+        - generic [ref=e1021]:
+          - generic [ref=e1022] [cursor=pointer]:
+            - checkbox "宝子，有bug，如果改了飞书的配置，telegram这边的配置就会被默认清空，修复一下" [ref=e1024]
+            - generic [ref=e1026]: 宝子，有bug，如果改了飞书的配置，telegram这边的配置就会被默认清空，修复一下
+          - generic [ref=e1027]: quadtodo · 05-10
+        - generic [ref=e1028]:
+          - generic [ref=e1029] [cursor=pointer]:
+            - checkbox "测试飞书" [ref=e1031]
+            - generic [ref=e1033]: 测试飞书
+          - generic [ref=e1034]: · 05-10
+        - generic [ref=e1035]:
+          - generic [ref=e1036] [cursor=pointer]:
+            - checkbox "现在不管是飞书还是telegram，如果claude code正在干活，我继续发消息会怎么样？" [ref=e1038]
+            - generic [ref=e1040]: 现在不管是飞书还是telegram，如果claude code正在干活，我继续发消息会怎么样？
+          - generic [ref=e1041]: quadtodo · 05-10
+        - generic [ref=e1042]:
+          - generic [ref=e1043] [cursor=pointer]:
+            - checkbox "优化提醒" [ref=e1045]
+            - generic [ref=e1047]: 优化提醒
+          - generic [ref=e1048]: quadtodo · 05-10
+        - generic [ref=e1049]:
+          - generic [ref=e1050] [cursor=pointer]:
+            - checkbox "有一个bug，有时候右侧的ai终端区域无法滚动，你看看原因，我拖拽一下分界线边界就好了" [ref=e1052]
+            - generic [ref=e1054]: 有一个bug，有时候右侧的ai终端区域无法滚动，你看看原因，我拖拽一下分界线边界就好了
+          - generic [ref=e1055]: quadtodo · 05-10
+        - generic [ref=e1056]:
+          - generic [ref=e1057] [cursor=pointer]:
+            - checkbox "修复问题" [ref=e1059]
+            - generic [ref=e1061]: 修复问题
+          - generic [ref=e1062]: quadtodo · 05-10
+        - generic [ref=e1063]:
+          - generic [ref=e1064] [cursor=pointer]:
+            - checkbox "帮我看图" [ref=e1066]
+            - generic [ref=e1068]: 帮我看图
+          - generic [ref=e1069]: · 05-10
+        - generic [ref=e1070]:
+          - generic [ref=e1071] [cursor=pointer]:
+            - checkbox "接着做" [ref=e1073]
+            - generic [ref=e1075]: 接着做
+          - generic [ref=e1076]: quadtodo · 05-10
+        - generic [ref=e1077]:
+          - generic [ref=e1078] [cursor=pointer]:
+            - checkbox "telegram这边有telegram同步，但是飞书这边没有，兼容一下" [ref=e1080]
+            - generic [ref=e1082]: telegram这边有telegram同步，但是飞书这边没有，兼容一下
+          - generic [ref=e1083]: quadtodo · 05-10
+        - generic [ref=e1084]:
+          - generic [ref=e1085] [cursor=pointer]:
+            - checkbox "我现在消除区域的图标想要AB一套新的，但是他没有现在这么多图标，只有16个，现在是30多个，而且还会读默认渲染的索引，如果玩家没改过的情况，也就意味着，如果命中了非现在的逻辑，就要改现在全局icon的逻辑，你看看怎么改" [ref=e1087]
+            - generic [ref=e1089]: 我现在消除区域的图标想要AB一套新的，但是他没有现在这么多图标，只有16个，现在是30多个，而且还会读默认渲染的索引，如果玩家没改过的情况，也就意味着，如果命中了非现在的逻辑，就要改现在全局icon的逻辑，你看看怎么改
+          - generic [ref=e1090]: · 05-10
+        - generic [ref=e1091]:
+          - generic [ref=e1092] [cursor=pointer]:
+            - checkbox "现在浏览器如果打开多个tab，ai终端的大小会互相污染，你看一下怎么改" [ref=e1094]
+            - generic [ref=e1096]: 现在浏览器如果打开多个tab，ai终端的大小会互相污染，你看一下怎么改
+          - generic [ref=e1097]: quadtodo · 05-10
+        - generic [ref=e1098]:
+          - generic [ref=e1099] [cursor=pointer]:
+            - checkbox "现在main场景帮我新建一个实验，layout1容器默认scale大小，默认1倍，如果命中B就是1.1" [ref=e1101]
+            - generic [ref=e1103]: 现在main场景帮我新建一个实验，layout1容器默认scale大小，默认1倍，如果命中B就是1.1
+          - generic [ref=e1104]: · 05-10
+        - generic [ref=e1105]:
+          - generic [ref=e1106] [cursor=pointer]:
+            - checkbox "看一下这个游戏现在消除块飞往槽的动画，我也想这样的效果" [ref=e1108]
+            - generic [ref=e1110]: 看一下这个游戏现在消除块飞往槽的动画，我也想这样的效果
+          - generic [ref=e1111]: · 05-10
+        - generic [ref=e1112]:
+          - generic [ref=e1113] [cursor=pointer]:
+            - checkbox "修复bug" [ref=e1115]
+            - generic [ref=e1117]: 修复bug
+          - generic [ref=e1118]: quadtodo · 05-10
+        - generic [ref=e1119]:
+          - generic [ref=e1120] [cursor=pointer]:
+            - checkbox "看看在ui上，你觉得哪些功能有优化空间" [ref=e1122]
+            - generic [ref=e1124]: 看看在ui上，你觉得哪些功能有优化空间
+          - generic [ref=e1125]: quadtodo · 05-10
+        - generic [ref=e1126]:
+          - generic [ref=e1127] [cursor=pointer]:
+            - checkbox "telegram和飞书都有一个展示每轮对话金额的话，这个做成可配置，打开才展示，你看下怎么改" [ref=e1129]
+            - generic [ref=e1131]: telegram和飞书都有一个展示每轮对话金额的话，这个做成可配置，打开才展示，你看下怎么改
+          - generic [ref=e1132]: quadtodo · 05-10
+        - generic [ref=e1133]:
+          - generic [ref=e1134] [cursor=pointer]:
+            - checkbox "telegram这边能不能也做成表情包回复，来表示ai是否正在干活？" [ref=e1136]
+            - generic [ref=e1138]: telegram这边能不能也做成表情包回复，来表示ai是否正在干活？
+          - generic [ref=e1139]: quadtodo · 05-10
+        - generic [ref=e1140]:
+          - generic [ref=e1141] [cursor=pointer]:
+            - checkbox "游戏home页面进main场景耗时比较久，感觉是做了很多前置判定导致的，getnotice好像是，你看看怎么优化一下" [ref=e1143]
+            - generic [ref=e1145]: 游戏home页面进main场景耗时比较久，感觉是做了很多前置判定导致的，getnotice好像是，你看看怎么优化一下
+          - generic [ref=e1146]: · 05-10
+        - generic [ref=e1147]:
+          - generic [ref=e1148] [cursor=pointer]:
+            - checkbox "测试一下" [ref=e1150]
+            - generic [ref=e1152]: 测试一下
+          - generic [ref=e1153]: · 05-10
+        - generic [ref=e1154]:
+          - generic [ref=e1155] [cursor=pointer]:
+            - checkbox "测试2" [ref=e1157]
+            - generic [ref=e1159]: 测试2
+          - generic [ref=e1160]: quadtodo · 05-10
+        - generic [ref=e1161]:
+          - generic [ref=e1162] [cursor=pointer]:
+            - checkbox "帮我接着做这个" [ref=e1164]
+            - generic [ref=e1166]: 帮我接着做这个
+          - generic [ref=e1167]: quadtodo · 05-10
+        - generic [ref=e1168]:
+          - generic [ref=e1169] [cursor=pointer]:
+            - checkbox "这个放在同一行展示" [ref=e1171]
+            - generic [ref=e1173]: 这个放在同一行展示
+          - generic [ref=e1174]: quadtodo · 05-10
+        - generic [ref=e1175]:
+          - generic [ref=e1176] [cursor=pointer]:
+            - checkbox "删掉这个功能" [ref=e1178]
+            - generic [ref=e1180]: 删掉这个功能
+          - generic [ref=e1181]: quadtodo · 05-10
+        - generic [ref=e1182]:
+          - generic [ref=e1183] [cursor=pointer]:
+            - checkbox "点击这个后，可以直接切换到对应的ai终端tab，可以实现吗" [ref=e1185]
+            - generic [ref=e1187]: 点击这个后，可以直接切换到对应的ai终端tab，可以实现吗
+          - generic [ref=e1188]: quadtodo · 05-10
+        - generic [ref=e1189]:
+          - generic [ref=e1190] [cursor=pointer]:
+            - checkbox "看一下为什么转账记录中会有这么多失败的" [ref=e1192]
+            - generic [ref=e1194]: 看一下为什么转账记录中会有这么多失败的
+          - generic [ref=e1195]: · 05-10
+        - generic [ref=e1196]:
+          - generic [ref=e1197] [cursor=pointer]:
+            - checkbox "历史会话卡片缩放有问题，修复一下" [ref=e1199]
+            - generic [ref=e1201]: 历史会话卡片缩放有问题，修复一下
+          - generic [ref=e1202]: quadtodo · 05-09
+        - generic [ref=e1203]:
+          - generic [ref=e1204] [cursor=pointer]:
+            - checkbox "提建议" [ref=e1206]
+            - generic [ref=e1208]: 提建议
+          - generic [ref=e1209]: quadtodo · 05-09
+        - generic [ref=e1210]:
+          - generic [ref=e1211] [cursor=pointer]:
+            - checkbox "为什么终端有时候展示的宽度有问题" [ref=e1213]
+            - generic [ref=e1215]: 为什么终端有时候展示的宽度有问题
+          - generic [ref=e1216]: quadtodo · 05-09
+        - generic [ref=e1217]:
+          - generic [ref=e1218] [cursor=pointer]:
+            - checkbox "优化一下设置页面吧，感觉非常乱" [ref=e1220]
+            - generic [ref=e1222]: 优化一下设置页面吧，感觉非常乱
+          - generic [ref=e1223]: quadtodo · 05-09
+        - generic [ref=e1224]:
+          - generic [ref=e1225] [cursor=pointer]:
+            - checkbox "测试一下" [ref=e1227]
+            - generic [ref=e1229]: 测试一下
+          - generic [ref=e1230]: · 05-09
+        - generic [ref=e1231]:
+          - generic [ref=e1232] [cursor=pointer]:
+            - checkbox "chat续聊不够准确，帮我想想换个什么名字好一点，其实是看日志的" [ref=e1234]
+            - generic [ref=e1236]: chat续聊不够准确，帮我想想换个什么名字好一点，其实是看日志的
+          - generic [ref=e1237]: quadtodo · 05-09
+        - generic [ref=e1238]:
+          - generic [ref=e1239] [cursor=pointer]:
+            - checkbox "ai终端这里的区域不会跟随主题颜色变化，看看怎么改一下" [ref=e1241]
+            - generic [ref=e1243]: ai终端这里的区域不会跟随主题颜色变化，看看怎么改一下
+          - generic [ref=e1244]: · 05-09
+        - generic [ref=e1245]:
+          - generic [ref=e1246] [cursor=pointer]:
+            - checkbox "历史会话找回，点击预览发现展示的消息不全是什么原因" [ref=e1248]
+            - generic [ref=e1250]: 历史会话找回，点击预览发现展示的消息不全是什么原因
+          - generic [ref=e1251]: quadtodo · 05-09
+        - generic [ref=e1252]:
+          - generic [ref=e1253] [cursor=pointer]:
+            - checkbox "启用待办的时候，这个默认要开模版，模版默认用brainstorm" [ref=e1255]
+            - generic [ref=e1257]: 启用待办的时候，这个默认要开模版，模版默认用brainstorm
+          - generic [ref=e1258]: quadtodo · 05-09
+        - generic [ref=e1259]:
+          - generic [ref=e1260] [cursor=pointer]:
+            - checkbox "现在启动quadtodo，需要在claude code安装hook，这个现在是第一次就会安装吗？看一下怎么做比较好" [ref=e1262]
+            - generic [ref=e1264]: 现在启动quadtodo，需要在claude code安装hook，这个现在是第一次就会安装吗？看一下怎么做比较好
+          - generic [ref=e1265]: quadtodo · 05-09
+        - generic [ref=e1266]:
+          - generic [ref=e1267] [cursor=pointer]:
+            - checkbox "启动open claw" [ref=e1269]
+            - generic [ref=e1271]: 启动open claw
+          - generic [ref=e1272]: foo · 05-09
+        - generic [ref=e1273]:
+          - generic [ref=e1274] [cursor=pointer]:
+            - checkbox "你好" [ref=e1276]
+            - generic [ref=e1278]: 你好
+          - generic [ref=e1279]: · 05-09
+        - generic [ref=e1280]:
+          - generic [ref=e1281] [cursor=pointer]:
+            - checkbox "游戏侧有一个bug，用户反馈通关后一直显示上传中，就卡住了，帮我排查一下bug原因" [ref=e1283]
+            - generic [ref=e1285]: 游戏侧有一个bug，用户反馈通关后一直显示上传中，就卡住了，帮我排查一下bug原因
+          - generic [ref=e1286]: · 05-09
+        - generic [ref=e1287]:
+          - generic [ref=e1288] [cursor=pointer]:
+            - checkbox "小红书ai自动审核" [ref=e1290]
+            - generic [ref=e1292]: 小红书ai自动审核
+          - generic [ref=e1293]: · 05-09
+        - generic [ref=e1294]:
+          - generic [ref=e1295] [cursor=pointer]:
+            - checkbox "看一下为什么会有这个报错" [ref=e1297]
+            - generic [ref=e1299]: 看一下为什么会有这个报错
+          - generic [ref=e1300]: quadtodo · 05-09
+        - generic [ref=e1301]:
+          - generic [ref=e1302] [cursor=pointer]:
+            - checkbox "活动详情页，需要拦截截图，这个能做到吗？" [ref=e1304]
+            - generic [ref=e1306]: 活动详情页，需要拦截截图，这个能做到吗？
+          - generic [ref=e1307]: · 05-09
+        - generic [ref=e1308]:
+          - generic [ref=e1309] [cursor=pointer]:
+            - checkbox "宝子，我现在还想做一个okr的系统，每个人每个季度定okr，然后去执行，我会给他们根据不同的表现算激励，你也帮我想想激励怎么奖励，现在团队有那工资的，有拿分红的" [ref=e1311]
+            - generic [ref=e1313]: 宝子，我现在还想做一个okr的系统，每个人每个季度定okr，然后去执行，我会给他们根据不同的表现算激励，你也帮我想想激励怎么奖励，现在团队有那工资的，有拿分红的
+          - generic [ref=e1314]: "- · 05-07"
+        - generic [ref=e1315]:
+          - generic [ref=e1316] [cursor=pointer]:
+            - checkbox "游戏教程ui优化，" [ref=e1318]
+            - generic [ref=e1320]: 游戏教程ui优化，
+          - generic [ref=e1321]: · 05-07
+        - generic [ref=e1322]:
+          - generic [ref=e1323] [cursor=pointer]:
+            - 'checkbox "收到。Phase 1 已封装完成，等你新会话继续。 给你新会话用的 复制粘贴下面这段直接发到新会话，能让新 Claude 快速进入状态、节省上下文： 我要继续执行新用户流失漏斗的实施计划。 ## 项目 - 根 - 4 个子项目独立 git 仓：client/、server/、tasks/、wechatGame/ ## 上下文文件（请你读这两份） - 设计：docs/superpowers/specs/2026-05-04-new-user-funnel-design.md - 实施计划：docs/superpowers/plans/2026-05-04-new-user-funnel.md ## 当前进度 Phase 1 已完成（client 仓 commit 823a8ec + c012ebc，未 push）： - Task 1.1 ✅ track() 加 priority 参数 - Task 1.2 ✅ wx.onHide/onShow flush hook 人工验证已通过。 ## 现在要做 请用 superpowers:subagent-driven-development 继续执行 Phase 2 起。 建议节奏：每 Phase 跑完跟我 check-in 一次。 对于纯机械补埋任务（Phase 3 多数 Task），spec + 代码质量 review 可合并到一个 subagent 减少开销。 提醒你需要做的事 1. 现在还没 push：等所有 Phase 都验完再统一推。如果中间想推 Phase 1 给同事看，进 client/ 跑 git push origin <分支名> 即可。 2. 新会话开始前，建议在原终端跑下： cd client && git log --oneline -3 把最新 2 个 commit 的 sha 记一下，新会话里需要确认起点。 3. 本会话的 task 列表会丢（不同会话不共享），新会话会自己重建 TodoWrite。 完成后随时回来。" [ref=e1325]'
+            - generic [ref=e1327]: "收到。Phase 1 已封装完成，等你新会话继续。 给你新会话用的 复制粘贴下面这段直接发到新会话，能让新 Claude 快速进入状态、节省上下文： 我要继续执行新用户流失漏斗的实施计划。 ## 项目 - 根 - 4 个子项目独立 git 仓：client/、server/、tasks/、wechatGame/ ## 上下文文件（请你读这两份） - 设计：docs/superpowers/specs/2026-05-04-new-user-funnel-design.md - 实施计划：docs/superpowers/plans/2026-05-04-new-user-funnel.md ## 当前进度 Phase 1 已完成（client 仓 commit 823a8ec + c012ebc，未 push）： - Task 1.1 ✅ track() 加 priority 参数 - Task 1.2 ✅ wx.onHide/onShow flush hook 人工验证已通过。 ## 现在要做 请用 superpowers:subagent-driven-development 继续执行 Phase 2 起。 建议节奏：每 Phase 跑完跟我 check-in 一次。 对于纯机械补埋任务（Phase 3 多数 Task），spec + 代码质量 review 可合并到一个 subagent 减少开销。 提醒你需要做的事 1. 现在还没 push：等所有 Phase 都验完再统一推。如果中间想推 Phase 1 给同事看，进 client/ 跑 git push origin <分支名> 即可。 2. 新会话开始前，建议在原终端跑下： cd client && git log --oneline -3 把最新 2 个 commit 的 sha 记一下，新会话里需要确认起点。 3. 本会话的 task 列表会丢（不同会话不共享），新会话会自己重建 TodoWrite。 完成后随时回来。"
+          - generic [ref=e1328]: crazyCombo · 05-07
+        - generic [ref=e1329]:
+          - generic [ref=e1330] [cursor=pointer]:
+            - checkbox "claude code有时候会推送这样的消息，这样我telegram就收不到消息了，帮我看看怎么解决" [ref=e1332]
+            - generic [ref=e1334]: claude code有时候会推送这样的消息，这样我telegram就收不到消息了，帮我看看怎么解决
+          - generic [ref=e1335]: quadtodo · 05-07
+        - generic [ref=e1336]:
+          - generic [ref=e1337] [cursor=pointer]:
+            - checkbox "小红书监控任务为什么这么久没执行，看看原因" [ref=e1339]
+            - generic [ref=e1341]: 小红书监控任务为什么这么久没执行，看看原因
+          - generic [ref=e1342]: · 05-07
+        - generic [ref=e1343]:
+          - generic [ref=e1344] [cursor=pointer]:
+            - checkbox "我想做游戏端，新用户流失分析，从注册开始的第一步开始算，进入到游戏环节的每一步，看用户是在哪里流失的，帮我想一下方案，现在如果用埋点的话，有几个不是立即上报的，估计得改，你看一下" [ref=e1346]
+            - generic [ref=e1348]: 我想做游戏端，新用户流失分析，从注册开始的第一步开始算，进入到游戏环节的每一步，看用户是在哪里流失的，帮我想一下方案，现在如果用埋点的话，有几个不是立即上报的，估计得改，你看一下
+          - generic [ref=e1349]: · 05-07
+        - generic [ref=e1350]:
+          - generic [ref=e1351] [cursor=pointer]:
+            - checkbox "关卡编辑器拖动原子模版有bug，明明把原子模版拖动进来了，但是提示超出边界" [ref=e1353]
+            - generic [ref=e1355]: 关卡编辑器拖动原子模版有bug，明明把原子模版拖动进来了，但是提示超出边界
+          - generic [ref=e1356]: · 05-07
+        - generic [ref=e1357]:
+          - generic [ref=e1358] [cursor=pointer]:
+            - checkbox "/loop命令怎么用？" [ref=e1360]
+            - generic [ref=e1362]: /loop命令怎么用？
+          - generic [ref=e1363]: foo · 05-07
+        - generic [ref=e1364]:
+          - generic [ref=e1365] [cursor=pointer]:
+            - checkbox "看一下昨天广告收入" [ref=e1367]
+            - generic [ref=e1369]: 看一下昨天广告收入
+          - generic [ref=e1370]: · 05-07
+        - generic [ref=e1371]:
+          - generic [ref=e1372] [cursor=pointer]:
+            - checkbox "活动管理AB统计点击后，需要查看对应AB的审核列表，或者在审核列表中支持AB版本的下来筛选" [ref=e1374]
+            - generic [ref=e1376]: 活动管理AB统计点击后，需要查看对应AB的审核列表，或者在审核列表中支持AB版本的下来筛选
+          - generic [ref=e1377]: "- · 05-06"
+        - generic [ref=e1378]:
+          - generic [ref=e1379] [cursor=pointer]:
+            - checkbox "管理后台登录token限制从8小时改完7天" [ref=e1381]
+            - generic [ref=e1383]: 管理后台登录token限制从8小时改完7天
+          - generic [ref=e1384]: "- · 05-05"
+        - generic [ref=e1385]:
+          - generic [ref=e1386] [cursor=pointer]:
+            - checkbox "优化奖状相关逻辑，之前做的比较简单，现在UI又给了我一个版本，但是展示的信息多了，估计要大改，你看一下" [ref=e1388]
+            - generic [ref=e1390]: 优化奖状相关逻辑，之前做的比较简单，现在UI又给了我一个版本，但是展示的信息多了，估计要大改，你看一下
+          - generic [ref=e1391]: · 05-05
+        - generic [ref=e1392]:
+          - generic [ref=e1393] [cursor=pointer]:
+            - checkbox "我想做ai自动总结今日发布笔记爆款情况，总结这些笔记能够爆火的原因，" [ref=e1395]
+            - generic [ref=e1397]: 我想做ai自动总结今日发布笔记爆款情况，总结这些笔记能够爆火的原因，
+          - generic [ref=e1398]: · 05-05
+        - generic [ref=e1399]:
+          - generic [ref=e1400] [cursor=pointer]:
+            - checkbox "看游戏困难模式展示回放的模式，现在应该是取的levelId判断的，" [ref=e1402]
+            - generic [ref=e1404]: 看游戏困难模式展示回放的模式，现在应该是取的levelId判断的，
+          - generic [ref=e1405]: "- · 05-05"
+        - generic [ref=e1406]:
+          - generic [ref=e1407] [cursor=pointer]:
+            - checkbox "奖状图标优化" [ref=e1409]
+            - generic [ref=e1411]: 奖状图标优化
+          - generic [ref=e1412]: "- · 05-05"
+        - generic [ref=e1413]:
+          - generic [ref=e1414] [cursor=pointer]:
+            - checkbox "修复一个bug，validateXhsLink现在只会去查文案完全一样的才能拦截，但是如果用户只发http://xhslink.com/o/2Zl2RlVZhO5，链接或者改几个字，就能绕过去，修复一下" [ref=e1416]
+            - generic [ref=e1418]: 修复一个bug，validateXhsLink现在只会去查文案完全一样的才能拦截，但是如果用户只发http://xhslink.com/o/2Zl2RlVZhO5，链接或者改几个字，就能绕过去，修复一下
+          - generic [ref=e1419]: "- · 05-05"
+        - generic [ref=e1420]:
+          - generic [ref=e1421] [cursor=pointer]:
+            - checkbox "现在活动那边有种草笔记达500点赞或者1000评论，这个需要玩家提交笔记，但是我发现有不少玩家会用别人的笔记来领，其实我们现在提交笔记后，是可以把这个冒领的问题解决的" [ref=e1423]
+            - generic [ref=e1425]: 现在活动那边有种草笔记达500点赞或者1000评论，这个需要玩家提交笔记，但是我发现有不少玩家会用别人的笔记来领，其实我们现在提交笔记后，是可以把这个冒领的问题解决的
+          - generic [ref=e1426]: "- · 05-04"
+        - generic [ref=e1427]:
+          - generic [ref=e1428] [cursor=pointer]:
+            - checkbox "宝子，现在我这个管理后台，如果我给一个人的账户删了，他还能进来吗？浏览器有缓存" [ref=e1430]
+            - generic [ref=e1432]: 宝子，现在我这个管理后台，如果我给一个人的账户删了，他还能进来吗？浏览器有缓存
+          - generic [ref=e1433]: · 05-04
+        - generic [ref=e1434]:
+          - generic [ref=e1435] [cursor=pointer]:
+            - checkbox "客服 AI 调用 Trace，为什么明明游戏中已经有了unionID，已经显示openid未解析，而且客户那边，不需要展示externalUserId，最好展示unionid" [ref=e1437]
+            - generic [ref=e1439]: 客服 AI 调用 Trace，为什么明明游戏中已经有了unionID，已经显示openid未解析，而且客户那边，不需要展示externalUserId，最好展示unionid
+          - generic [ref=e1440]: "- · 05-04"
+        - generic [ref=e1441]:
+          - generic [ref=e1442] [cursor=pointer]:
+            - checkbox "会话管理那边，现在支持url中传userid直接打开吗？我记得报警群里面是传入了的，但是系统那边不会收到后自动打开抽屉，帮我修复一下" [ref=e1444]
+            - generic [ref=e1446]: 会话管理那边，现在支持url中传userid直接打开吗？我记得报警群里面是传入了的，但是系统那边不会收到后自动打开抽屉，帮我修复一下
+          - generic [ref=e1447]: · 05-04
+        - generic [ref=e1448]:
+          - generic [ref=e1449] [cursor=pointer]:
+            - checkbox "为什么会有这个llm API error" [ref=e1451]
+            - generic [ref=e1453]: 为什么会有这个llm API error
+          - generic [ref=e1454]: · 05-04
+        - generic [ref=e1455]:
+          - generic [ref=e1456] [cursor=pointer]:
+            - checkbox "客服那边如果用户明确转人工后，ai就不需要回复了，现在就算转人工了，ai也会回复，帮我改一下" [ref=e1458]
+            - generic [ref=e1460]: 客服那边如果用户明确转人工后，ai就不需要回复了，现在就算转人工了，ai也会回复，帮我改一下
+          - generic [ref=e1461]: · 05-04
+        - generic [ref=e1462]:
+          - generic [ref=e1463] [cursor=pointer]:
+            - checkbox "getUserById云函数兼容openid/_id/unionId查询，同时用户管理界面只保留一个统一的查询就可以" [ref=e1465]
+            - generic [ref=e1467]: getUserById云函数兼容openid/_id/unionId查询，同时用户管理界面只保留一个统一的查询就可以
+          - generic [ref=e1468]: · 05-04
+        - generic [ref=e1469]:
+          - generic [ref=e1470] [cursor=pointer]:
+            - checkbox "宝子，现在有时候每天的广告收入会差很多，但是每天的广告观看数量又差不多，我觉得是不是因为很多人一个人看了很多广告，导致的，实际上有效变现的并不多，你帮我想想，我怎么把这个关联模型做出来，当天就能预估一个大致的结果，现在历史的广告收入和广告观看数据都有，你帮我看看" [ref=e1472]
+            - generic [ref=e1474]: 宝子，现在有时候每天的广告收入会差很多，但是每天的广告观看数量又差不多，我觉得是不是因为很多人一个人看了很多广告，导致的，实际上有效变现的并不多，你帮我想想，我怎么把这个关联模型做出来，当天就能预估一个大致的结果，现在历史的广告收入和广告观看数据都有，你帮我看看
+          - generic [ref=e1475]: · 05-04
+        - generic [ref=e1476]:
+          - generic [ref=e1477] [cursor=pointer]:
+            - checkbox "现在企业微信，微信客服这边的会话记录和消息，我想都同步过来，帮我想想，我怎么做，管理后台可以直接看，现在每次和运营沟通都很麻烦" [ref=e1479]
+            - generic [ref=e1481]: 现在企业微信，微信客服这边的会话记录和消息，我想都同步过来，帮我想想，我怎么做，管理后台可以直接看，现在每次和运营沟通都很麻烦
+          - generic [ref=e1482]: · 05-04
+        - generic [ref=e1483]:
+          - generic [ref=e1484] [cursor=pointer]:
+            - checkbox "匹配详情弹窗展示有bug，修复一下" [ref=e1486]
+            - generic [ref=e1488]: 匹配详情弹窗展示有bug，修复一下
+          - generic [ref=e1489]: "- · 05-04"
+        - generic [ref=e1490]:
+          - generic [ref=e1491] [cursor=pointer]:
+            - checkbox "现在红包发放趋势图，总金额计算有bug，你在这个页面做一个配置，我可以直接改每个红包类型的金额大小，这样算的就对了，但是历史数据又是错的，帮我想想，怎么实现比较好" [ref=e1493]
+            - generic [ref=e1495]: 现在红包发放趋势图，总金额计算有bug，你在这个页面做一个配置，我可以直接改每个红包类型的金额大小，这样算的就对了，但是历史数据又是错的，帮我想想，怎么实现比较好
+          - generic [ref=e1496]: · 05-03
+        - generic [ref=e1497]:
+          - generic [ref=e1498] [cursor=pointer]:
+            - checkbox "管理后台菜单梳理，现在小红书相关的菜单分布的很乱，帮我单独抽一个大分类吧，" [ref=e1500]
+            - generic [ref=e1502]: 管理后台菜单梳理，现在小红书相关的菜单分布的很乱，帮我单独抽一个大分类吧，
+          - generic [ref=e1503]: · 05-03
+        - generic [ref=e1504]:
+          - generic [ref=e1505] [cursor=pointer]:
+            - checkbox "帮我看一下，注册用户当天广告观看趋势，这个功能的广告观看数量对吗？确实算的是当天注册用户的吗" [ref=e1507]
+            - generic [ref=e1509]: 帮我看一下，注册用户当天广告观看趋势，这个功能的广告观看数量对吗？确实算的是当天注册用户的吗
+          - generic [ref=e1510]: · 05-03
+        - generic [ref=e1511]:
+          - generic [ref=e1512] [cursor=pointer]:
+            - checkbox "现在user表支持了unionid，帮我在openid，_id, 转换页面，也支持一下unionid" [ref=e1514]
+            - generic [ref=e1516]: 现在user表支持了unionid，帮我在openid，_id, 转换页面，也支持一下unionid
+          - generic [ref=e1517]: · 05-03
+        - generic [ref=e1518]:
+          - generic [ref=e1519] [cursor=pointer]:
+            - checkbox "帮我看一个bug，小红书评论账号管理，如果给已经删除的笔记评论，会算为失败，失败后会导致账户banned，我觉得这个设计不合理，只有真的失败才行，这样的不行" [ref=e1521]
+            - generic [ref=e1523]: 帮我看一个bug，小红书评论账号管理，如果给已经删除的笔记评论，会算为失败，失败后会导致账户banned，我觉得这个设计不合理，只有真的失败才行，这样的不行
+          - generic [ref=e1524]: "- · 05-03"
+        - generic [ref=e1525]:
+          - generic [ref=e1526] [cursor=pointer]:
+            - checkbox "我想做一个open claw可以直接调用你创建任务，然后你直接用ai终端的claude code，或者codex，开始干活，然后需要交互的时候，再通过open claw告诉我，让我选方案，看看有没有方案" [ref=e1528]
+            - generic [ref=e1530]: 我想做一个open claw可以直接调用你创建任务，然后你直接用ai终端的claude code，或者codex，开始干活，然后需要交互的时候，再通过open claw告诉我，让我选方案，看看有没有方案
+          - generic [ref=e1531]: quadtodo · 05-03
+        - generic [ref=e1532]:
+          - generic [ref=e1533] [cursor=pointer]:
+            - checkbox "测试一下" [ref=e1535]
+            - generic [ref=e1537]: 测试一下
+          - generic [ref=e1538]: · 05-03
+        - generic [ref=e1539]:
+          - generic [ref=e1540] [cursor=pointer]:
+            - checkbox "测试一下" [ref=e1542]
+            - generic [ref=e1544]: 测试一下
+          - generic [ref=e1545]: · 05-03
+        - generic [ref=e1546]:
+          - generic [ref=e1547] [cursor=pointer]:
+            - checkbox "看一下这个图片里面有什么" [ref=e1549]
+            - generic [ref=e1551]: 看一下这个图片里面有什么
+          - generic [ref=e1552]: foo · 05-03
+        - generic [ref=e1553]:
+          - generic [ref=e1554] [cursor=pointer]:
+            - checkbox "现在活动平台，必须手动登录后才能访问，之前是只有活动页面可以，现在需要强制登录了，你看看怎么改" [ref=e1556]
+            - generic [ref=e1558]: 现在活动平台，必须手动登录后才能访问，之前是只有活动页面可以，现在需要强制登录了，你看看怎么改
+          - generic [ref=e1559]: · 05-03
+        - generic [ref=e1560]:
+          - generic [ref=e1561] [cursor=pointer]:
+            - checkbox "小红书那边开通店铺" [ref=e1563]
+            - generic [ref=e1565]: 小红书那边开通店铺
+          - generic [ref=e1566]: "- · 05-03"
+        - generic [ref=e1567]:
+          - generic [ref=e1568] [cursor=pointer]:
+            - checkbox "抖音小游戏填基本信息" [ref=e1570]
+            - generic [ref=e1572]: 抖音小游戏填基本信息
+          - generic [ref=e1573]: "- · 05-03"
+        - generic [ref=e1574]:
+          - generic [ref=e1575] [cursor=pointer]:
+            - checkbox "游戏中，我之前实现了录制回放后，自动拼接视频的功能，可以配置任务，但是这些任务都是离线场景，我想实现，配置实时场景，当有回放渲染完成后，自动就可以去拼接回放，这样其实是最省力的，帮我想想，我可以怎么实现" [ref=e1577]
+            - generic [ref=e1579]: 游戏中，我之前实现了录制回放后，自动拼接视频的功能，可以配置任务，但是这些任务都是离线场景，我想实现，配置实时场景，当有回放渲染完成后，自动就可以去拼接回放，这样其实是最省力的，帮我想想，我可以怎么实现
+          - generic [ref=e1580]: · 05-03
+        - generic [ref=e1581]:
+          - generic [ref=e1582] [cursor=pointer]:
+            - checkbox "我现在有一个软著是个人主体的，现在我要给公司用，可以把软著授权给公司吗？需要一个证明吗" [ref=e1584]
+            - generic [ref=e1586]: 我现在有一个软著是个人主体的，现在我要给公司用，可以把软著授权给公司吗？需要一个证明吗
+          - generic [ref=e1587]: · 05-03
+        - generic [ref=e1588]:
+          - generic [ref=e1589] [cursor=pointer]:
+            - checkbox "听说wx小游戏能挣零花，真的吗，加一下这个方向，回放取当天的" [ref=e1591]
+            - generic [ref=e1593]: 听说wx小游戏能挣零花，真的吗，加一下这个方向，回放取当天的
+          - generic [ref=e1594]: "- · 05-03"
+        - generic [ref=e1595]:
+          - generic [ref=e1596] [cursor=pointer]:
+            - checkbox "测试一下" [ref=e1598]
+            - generic [ref=e1600]: 测试一下
+          - generic [ref=e1601]: · 05-02
+        - generic [ref=e1602]:
+          - generic [ref=e1603] [cursor=pointer]:
+            - checkbox "测试2" [ref=e1605]
+            - generic [ref=e1607]: 测试2
+          - generic [ref=e1608]: · 05-02
+        - generic [ref=e1609]:
+          - generic [ref=e1610] [cursor=pointer]:
+            - checkbox "现在商户余额监控，好像没有减去工资，导致偏高，你看下" [ref=e1612]
+            - generic [ref=e1614]: 现在商户余额监控，好像没有减去工资，导致偏高，你看下
+          - generic [ref=e1615]: · 05-02
+        - generic [ref=e1616]:
+          - generic [ref=e1617] [cursor=pointer]:
+            - checkbox "现在游戏录制回放的worker.sh文件逻辑有问题，会从跳转浏览器直接开始录制，能不能帮我优化一下，只有当游戏真正开始播放回放的时候再开始录制，你看一下要怎么改" [ref=e1619]
+            - generic [ref=e1621]: 现在游戏录制回放的worker.sh文件逻辑有问题，会从跳转浏览器直接开始录制，能不能帮我优化一下，只有当游戏真正开始播放回放的时候再开始录制，你看一下要怎么改
+          - generic [ref=e1622]: · 05-02
+        - generic [ref=e1623]:
+          - generic [ref=e1624] [cursor=pointer]:
+            - checkbox "后续要做的" [ref=e1626]
+            - generic [ref=e1628]: 后续要做的
+          - generic [ref=e1629]: "- · 05-02"
+        - generic [ref=e1630]:
+          - generic [ref=e1631] [cursor=pointer]:
+            - checkbox "现在小红书定时评论，看起来是整个机器纬度的时间间隔去评论，但是我想实现的是，多个小红书评论账号，并发的评论，每个账号有一个自己的评论冷却计时逻辑，你看一下怎么改" [ref=e1633]
+            - generic [ref=e1635]: 现在小红书定时评论，看起来是整个机器纬度的时间间隔去评论，但是我想实现的是，多个小红书评论账号，并发的评论，每个账号有一个自己的评论冷却计时逻辑，你看一下怎么改
+          - generic [ref=e1636]: · 05-02
+        - generic [ref=e1637]:
+          - generic [ref=e1638] [cursor=pointer]:
+            - checkbox "活动步骤的描述，支持解析markdown吧，现在不支持markdown，格式比较乱，你看看怎么改" [ref=e1640]
+            - generic [ref=e1642]: 活动步骤的描述，支持解析markdown吧，现在不支持markdown，格式比较乱，你看看怎么改
+          - generic [ref=e1643]: · 05-02
+        - generic [ref=e1644]:
+          - generic [ref=e1645] [cursor=pointer]:
+            - checkbox "现在qutatodo和telegram，很多配置是不是都写在代码里，我想未来做成web端，可以直接修改的方式，帮我看看，要怎么改，因为我想把他作为一个通用能力" [ref=e1647]
+            - generic [ref=e1649]: 现在qutatodo和telegram，很多配置是不是都写在代码里，我想未来做成web端，可以直接修改的方式，帮我看看，要怎么改，因为我想把他作为一个通用能力
+          - generic [ref=e1650]: · 05-02
+        - generic [ref=e1651]:
+          - generic [ref=e1652] [cursor=pointer]:
+            - checkbox "测试一下" [ref=e1654]
+            - generic [ref=e1656]: 测试一下
+          - generic [ref=e1657]: · 05-02
+        - generic [ref=e1658]:
+          - generic [ref=e1659] [cursor=pointer]:
+            - checkbox "telegram iPhone不弹出消息，帮我看一下原因，是因为我电脑登陆了吗" [ref=e1661]
+            - generic [ref=e1663]: telegram iPhone不弹出消息，帮我看一下原因，是因为我电脑登陆了吗
+          - generic [ref=e1664]: · 05-02
+        - generic [ref=e1665]:
+          - generic [ref=e1666] [cursor=pointer]:
+            - checkbox "小红书评论任务历史需要支持用了哪个账号评论的下拉选择筛选，帮我实现一下" [ref=e1668]
+            - generic [ref=e1670]: 小红书评论任务历史需要支持用了哪个账号评论的下拉选择筛选，帮我实现一下
+          - generic [ref=e1671]: · 05-02
+        - generic [ref=e1672]:
+          - generic [ref=e1673] [cursor=pointer]:
+            - checkbox "我想实现一个工资系统，现在我给他们算工资，是手动维护一个表格去算的，然后工资分单日基本工资和激励工资，我可以去配每个角色的单日工资和月激励工资，同时去给相关同学去结算，还可以配置自动任务，比如单日一次性结算，还是5天结算5天的工资，同时还要在之前利润分析系统中，把这个账单给补上" [ref=e1675]
+            - generic [ref=e1677]: 我想实现一个工资系统，现在我给他们算工资，是手动维护一个表格去算的，然后工资分单日基本工资和激励工资，我可以去配每个角色的单日工资和月激励工资，同时去给相关同学去结算，还可以配置自动任务，比如单日一次性结算，还是5天结算5天的工资，同时还要在之前利润分析系统中，把这个账单给补上
+          - generic [ref=e1678]: "- · 05-02"
+        - generic [ref=e1679]:
+          - generic [ref=e1680] [cursor=pointer]:
+            - checkbox "现在管理后台的关卡编辑器有2个问题，导致了今天的事故，1.拖拽原子模块的时候，有可能不在可关卡编辑器内，这个是最直接的因素，2.游戏内再做一个一键play的按钮，因为关卡编辑器和实际可能不一样，你帮我看一下" [ref=e1682]
+            - generic [ref=e1684]: 现在管理后台的关卡编辑器有2个问题，导致了今天的事故，1.拖拽原子模块的时候，有可能不在可关卡编辑器内，这个是最直接的因素，2.游戏内再做一个一键play的按钮，因为关卡编辑器和实际可能不一样，你帮我看一下
+          - generic [ref=e1685]: · 05-02
+        - generic [ref=e1686]:
+          - generic [ref=e1687] [cursor=pointer]:
+            - checkbox "测试一下" [ref=e1689]
+            - generic [ref=e1691]: 测试一下
+          - generic [ref=e1692]: · 05-02
+        - generic [ref=e1693]:
+          - generic [ref=e1694] [cursor=pointer]:
+            - checkbox "小红书爬数据" [ref=e1696]
+            - generic [ref=e1698]: 小红书爬数据
+          - generic [ref=e1699]: "- · 05-02"
+        - generic [ref=e1700]:
+          - generic [ref=e1701] [cursor=pointer]:
+            - checkbox "现在玩家通关后需要发小红书笔记，我现在是让他们发一个历史玩家的通关回放，也就是一个通关教程的方向，有效果，但不是很明显，我现在想给这个任务配置多个AB版本，看看什么效果好， 本科局通关领红包【本科局通关】，标题是这个，然后我现在还有2个方向，1个是让玩家晒历史收益，1个是让玩家筛收款截图 ，每个方向都需要一些相关的小红书文案模版，让玩家去参考，现在没有这个，你帮我想想，同时，看看还有什么方向可以发，" [ref=e1703]
+            - generic [ref=e1705]: 现在玩家通关后需要发小红书笔记，我现在是让他们发一个历史玩家的通关回放，也就是一个通关教程的方向，有效果，但不是很明显，我现在想给这个任务配置多个AB版本，看看什么效果好， 本科局通关领红包【本科局通关】，标题是这个，然后我现在还有2个方向，1个是让玩家晒历史收益，1个是让玩家筛收款截图 ，每个方向都需要一些相关的小红书文案模版，让玩家去参考，现在没有这个，你帮我想想，同时，看看还有什么方向可以发，
+          - generic [ref=e1706]: · 05-02
+        - generic [ref=e1707]:
+          - generic [ref=e1708] [cursor=pointer]:
+            - checkbox "每天晚上会全量抓取一下所有小红书笔记的数据，你帮我看看，为什么5月1日的没执行" [ref=e1710]
+            - generic [ref=e1712]: 每天晚上会全量抓取一下所有小红书笔记的数据，你帮我看看，为什么5月1日的没执行
+          - generic [ref=e1713]: · 05-02
+        - generic [ref=e1714]:
+          - generic [ref=e1715] [cursor=pointer]:
+            - checkbox "现在我有我们玩家的小红书笔记链接，我想实现给每个小红书笔记链接自动评论的功能，现在有一个submithook的云函数，你帮我看一下，能不能实现" [ref=e1717]
+            - generic [ref=e1719]: 现在我有我们玩家的小红书笔记链接，我想实现给每个小红书笔记链接自动评论的功能，现在有一个submithook的云函数，你帮我看一下，能不能实现
+          - generic [ref=e1720]: · 05-02
+        - generic [ref=e1721]:
+          - generic [ref=e1722] [cursor=pointer]:
+            - checkbox "商家助手，告警，我想检测我的商户号余额，如果小于某个配置需要webhook报警，调研一下有没有方案" [ref=e1724]
+            - generic [ref=e1726]: 商家助手，告警，我想检测我的商户号余额，如果小于某个配置需要webhook报警，调研一下有没有方案
+          - generic [ref=e1727]: · 05-02
+        - generic [ref=e1728]:
+          - generic [ref=e1729] [cursor=pointer]:
+            - checkbox "quatodo给到telegram消息，会推送一次⚠️的，还有一次正常的回复，帮我删掉感叹号这样超时未回复的吧，没用" [ref=e1731]
+            - generic [ref=e1733]: quatodo给到telegram消息，会推送一次⚠️的，还有一次正常的回复，帮我删掉感叹号这样超时未回复的吧，没用
+          - generic [ref=e1734]: quadtodo · 05-01
+        - generic [ref=e1735]:
+          - generic [ref=e1736] [cursor=pointer]:
+            - checkbox "测试一下" [ref=e1738]
+            - generic [ref=e1740]: 测试一下
+          - generic [ref=e1741]: · 05-01
+        - generic [ref=e1742]:
+          - generic [ref=e1743] [cursor=pointer]:
+            - checkbox "你看一下现在视频拼接 + BGM的逻辑，我现在想把他做成创建任务的能力，现在手机上渲染出来的游戏视频，只有游戏内容，没有背景音乐，而且我还想给视频的开头配置一张封面，宝子，所以我想做一个单独的任务配置页面，直接创建一个任务，处理原来的原始回放，bgm支持配置素材库的分类，转账封面支持素材库的封面，原始回放支持筛选日期范围，同时我还想给原始回放加一个是否渲染过的状态，后续创建任务的时候可以过滤，你帮我看看" [ref=e1745]
+            - generic [ref=e1747]: 你看一下现在视频拼接 + BGM的逻辑，我现在想把他做成创建任务的能力，现在手机上渲染出来的游戏视频，只有游戏内容，没有背景音乐，而且我还想给视频的开头配置一张封面，宝子，所以我想做一个单独的任务配置页面，直接创建一个任务，处理原来的原始回放，bgm支持配置素材库的分类，转账封面支持素材库的封面，原始回放支持筛选日期范围，同时我还想给原始回放加一个是否渲染过的状态，后续创建任务的时候可以过滤，你帮我看看
+          - generic [ref=e1748]: · 05-01
+        - generic [ref=e1749]:
+          - generic [ref=e1750] [cursor=pointer]:
+            - checkbox "为什么3点的小红书监控日志没运行呀" [ref=e1752]
+            - generic [ref=e1754]: 为什么3点的小红书监控日志没运行呀
+          - generic [ref=e1755]: "- · 05-01"
+        - generic [ref=e1756]:
+          - generic [ref=e1757] [cursor=pointer]:
+            - checkbox "日常聊天Claude" [ref=e1759]
+            - generic [ref=e1761]: 日常聊天Claude
+          - generic [ref=e1762]: · 05-01
+        - generic [ref=e1763]:
+          - generic [ref=e1764] [cursor=pointer]:
+            - checkbox "修复 login bug, Bug 修复 brainstorm模版" [ref=e1766]
+            - generic [ref=e1768]: 修复 login bug, Bug 修复 brainstorm模版
+          - generic [ref=e1769]: foo · 05-01
+        - generic [ref=e1770]:
+          - generic [ref=e1771] [cursor=pointer]:
+            - checkbox "现在用户发布小红书，是有一个一键发笔记的能力，但是目前我只做了获取视频链接，跳转到小红书后只携带了视频，没有标题和文案，这里能不能帮我改造一下，我可以配置，一键分享配置的分享云函数，携带视频，标题，正文，" [ref=e1773]
+            - generic [ref=e1775]: 现在用户发布小红书，是有一个一键发笔记的能力，但是目前我只做了获取视频链接，跳转到小红书后只携带了视频，没有标题和文案，这里能不能帮我改造一下，我可以配置，一键分享配置的分享云函数，携带视频，标题，正文，
+          - generic [ref=e1776]: · 05-01
+        - generic [ref=e1777]:
+          - generic [ref=e1778] [cursor=pointer]:
+            - checkbox "写一个 测试一下777" [ref=e1780]
+            - generic [ref=e1782]: 写一个 测试一下777
+          - generic [ref=e1783]: · 04-30
+        - generic [ref=e1784]:
+          - generic [ref=e1785] [cursor=pointer]:
+            - checkbox "测试 topic 路由 v2, 自由模式" [ref=e1787]
+            - generic [ref=e1789]: 测试 topic 路由 v2, 自由模式
+          - generic [ref=e1790]: tmp · 04-30
+        - generic [ref=e1791]:
+          - generic [ref=e1792] [cursor=pointer]:
+            - checkbox "写一个 nodejs hello world demo" [ref=e1794]
+            - generic [ref=e1796]: 写一个 nodejs hello world demo
+          - generic [ref=e1797]: · 04-30
+        - generic [ref=e1798]:
+          - generic [ref=e1799] [cursor=pointer]:
+            - checkbox "写一个 测试一下444" [ref=e1801]
+            - generic [ref=e1803]: 写一个 测试一下444
+          - generic [ref=e1804]: · 04-30
+        - generic [ref=e1805]:
+          - generic [ref=e1806] [cursor=pointer]:
+            - checkbox "，调研一下openclaw直接与Claude code交互的方式，看看有没有更好的方案了，第一象限，默认目录，brainstorm模版" [ref=e1808]
+            - generic [ref=e1810]: ，调研一下openclaw直接与Claude code交互的方式，看看有没有更好的方案了，第一象限，默认目录，brainstorm模版
+          - generic [ref=e1811]: · 04-30
+        - generic [ref=e1812]:
+          - generic [ref=e1813] [cursor=pointer]:
+            - checkbox "写一个 测试一下555" [ref=e1815]
+            - generic [ref=e1817]: 写一个 测试一下555
+          - generic [ref=e1818]: · 04-30
+        - generic [ref=e1819]:
+          - generic [ref=e1820] [cursor=pointer]:
+            - checkbox "写个简单 demo" [ref=e1822]
+            - generic [ref=e1824]: 写个简单 demo
+          - generic [ref=e1825]: · 04-30
+        - generic [ref=e1826]:
+          - generic [ref=e1827] [cursor=pointer]:
+            - checkbox "写个简单 demo" [ref=e1829]
+            - generic [ref=e1831]: 写个简单 demo
+          - generic [ref=e1832]: · 04-30
+        - generic [ref=e1833]:
+          - generic [ref=e1834] [cursor=pointer]:
+            - checkbox "写一个 测试一下" [ref=e1836]
+            - generic [ref=e1838]: 写一个 测试一下
+          - generic [ref=e1839]: · 04-30
+        - generic [ref=e1840]:
+          - generic [ref=e1841] [cursor=pointer]:
+            - checkbox "写一个 测试一下333" [ref=e1843]
+            - generic [ref=e1845]: 写一个 测试一下333
+          - generic [ref=e1846]: · 04-30
+        - generic [ref=e1847]:
+          - generic [ref=e1848] [cursor=pointer]:
+            - checkbox "写一个 测试一下222" [ref=e1850]
+            - generic [ref=e1852]: 写一个 测试一下222
+          - generic [ref=e1853]: · 04-30
+        - generic [ref=e1854]:
+          - generic [ref=e1855] [cursor=pointer]:
+            - 'checkbox "为什么感觉claude code存多sessionId是错误的，No conversation found with session ID: fbbac76f-d654-4463-9204-f1bda81da29e ，我启动的都是都不行" [ref=e1857]'
+            - generic [ref=e1859]: "为什么感觉claude code存多sessionId是错误的，No conversation found with session ID: fbbac76f-d654-4463-9204-f1bda81da29e ，我启动的都是都不行"
+          - generic [ref=e1860]: quadtodo · 04-30
+        - generic [ref=e1861]:
+          - generic [ref=e1862] [cursor=pointer]:
+            - checkbox "监控运行日志中，为什么好几个小时都没在跑了，看一下不跑的原因，修复一下bug" [ref=e1864]
+            - generic [ref=e1866]: 监控运行日志中，为什么好几个小时都没在跑了，看一下不跑的原因，修复一下bug
+          - generic [ref=e1867]: "- · 04-30"
+        - generic [ref=e1868]:
+          - generic [ref=e1869] [cursor=pointer]:
+            - checkbox "我想做一套类似项目管理的功能，比如给每个人派活的进度，需要用这个系统跟进，帮我想想怎么做" [ref=e1871]
+            - generic [ref=e1873]: 我想做一套类似项目管理的功能，比如给每个人派活的进度，需要用这个系统跟进，帮我想想怎么做
+          - generic [ref=e1874]: "- · 04-30"
+        - generic [ref=e1875]:
+          - generic [ref=e1876] [cursor=pointer]:
+            - checkbox "帮我在关卡查询中实现，关卡上传功能，支持上传简单模式和困难模式关卡，同时为之前的关卡查询补充一下功能，之前关卡编辑中，用iframe，可以去看关卡的效果，你把这个帮我加进来" [ref=e1878]
+            - generic [ref=e1880]: 帮我在关卡查询中实现，关卡上传功能，支持上传简单模式和困难模式关卡，同时为之前的关卡查询补充一下功能，之前关卡编辑中，用iframe，可以去看关卡的效果，你把这个帮我加进来
+          - generic [ref=e1881]: · 04-29
+        - generic [ref=e1882]:
+          - generic [ref=e1883] [cursor=pointer]:
+            - checkbox "文案库问题修复" [ref=e1885]
+            - generic [ref=e1887]: 文案库问题修复
+          - generic [ref=e1888]: · 04-29
+        - generic [ref=e1889]:
+          - generic [ref=e1890] [cursor=pointer]:
+            - checkbox "写一个 nodejs hello world demo" [ref=e1892]
+            - generic [ref=e1894]: 写一个 nodejs hello world demo
+          - generic [ref=e1895]: · 04-29
+        - generic [ref=e1896]:
+          - generic [ref=e1897] [cursor=pointer]:
+            - checkbox "玩家反馈，只有抽奖红包，但是没有办法进去活动页面，领取红包，你看一下bug" [ref=e1899]
+            - generic [ref=e1901]: 玩家反馈，只有抽奖红包，但是没有办法进去活动页面，领取红包，你看一下bug
+          - generic [ref=e1902]: "- · 04-29"
+        - generic [ref=e1903]:
+          - generic [ref=e1904] [cursor=pointer]:
+            - checkbox "现在这个功能，移动端的ai终端点击不到ai终端的全屏按钮，帮我优化一下" [ref=e1906]
+            - generic [ref=e1908]: 现在这个功能，移动端的ai终端点击不到ai终端的全屏按钮，帮我优化一下
+          - generic [ref=e1909]: quadtodo · 04-29
+        - generic [ref=e1910]:
+          - generic [ref=e1911] [cursor=pointer]:
+            - checkbox "获取广告收入定时任务在跑吗，为什么27号，28号数据都没有" [ref=e1913]
+            - generic [ref=e1915]: 获取广告收入定时任务在跑吗，为什么27号，28号数据都没有
+          - generic [ref=e1916]: "- · 04-28"
+        - generic [ref=e1917]:
+          - generic [ref=e1918] [cursor=pointer]:
+            - checkbox "分析一下未来的路" [ref=e1920]
+            - generic [ref=e1922]: 分析一下未来的路
+          - generic [ref=e1923]: "- · 04-28"
+        - generic [ref=e1924]:
+          - generic [ref=e1925] [cursor=pointer]:
+            - checkbox "活动平台需要多一个配置，如果打开就会教研是否有还没兑换的通关凭证，如果有，就允许进入详情页，如果没有就不允许，同时接口调用也要做隔离，不允许页面拦截了，接口没拦截，现在有坏人拿我们活动的详情，我不允许他看到步骤" [ref=e1927]
+            - generic [ref=e1929]: 活动平台需要多一个配置，如果打开就会教研是否有还没兑换的通关凭证，如果有，就允许进入详情页，如果没有就不允许，同时接口调用也要做隔离，不允许页面拦截了，接口没拦截，现在有坏人拿我们活动的详情，我不允许他看到步骤
+          - generic [ref=e1930]: · 04-27
+        - generic [ref=e1931]:
+          - generic [ref=e1932] [cursor=pointer]:
+            - checkbox "活动管理步骤上传图片，支持直接快捷粘贴，这样就不需要手动下载到本地了" [ref=e1934]
+            - generic [ref=e1936]: 活动管理步骤上传图片，支持直接快捷粘贴，这样就不需要手动下载到本地了
+          - generic [ref=e1937]: · 04-27
+        - generic [ref=e1938]:
+          - generic [ref=e1939] [cursor=pointer]:
+            - checkbox "点击左侧的一级菜单也可以直接打开菜单" [ref=e1941]
+            - generic [ref=e1943]: 点击左侧的一级菜单也可以直接打开菜单
+          - generic [ref=e1944]: · 04-27
+        - generic [ref=e1945]:
+          - generic [ref=e1946] [cursor=pointer]:
+            - checkbox "游戏增长总览，今日dau，不是和昨天一天去比较，而是去和昨天的这个时候去比较" [ref=e1948]
+            - generic [ref=e1950]: 游戏增长总览，今日dau，不是和昨天一天去比较，而是去和昨天的这个时候去比较
+          - generic [ref=e1951]: · 04-27
+        - generic [ref=e1952]:
+          - generic [ref=e1953] [cursor=pointer]:
+            - checkbox "看一下现在每天获取前一天的广告是几点，我觉得要改成中午12点，" [ref=e1955]
+            - generic [ref=e1957]: 看一下现在每天获取前一天的广告是几点，我觉得要改成中午12点，
+          - generic [ref=e1958]: "- · 04-27"
+        - generic [ref=e1959]:
+          - generic [ref=e1960] [cursor=pointer]:
+            - checkbox "帮我看一下目前系统中，哪些云函数是已经没用了，但是还在线上部署的，我要删一些" [ref=e1962]
+            - generic [ref=e1964]: 帮我看一下目前系统中，哪些云函数是已经没用了，但是还在线上部署的，我要删一些
+          - generic [ref=e1965]: · 04-27
+        - generic [ref=e1966]:
+          - generic [ref=e1967] [cursor=pointer]:
+            - checkbox "素材库需要支持直接用链接导入，然后用链接中下载内容，" [ref=e1969]
+            - generic [ref=e1971]: 素材库需要支持直接用链接导入，然后用链接中下载内容，
+          - generic [ref=e1972]: · 04-27
+        - generic [ref=e1973]:
+          - generic [ref=e1974] [cursor=pointer]:
+            - checkbox "把这些文案导入到文案库中，用mcp，分类是小红书封面文案" [ref=e1976]
+            - generic [ref=e1978]: 把这些文案导入到文案库中，用mcp，分类是小红书封面文案
+          - generic [ref=e1979]: · 04-27
+        - generic [ref=e1980]:
+          - generic [ref=e1981] [cursor=pointer]:
+            - checkbox "看一下现在活动平台，如果配置了，获取文案库，或者素材库的内容，有没有enabled是true的逻辑，这个必须有" [ref=e1983]
+            - generic [ref=e1985]: 看一下现在活动平台，如果配置了，获取文案库，或者素材库的内容，有没有enabled是true的逻辑，这个必须有
+          - generic [ref=e1986]: · 04-27
+        - generic [ref=e1987]:
+          - generic [ref=e1988] [cursor=pointer]:
+            - checkbox "封面艺术字问题" [ref=e1990]
+            - generic [ref=e1992]: 封面艺术字问题
+          - generic [ref=e1993]: "- · 04-27"
+        - generic [ref=e1994]:
+          - generic [ref=e1995] [cursor=pointer]:
+            - checkbox "我想做一个游戏活跃度分析的趋势图，在管理后台，可以去筛选，游戏关卡总记录大于n人的活跃趋势，按天纬度" [ref=e1997]
+            - generic [ref=e1999]: 我想做一个游戏活跃度分析的趋势图，在管理后台，可以去筛选，游戏关卡总记录大于n人的活跃趋势，按天纬度
+          - generic [ref=e2000]: · 04-27
+        - generic [ref=e2001]:
+          - generic [ref=e2002] [cursor=pointer]:
+            - checkbox "羊了个羊还能在他的基础上创新什么" [ref=e2004]
+            - generic [ref=e2006]: 羊了个羊还能在他的基础上创新什么
+          - generic [ref=e2007]: "- · 04-27"
+        - generic [ref=e2008]:
+          - generic [ref=e2009] [cursor=pointer]:
+            - checkbox "openclaw去爬点赞收藏数量" [ref=e2011]
+            - generic [ref=e2013]: openclaw去爬点赞收藏数量
+          - generic [ref=e2014]: "- · 04-27"
+        - generic [ref=e2015]:
+          - generic [ref=e2016] [cursor=pointer]:
+            - checkbox "游戏未来发展探索，现在游戏只在微信小游戏上线了，流程是现在这套超难三消玩法+过关就给红包的模式，最近TikTok小游戏比较火，你帮我看下，我如果想要上线，需要怎么做，给一点建议" [ref=e2018]
+            - generic [ref=e2020]: 游戏未来发展探索，现在游戏只在微信小游戏上线了，流程是现在这套超难三消玩法+过关就给红包的模式，最近TikTok小游戏比较火，你帮我看下，我如果想要上线，需要怎么做，给一点建议
+          - generic [ref=e2021]: · 04-27
+        - generic [ref=e2022]:
+          - generic [ref=e2023] [cursor=pointer]:
+            - checkbox "我想把微信小游戏这边广告收入的一些指标也同步到管理后台数据分析中，帮我调研一下有方案吗" [ref=e2025]
+            - generic [ref=e2027]: 我想把微信小游戏这边广告收入的一些指标也同步到管理后台数据分析中，帮我调研一下有方案吗
+          - generic [ref=e2028]: "- · 04-27"
+        - generic [ref=e2029]:
+          - generic [ref=e2030] [cursor=pointer]:
+            - 'checkbox "自动检测每天的挑战模式关卡是否上传完成，否则就要告警，用企业微信的webhook，{\"PORT\":\"80\",\"WECHAT_WORK_WEBHOOK\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=5ae56eb1-9b7c-477e-b5c5-6f1075283d60\",\"ADMIN_QUERY_TOKEN\":\"02837879c90eeb0f34e5a0e235d9b6baf6a218227c8ae4985c65c65c2ae55075\"}" [ref=e2032]'
+            - generic [ref=e2034]: "自动检测每天的挑战模式关卡是否上传完成，否则就要告警，用企业微信的webhook，{\"PORT\":\"80\",\"WECHAT_WORK_WEBHOOK\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=5ae56eb1-9b7c-477e-b5c5-6f1075283d60\",\"ADMIN_QUERY_TOKEN\":\"02837879c90eeb0f34e5a0e235d9b6baf6a218227c8ae4985c65c65c2ae55075\"}"
+          - generic [ref=e2035]: "- · 04-26"
+        - generic [ref=e2036]:
+          - generic [ref=e2037] [cursor=pointer]:
+            - checkbox "探索openclaw或者xxx结果我现在待办事项的方案，看看有没有更好的解法" [ref=e2039]
+            - generic [ref=e2041]: 探索openclaw或者xxx结果我现在待办事项的方案，看看有没有更好的解法
+          - generic [ref=e2042]: "- · 04-26"
+        - generic [ref=e2043]:
+          - generic [ref=e2044] [cursor=pointer]:
+            - checkbox "宝子，我想用openclaw调用我的这个quta待办，帮我干活，你觉得这个现实吗？帮我想想，直接调用里面的codex和claude code" [ref=e2046]
+            - generic [ref=e2048]: 宝子，我想用openclaw调用我的这个quta待办，帮我干活，你觉得这个现实吗？帮我想想，直接调用里面的codex和claude code
+          - generic [ref=e2049]: · 04-26
+        - generic [ref=e2050]:
+          - generic [ref=e2051] [cursor=pointer]:
+            - checkbox "探索有没有ai图直接到切图结果后的方案" [ref=e2053]
+            - generic [ref=e2055]: 探索有没有ai图直接到切图结果后的方案
+          - generic [ref=e2056]: "- · 04-26"
+        - generic [ref=e2057]:
+          - generic [ref=e2058] [cursor=pointer]:
+            - checkbox "抖音这边视频太单一了，能不能扩展一些思路" [ref=e2060]
+            - generic [ref=e2062]: 抖音这边视频太单一了，能不能扩展一些思路
+          - generic [ref=e2063]: "- · 04-26"
+        - generic [ref=e2064]:
+          - generic [ref=e2065] [cursor=pointer]:
+            - checkbox "打字的时候ai终端的布局会跟着抖动，是不是触发的太容易了，你看下原因" [ref=e2067]
+            - generic [ref=e2069]: 打字的时候ai终端的布局会跟着抖动，是不是触发的太容易了，你看下原因
+          - generic [ref=e2070]: · 04-26
+        - generic [ref=e2071]:
+          - generic [ref=e2072] [cursor=pointer]:
+            - checkbox "梳理游戏ui替换优先级，后续做统一替换" [ref=e2074]
+            - generic [ref=e2076]: 梳理游戏ui替换优先级，后续做统一替换
+          - generic [ref=e2077]: "- · 04-26"
+        - generic [ref=e2078]:
+          - generic [ref=e2079] [cursor=pointer]:
+            - checkbox "视频拼接合成记录支持replayId筛选，openid，userid筛选（replayId归属的人）" [ref=e2081]
+            - generic [ref=e2083]: 视频拼接合成记录支持replayId筛选，openid，userid筛选（replayId归属的人）
+          - generic [ref=e2084]: · 04-26
+        - generic [ref=e2085]:
+          - generic [ref=e2086] [cursor=pointer]:
+            - checkbox "关卡原子模版功能完善" [ref=e2088]
+            - generic [ref=e2090]: 关卡原子模版功能完善
+          - generic [ref=e2091]: "- · 04-26"
+        - generic [ref=e2092]:
+          - generic [ref=e2093] [cursor=pointer]:
+            - checkbox "UI整体优化" [ref=e2095]
+            - generic [ref=e2097]: UI整体优化
+          - generic [ref=e2098]: "- · 04-26"
+        - generic [ref=e2099]:
+          - generic [ref=e2100] [cursor=pointer]:
+            - checkbox "帮我看一下现在游戏中，邀请好友后，领取道具的链路是什么，调用了什么云函数，我看下分享的情况" [ref=e2102]
+            - generic [ref=e2104]: 帮我看一下现在游戏中，邀请好友后，领取道具的链路是什么，调用了什么云函数，我看下分享的情况
+          - generic [ref=e2105]: · 04-25
+        - generic [ref=e2106]:
+          - generic [ref=e2107] [cursor=pointer]:
+            - checkbox "看看管理后台目前还可以做什么功能，帮助我更好分析游戏当前的表现，和未来增长需要做的事情" [ref=e2109]
+            - generic [ref=e2111]: 看看管理后台目前还可以做什么功能，帮助我更好分析游戏当前的表现，和未来增长需要做的事情
+          - generic [ref=e2112]: · 04-24
+        - generic [ref=e2113]:
+          - generic [ref=e2114] [cursor=pointer]:
+            - checkbox "终端中不需要展示待确认节点" [ref=e2116]
+            - generic [ref=e2118]: 终端中不需要展示待确认节点
+          - generic [ref=e2119]: · 04-24
+        - generic [ref=e2120]:
+          - generic [ref=e2121] [cursor=pointer]:
+            - 'checkbox "管理后台，帮我实现一个新菜单，菜单的内容是关卡原子模版，需要保存2个关键字段，1个是关卡的元数据，这个数据是一个坐标数组，[{\"x\":-1,\"y\":295},{\"x\":-1,\"y\":220},{\"x\":-1,\"y\":145},{\"x\":-1,\"y\":70}],用这个循环可以堆叠很多关卡，一个字段是这个原子模版的图片，需要运营上传" [ref=e2123]'
+            - generic [ref=e2125]: "管理后台，帮我实现一个新菜单，菜单的内容是关卡原子模版，需要保存2个关键字段，1个是关卡的元数据，这个数据是一个坐标数组，[{\"x\":-1,\"y\":295},{\"x\":-1,\"y\":220},{\"x\":-1,\"y\":145},{\"x\":-1,\"y\":70}],用这个循环可以堆叠很多关卡，一个字段是这个原子模版的图片，需要运营上传"
+          - generic [ref=e2126]: "- · 04-24"
+        - generic [ref=e2127]:
+          - generic [ref=e2128] [cursor=pointer]:
+            - checkbox "我想AB一下游戏困难模式的奖励金额，现在困难模式是读取的配置表，现在是10元，我想AB，15元，20元，25元，这几个版本，你帮我看看，我怎么改" [ref=e2130]
+            - generic [ref=e2132]: 我想AB一下游戏困难模式的奖励金额，现在困难模式是读取的配置表，现在是10元，我想AB，15元，20元，25元，这几个版本，你帮我看看，我怎么改
+          - generic [ref=e2133]: · 04-24
+        - generic [ref=e2134]:
+          - generic [ref=e2135] [cursor=pointer]:
+            - checkbox "现在游戏侧，消除成功后会给神奇卡牌，但是目前这里有bug，有时候消除后不会给，然后再消除，一次性给2个，你看下这里bug的原因" [ref=e2137]
+            - generic [ref=e2139]: 现在游戏侧，消除成功后会给神奇卡牌，但是目前这里有bug，有时候消除后不会给，然后再消除，一次性给2个，你看下这里bug的原因
+          - generic [ref=e2140]: · 04-24
+        - generic [ref=e2141]:
+          - generic [ref=e2142] [cursor=pointer]:
+            - checkbox "Your server is Forbidden For Public Network Access. For more information, please refer to https://docs.cloudbase.net/error-code/service/SERVICE_FORBIDDEN，为什么server的接口突然报错了" [ref=e2144]
+            - generic [ref=e2146]: Your server is Forbidden For Public Network Access. For more information, please refer to https://docs.cloudbase.net/error-code/service/SERVICE_FORBIDDEN，为什么server的接口突然报错了
+          - generic [ref=e2147]: "- · 04-24"
+        - generic [ref=e2148]:
+          - generic [ref=e2149] [cursor=pointer]:
+            - checkbox "管理后台菜单改造，现在的管理后台菜单看起来不方便，我想做成抽屉方式的布局，按模块去拆分，这样更加一目了然" [ref=e2151]
+            - generic [ref=e2153]: 管理后台菜单改造，现在的管理后台菜单看起来不方便，我想做成抽屉方式的布局，按模块去拆分，这样更加一目了然
+          - generic [ref=e2154]: "- · 04-24"
+        - generic [ref=e2155]:
+          - generic [ref=e2156] [cursor=pointer]:
+            - checkbox "new_user_default_difficulty，游戏端删掉这个实验吧，默认走困难模式" [ref=e2158]
+            - generic [ref=e2160]: new_user_default_difficulty，游戏端删掉这个实验吧，默认走困难模式
+          - generic [ref=e2161]: "- · 04-24"
+        - generic [ref=e2162]:
+          - generic [ref=e2163] [cursor=pointer]:
+            - checkbox "现在的这个ai费用准吗，我怎么看每个模型的标准计费，我怎么感觉不准" [ref=e2165]
+            - generic [ref=e2167]: 现在的这个ai费用准吗，我怎么看每个模型的标准计费，我怎么感觉不准
+          - generic [ref=e2168]: · 04-24
+        - generic [ref=e2169]:
+          - generic [ref=e2170] [cursor=pointer]:
+            - checkbox "游戏侧，失败文案上报还有吗？如果有就删掉这部分逻辑吧，不需要了" [ref=e2172]
+            - generic [ref=e2174]: 游戏侧，失败文案上报还有吗？如果有就删掉这部分逻辑吧，不需要了
+          - generic [ref=e2175]: "- · 04-24"
+        - generic [ref=e2176]:
+          - generic [ref=e2177] [cursor=pointer]:
+            - checkbox "下线repotFailText云函数" [ref=e2179]
+            - generic [ref=e2181]: 下线repotFailText云函数
+          - generic [ref=e2182]: "- · 04-24"
+        - generic [ref=e2183]:
+          - generic [ref=e2184] [cursor=pointer]:
+            - checkbox "能不能给这个工具，做一个内网穿透到公网，让我的云开发的域名可以直接访问，或者直接公网ip访问这个网站，同时兼容移动端布局" [ref=e2186]
+            - generic [ref=e2188]: 能不能给这个工具，做一个内网穿透到公网，让我的云开发的域名可以直接访问，或者直接公网ip访问这个网站，同时兼容移动端布局
+          - generic [ref=e2189]: · 04-24
+        - generic [ref=e2190]:
+          - generic [ref=e2191] [cursor=pointer]:
+            - checkbox "为什么chat续聊，没有sse，只有等全部文本返回才能看到，修复一下" [ref=e2193]
+            - generic [ref=e2195]: 为什么chat续聊，没有sse，只有等全部文本返回才能看到，修复一下
+          - generic [ref=e2196]: · 04-24
+        - generic [ref=e2197]:
+          - generic [ref=e2198] [cursor=pointer]:
+            - checkbox "你看一下活动平台，用户那边支持撤回提交吗？帮我下掉这个功能" [ref=e2200]
+            - generic [ref=e2202]: 你看一下活动平台，用户那边支持撤回提交吗？帮我下掉这个功能
+          - generic [ref=e2203]: · 04-23
+        - generic [ref=e2204]:
+          - generic [ref=e2205] [cursor=pointer]:
+            - checkbox "ABdy+小红书" [ref=e2207]
+            - generic [ref=e2209]: ABdy+小红书
+          - generic [ref=e2210]: "- · 04-23"
+        - generic [ref=e2211]:
+          - generic [ref=e2212] [cursor=pointer]:
+            - checkbox "现在回放创建神奇卡牌有bug，光线应该飞向对应神奇卡牌的add节点，现在没有" [ref=e2214]
+            - generic [ref=e2216]: 现在回放创建神奇卡牌有bug，光线应该飞向对应神奇卡牌的add节点，现在没有
+          - generic [ref=e2217]: · 04-23
+        - generic [ref=e2218]:
+          - generic [ref=e2219] [cursor=pointer]:
+            - checkbox "之前本地继续这个功能，我是做过一个会话只打开一个的，如果有，就默认把之前打开的弹出，唤醒一下，但是现在我用，发现一直在新建新的终端，有bug" [ref=e2221]
+            - generic [ref=e2223]: 之前本地继续这个功能，我是做过一个会话只打开一个的，如果有，就默认把之前打开的弹出，唤醒一下，但是现在我用，发现一直在新建新的终端，有bug
+          - generic [ref=e2224]: "- · 04-23"
+        - generic [ref=e2225]:
+          - generic [ref=e2226] [cursor=pointer]:
+            - checkbox "活动可以配置用户提交审核后立即打款一部分钱，这个可以配置，比如提交审核后，立即打款5元，剩余的5元，等24小时后打款，帮我实现一下这个配置" [ref=e2228]
+            - generic [ref=e2230]: 活动可以配置用户提交审核后立即打款一部分钱，这个可以配置，比如提交审核后，立即打款5元，剩余的5元，等24小时后打款，帮我实现一下这个配置
+          - generic [ref=e2231]: "- · 04-23"
+        - generic [ref=e2232]:
+          - generic [ref=e2233] [cursor=pointer]:
+            - checkbox "现在有个问题，我要测AB版本，神奇卡牌的卡槽位置，有的玩家希望在上面，有的玩家希望在下面我要AB" [ref=e2235]
+            - generic [ref=e2237]: 现在有个问题，我要测AB版本，神奇卡牌的卡槽位置，有的玩家希望在上面，有的玩家希望在下面我要AB
+          - generic [ref=e2238]: "- · 04-23"
+        - generic [ref=e2239]:
+          - generic [ref=e2240] [cursor=pointer]:
+            - checkbox "现在只有列表和宠物的模式，我希望新增模式，从上往下排列，不用4象限，而且优先级排序" [ref=e2242]
+            - generic [ref=e2244]: 现在只有列表和宠物的模式，我希望新增模式，从上往下排列，不用4象限，而且优先级排序
+          - generic [ref=e2245]: · 04-23
+        - generic [ref=e2246]:
+          - generic [ref=e2247] [cursor=pointer]:
+            - checkbox "帮我做一个报表的功能，可以看我每天都完成了什么任务，" [ref=e2249]
+            - generic [ref=e2251]: 帮我做一个报表的功能，可以看我每天都完成了什么任务，
+          - generic [ref=e2252]: · 04-23
+        - generic [ref=e2253]:
+          - generic [ref=e2254] [cursor=pointer]:
+            - checkbox "现在这个ai终端，必须手动结束才能拿到claude code的sessionId，有没有办法启动的时候就拿到" [ref=e2256]
+            - generic [ref=e2258]: 现在这个ai终端，必须手动结束才能拿到claude code的sessionId，有没有办法启动的时候就拿到
+          - generic [ref=e2259]: · 04-23
+        - generic [ref=e2260]:
+          - generic [ref=e2261] [cursor=pointer]:
+            - checkbox "宝子，现在这个回放id，会出现槽中块的数量大于8个的情况，有bug，你排查一下为什么，record-1776875964208" [ref=e2263]
+            - generic [ref=e2265]: 宝子，现在这个回放id，会出现槽中块的数量大于8个的情况，有bug，你排查一下为什么，record-1776875964208
+          - generic [ref=e2266]: · 04-23
+        - generic [ref=e2267]:
+          - generic [ref=e2268] [cursor=pointer]:
+            - checkbox "部署后端云函数和前端代码" [ref=e2270]
+            - generic [ref=e2272]: 部署后端云函数和前端代码
+          - generic [ref=e2273]: "- · 04-22"
+        - generic [ref=e2274]:
+          - generic [ref=e2275] [cursor=pointer]:
+            - checkbox "AI终端的宽度有bug，为什么展示不全" [ref=e2277]
+            - generic [ref=e2279]: AI终端的宽度有bug，为什么展示不全
+          - generic [ref=e2280]: · 04-22
+        - generic [ref=e2281]:
+          - generic [ref=e2282] [cursor=pointer]:
+            - checkbox "AI统计的功能，为什么top前十任务只展示了2个，我觉得有bug" [ref=e2284]
+            - generic [ref=e2286]: AI统计的功能，为什么top前十任务只展示了2个，我觉得有bug
+          - generic [ref=e2287]: · 04-22
+        - generic [ref=e2288]:
+          - generic [ref=e2289] [cursor=pointer]:
+            - checkbox "最近有个llm wike火了，我在想能不能把这个接入到我们这个系统中，自动将一些待办完成的内容，总结成记忆" [ref=e2291]
+            - generic [ref=e2293]: 最近有个llm wike火了，我在想能不能把这个接入到我们这个系统中，自动将一些待办完成的内容，总结成记忆
+          - generic [ref=e2294]: · 04-22
+        - generic [ref=e2295]:
+          - generic [ref=e2296] [cursor=pointer]:
+            - checkbox "历史会话找回只会检索模型返回，不会检索用户输入吗，为什么我这边不生效" [ref=e2298]
+            - generic [ref=e2300]: 历史会话找回只会检索模型返回，不会检索用户输入吗，为什么我这边不生效
+          - generic [ref=e2301]: · 04-22
+        - generic [ref=e2302]:
+          - generic [ref=e2303] [cursor=pointer]:
+            - checkbox "通关基础关卡后，需要将连消次数label重置为0" [ref=e2305]
+            - generic [ref=e2307]: 通关基础关卡后，需要将连消次数label重置为0
+          - generic [ref=e2308]: "- · 04-22"
+        - generic [ref=e2309]:
+          - generic [ref=e2310] [cursor=pointer]:
+            - checkbox "现在系统统计出来的AB的次留是有问题的，应该是要排除掉当天注册后，前一天用户的AB次留，你看下怎么改" [ref=e2312]
+            - generic [ref=e2314]: 现在系统统计出来的AB的次留是有问题的，应该是要排除掉当天注册后，前一天用户的AB次留，你看下怎么改
+          - generic [ref=e2315]: · 04-21
+        - generic [ref=e2316]:
+          - generic [ref=e2317] [cursor=pointer]:
+            - checkbox "点击神奇卡牌后会先去有个移动光点到主消区牌的过程，现在这个时间太久了，我想改快一点，最好支持配置项" [ref=e2319]
+            - generic [ref=e2321]: 点击神奇卡牌后会先去有个移动光点到主消区牌的过程，现在这个时间太久了，我想改快一点，最好支持配置项
+          - generic [ref=e2322]: "- · 04-21"
+        - generic [ref=e2323]:
+          - generic [ref=e2324] [cursor=pointer]:
+            - checkbox "调用一下有没有自动从对公账户忘微笑支付商户打款的逻辑" [ref=e2326]
+            - generic [ref=e2328]: 调用一下有没有自动从对公账户忘微笑支付商户打款的逻辑
+          - generic [ref=e2329]: "- · 04-21"
+        - generic [ref=e2330]:
+          - generic [ref=e2331] [cursor=pointer]:
+            - checkbox "现在就算已经交互过了，ai终端也展示待确认，修复一下这个bug" [ref=e2333]
+            - generic [ref=e2335]: 现在就算已经交互过了，ai终端也展示待确认，修复一下这个bug
+          - generic [ref=e2336]: · 04-20
+        - generic [ref=e2337]:
+          - generic [ref=e2338] [cursor=pointer]:
+            - checkbox "有的回放会出现，砖块错乱的现象，帮我排查原因" [ref=e2340]
+            - generic [ref=e2342]: 有的回放会出现，砖块错乱的现象，帮我排查原因
+          - generic [ref=e2343]: "- · 04-20"
+        - generic [ref=e2344]:
+          - generic [ref=e2345] [cursor=pointer]:
+            - checkbox "游戏关卡导出，不需要限制一定需要是3的倍数，如果不是，提醒一下，当前关卡不可用就可以" [ref=e2347]
+            - generic [ref=e2349]: 游戏关卡导出，不需要限制一定需要是3的倍数，如果不是，提醒一下，当前关卡不可用就可以
+          - generic [ref=e2350]: "- · 04-20"
+        - generic [ref=e2351]:
+          - generic [ref=e2352] [cursor=pointer]:
+            - checkbox "多一个不同背景适配的主题" [ref=e2354]
+            - generic [ref=e2356]: 多一个不同背景适配的主题
+          - generic [ref=e2357]: "- · 04-20"
+        - generic [ref=e2358]:
+          - generic [ref=e2359] [cursor=pointer]:
+            - checkbox "config 表现在调用次数非常高，每次getNotice都在读，我想用redis做一层缓存，" [ref=e2361]
+            - generic [ref=e2363]: config 表现在调用次数非常高，每次getNotice都在读，我想用redis做一层缓存，
+          - generic [ref=e2364]: "- · 04-19"
+        - generic [ref=e2365]:
+          - generic [ref=e2366] [cursor=pointer]:
+            - checkbox "闯关模式下，点击主消区的牌，星星不会变量，这里应该和闯关模式保持一致，排查一下原因" [ref=e2368]
+            - generic [ref=e2370]: 闯关模式下，点击主消区的牌，星星不会变量，这里应该和闯关模式保持一致，排查一下原因
+          - generic [ref=e2371]: "- · 04-19"
+        - generic [ref=e2372]:
+          - generic [ref=e2373] [cursor=pointer]:
+            - checkbox "帮我看一下展示学霸教程按钮的控制逻辑是什么，我之前记得是10个人通关才展示，你看下" [ref=e2375]
+            - generic [ref=e2377]: 帮我看一下展示学霸教程按钮的控制逻辑是什么，我之前记得是10个人通关才展示，你看下
+          - generic [ref=e2378]: "- · 04-19"
+        - generic [ref=e2379]:
+          - generic [ref=e2380] [cursor=pointer]:
+            - checkbox "帮我整理体力系统的相关逻辑，删掉吧，我看到都没人用" [ref=e2382]
+            - generic [ref=e2384]: 帮我整理体力系统的相关逻辑，删掉吧，我看到都没人用
+          - generic [ref=e2385]: "- · 04-19"
+        - generic [ref=e2386]:
+          - generic [ref=e2387] [cursor=pointer]:
+            - checkbox "为什么回放模式下，有时候提示即将使用xxx神奇卡牌，但是实际上并没有使用" [ref=e2389]
+            - generic [ref=e2391]: 为什么回放模式下，有时候提示即将使用xxx神奇卡牌，但是实际上并没有使用
+          - generic [ref=e2392]: "- · 04-19"
+        - generic [ref=e2393]:
+          - generic [ref=e2394] [cursor=pointer]:
+            - checkbox "闯关模式下，触发连消，但是连消的label并没有增长，一直是1" [ref=e2396]
+            - generic [ref=e2398]: 闯关模式下，触发连消，但是连消的label并没有增长，一直是1
+          - generic [ref=e2399]: "- · 04-19"
+        - generic [ref=e2400]:
+          - generic [ref=e2401] [cursor=pointer]:
+            - checkbox "layout1初始化关卡的时候如果发现有一个y的值大于了375，所有卡牌都要向下半个格子大概是37.5的px" [ref=e2403]
+            - generic [ref=e2405]: layout1初始化关卡的时候如果发现有一个y的值大于了375，所有卡牌都要向下半个格子大概是37.5的px
+          - generic [ref=e2406]: "- · 04-19"
+        - generic [ref=e2407]:
+          - generic [ref=e2408] [cursor=pointer]:
+            - checkbox "为什么回放模式下，点击神奇卡牌，有的时候有能量光线先找到对应的牌，再移入槽中，有的就不会？" [ref=e2410]
+            - generic [ref=e2412]: 为什么回放模式下，点击神奇卡牌，有的时候有能量光线先找到对应的牌，再移入槽中，有的就不会？
+          - generic [ref=e2413]: "- · 04-19"
+        - generic [ref=e2414]:
+          - generic [ref=e2415] [cursor=pointer]:
+            - checkbox "神奇卡牌的新手教程，不需要底部的我知道了的按钮，让玩家一定要点击对应的地方" [ref=e2417]
+            - generic [ref=e2419]: 神奇卡牌的新手教程，不需要底部的我知道了的按钮，让玩家一定要点击对应的地方
+          - generic [ref=e2420]: "- · 04-19"
+        - generic [ref=e2421]:
+          - generic [ref=e2422] [cursor=pointer]:
+            - checkbox "home场景会默认读取剪切板内容去加载回放，这个功能下掉吧，用户反馈一直弹授权，我觉得没必要" [ref=e2424]
+            - generic [ref=e2426]: home场景会默认读取剪切板内容去加载回放，这个功能下掉吧，用户反馈一直弹授权，我觉得没必要
+          - generic [ref=e2427]: "- · 04-19"
+        - generic [ref=e2428]:
+          - generic [ref=e2429] [cursor=pointer]:
+            - checkbox "现在连消数量的label，每次从存档进来，展示的不是历史的连消数量，帮我修复一下" [ref=e2431]
+            - generic [ref=e2433]: 现在连消数量的label，每次从存档进来，展示的不是历史的连消数量，帮我修复一下
+          - generic [ref=e2434]: "- · 04-19"
+        - generic [ref=e2435]:
+          - generic [ref=e2436] [cursor=pointer]:
+            - checkbox "starLight脚本，现在星星变暗是靠grayscale做的，但是效果不好，美术给了我一张暗星星的图，帮我改一下这里" [ref=e2438]
+            - generic [ref=e2440]: starLight脚本，现在星星变暗是靠grayscale做的，但是效果不好，美术给了我一张暗星星的图，帮我改一下这里
+          - generic [ref=e2441]: "- · 04-19"
+        - generic [ref=e2442]:
+          - generic [ref=e2443] [cursor=pointer]:
+            - checkbox "如果检测到已经没有被遮挡的卡牌，就不需要让星星发射能量波，创建神奇卡牌了" [ref=e2445]
+            - generic [ref=e2447]: 如果检测到已经没有被遮挡的卡牌，就不需要让星星发射能量波，创建神奇卡牌了
+          - generic [ref=e2448]: "- · 04-19"
+        - generic [ref=e2449]:
+          - generic [ref=e2450] [cursor=pointer]:
+            - checkbox "帮我在LayoutRoot中写一个逻辑，只有在回放模式下，才展示levelTips节点，这个你把参数写好，我来绑定" [ref=e2452]
+            - generic [ref=e2454]: 帮我在LayoutRoot中写一个逻辑，只有在回放模式下，才展示levelTips节点，这个你把参数写好，我来绑定
+          - generic [ref=e2455]: "- · 04-19"
+        - generic [ref=e2456]:
+          - generic [ref=e2457] [cursor=pointer]:
+            - checkbox "现在lockMagic为什么默认是被隐藏的，这个要有的，而且现在会出现挑战模式过了第二关，默认就把，layout7Lock也解锁了，帮我看看原因" [ref=e2459]
+            - generic [ref=e2461]: 现在lockMagic为什么默认是被隐藏的，这个要有的，而且现在会出现挑战模式过了第二关，默认就把，layout7Lock也解锁了，帮我看看原因
+          - generic [ref=e2462]: "- · 04-19"
+        - generic [ref=e2463]:
+          - generic [ref=e2464] [cursor=pointer]:
+            - checkbox "测试" [ref=e2466]
+            - generic [ref=e2468]: 测试
+          - generic [ref=e2469]: "- · 04-19"
+        - generic [ref=e2470]:
+          - generic [ref=e2471] [cursor=pointer]:
+            - checkbox "qutatodo后续优化" [ref=e2473]
+            - generic [ref=e2475]: qutatodo后续优化
+          - generic [ref=e2476]: quadtodo · 04-19
+        - generic [ref=e2477]:
+          - generic [ref=e2478] [cursor=pointer]:
+            - checkbox "后续工作" [ref=e2480]
+            - generic [ref=e2482]: 后续工作
+          - generic [ref=e2483]: "- · 04-19"
+        - generic [ref=e2484]:
+          - generic [ref=e2485] [cursor=pointer]:
+            - checkbox "为10天前五和签到配置红包" [ref=e2487]
+            - generic [ref=e2489]: 为10天前五和签到配置红包
+          - generic [ref=e2490]: "- · 04-19"
+        - generic [ref=e2491]:
+          - generic [ref=e2492] [cursor=pointer]:
+            - checkbox "云函数调用次数优化" [ref=e2494]
+            - generic [ref=e2496]: 云函数调用次数优化
+          - generic [ref=e2497]: "- · 04-19"
+        - generic [ref=e2498]:
+          - generic [ref=e2499] [cursor=pointer]:
+            - checkbox "qutatodo继续做功能" [ref=e2501]
+            - generic [ref=e2503]: qutatodo继续做功能
+          - generic [ref=e2504]: quadtodo · 04-19
+        - generic [ref=e2505]:
+          - generic [ref=e2506] [cursor=pointer]:
+            - checkbox "录制回放的脚本有点问题，为什么录制的时长只有2分钟，很多回放都是10分钟的，你检查一下" [ref=e2508]
+            - generic [ref=e2510]: 录制回放的脚本有点问题，为什么录制的时长只有2分钟，很多回放都是10分钟的，你检查一下
+          - generic [ref=e2511]: client · 04-16
+        - generic [ref=e2512]:
+          - generic [ref=e2513] [cursor=pointer]:
+            - checkbox "AB音乐" [ref=e2515]
+            - generic [ref=e2517]: AB音乐
+          - generic [ref=e2518]: "- · 04-15"
+        - generic [ref=e2519]:
+          - generic [ref=e2520] [cursor=pointer]:
+            - checkbox "支持一键用trae，trae cn，cursor打开，可以自己选择" [ref=e2522]
+            - generic [ref=e2524]: 支持一键用trae，trae cn，cursor打开，可以自己选择
+          - generic [ref=e2525]: quadtodo · 04-15
+        - generic [ref=e2526]:
+          - generic [ref=e2527] [cursor=pointer]:
+            - checkbox "帮我优化bug" [ref=e2529]
+            - generic [ref=e2531]: 帮我优化bug
+          - generic [ref=e2532]: quadtodo · 04-15
+        - generic [ref=e2533]:
+          - generic [ref=e2534] [cursor=pointer]:
+            - checkbox "帮我优化qutatodo cli工具，" [ref=e2536]
+            - generic [ref=e2538]: 帮我优化qutatodo cli工具，
+          - generic [ref=e2539]: crazyCombo · 04-15
+        - generic [ref=e2540]:
+          - generic [ref=e2541] [cursor=pointer]:
+            - checkbox "分析AB效果" [ref=e2543]
+            - generic [ref=e2545]: 分析AB效果
+          - generic [ref=e2546]: "- · 04-15"
+        - generic [ref=e2547]:
+          - generic [ref=e2548] [cursor=pointer]:
+            - checkbox "短信验证做一下" [ref=e2550]
+            - generic [ref=e2552]: 短信验证做一下
+          - generic [ref=e2553]: "- · 04-15"
+        - generic [ref=e2554]:
+          - generic [ref=e2555] [cursor=pointer]:
+            - checkbox "todo功能展示的ui有问题" [ref=e2557]
+            - generic [ref=e2559]: todo功能展示的ui有问题
+          - generic [ref=e2560]: "- · 04-15"
+        - generic [ref=e2561]:
+          - generic [ref=e2562] [cursor=pointer]:
+            - checkbox "游戏中，如果是匹配人机，点击再来一句不要展示匹配人机，" [ref=e2564]
+            - generic [ref=e2566]: 游戏中，如果是匹配人机，点击再来一句不要展示匹配人机，
+          - generic [ref=e2567]: "- · 04-15"
+        - generic [ref=e2568]:
+          - generic [ref=e2569] [cursor=pointer]:
+            - checkbox "看一下为什么玩家拿不到跳转的路由，我看看" [ref=e2571]
+            - generic [ref=e2573]: 看一下为什么玩家拿不到跳转的路由，我看看
+          - generic [ref=e2574]: "- · 04-14"
+        - generic [ref=e2575]:
+          - generic [ref=e2576] [cursor=pointer]:
+            - checkbox "做关卡" [ref=e2578]
+            - generic [ref=e2580]: 做关卡
+          - generic [ref=e2581]: "- · 04-14"
+        - generic [ref=e2582]:
+          - generic [ref=e2583] [cursor=pointer]:
+            - checkbox "有玩家反馈会出现消除完还剩好多的场景" [ref=e2585]
+            - generic [ref=e2587]: 有玩家反馈会出现消除完还剩好多的场景
+          - generic [ref=e2588]: "- · 04-14"
+        - generic [ref=e2589]:
+          - generic [ref=e2590] [cursor=pointer]:
+            - checkbox "管理后台问题" [ref=e2592]
+            - generic [ref=e2594]: 管理后台问题
+          - generic [ref=e2595]: crazyCombo · 04-14
+        - generic [ref=e2596]:
+          - generic [ref=e2597] [cursor=pointer]:
+            - checkbox "测试" [ref=e2599]
+            - generic [ref=e2601]: 测试
+          - generic [ref=e2602]: "- · 04-14"
+        - generic [ref=e2603]:
+          - generic [ref=e2604] [cursor=pointer]:
+            - checkbox "测试一下" [ref=e2606]
+            - generic [ref=e2608]: 测试一下
+          - generic [ref=e2609]: cc-haha · 04-14
+        - generic [ref=e2610]:
+          - generic [ref=e2611] [cursor=pointer]:
+            - checkbox "为什么今天游戏中会出现进度为200，大于1的情况，" [ref=e2613]
+            - generic [ref=e2615]: 为什么今天游戏中会出现进度为200，大于1的情况，
+          - generic [ref=e2616]: · 04-14
+        - generic [ref=e2617]:
+          - button "沉淀选中（0）" [disabled] [ref=e2619]:
+            - generic: 沉淀选中（0）
+          - button "只生成 sources（预览）" [disabled] [ref=e2621]:
+            - generic: 只生成 sources（预览）
+      - generic [ref=e2622]:
+        - generic [ref=e2623]:
+          - generic [ref=e2662]:
+            - generic [ref=e2663]: 顶层
+            - generic "index.md" [ref=e2664] [cursor=pointer]:
+              - img "file-text" [ref=e2665]:
+                - img [ref=e2666]
+              - text: index.md
+            - generic "log.md" [ref=e2668] [cursor=pointer]:
+              - img "file-text" [ref=e2669]:
+                - img [ref=e2670]
+              - text: log.md
+            - generic "WIKI_GUIDE.md" [ref=e2672] [cursor=pointer]:
+              - img "file-text" [ref=e2673]:
+                - img [ref=e2674]
+              - text: WIKI_GUIDE.md
+          - generic [ref=e2676]:
+            - generic [ref=e2677]: sources
+            - generic "sources/2026-04-23-d2037a76.md" [ref=e2678] [cursor=pointer]:
+              - img "file-text" [ref=e2679]:
+                - img [ref=e2680]
+              - text: 2026-04-23-d2037a76.md
+            - generic "sources/2026-04-23-9dc65189.md" [ref=e2682] [cursor=pointer]:
+              - img "file-text" [ref=e2683]:
+                - img [ref=e2684]
+              - text: 2026-04-23-9dc65189.md
+            - generic "sources/2026-04-23-773da24f.md" [ref=e2686] [cursor=pointer]:
+              - img "file-text" [ref=e2687]:
+                - img [ref=e2688]
+              - text: 2026-04-23-773da24f.md
+        - generic [ref=e2653]: 选择左侧文件查看

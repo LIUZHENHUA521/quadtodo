@@ -614,6 +614,10 @@ export interface LiveSession {
   quadrant: Quadrant
   tool: AiTool
   status: AiStatus
+  // 后端兜底：PTY 还在喷输出但 hook/watcher 已经把 status 翻成 idle 时，effectiveStatus
+  // 会强制回 'running'，避免 TodoCard 徽标在真正结束之前消失。详见 ai-terminal.js 的
+  // computeEffectiveStatus。前端读取时优先消费这个字段。
+  effectiveStatus?: AiStatus
   autoMode: string | null
   nativeSessionId: string | null
   cwd: string | null
@@ -803,6 +807,13 @@ export async function initWiki(): Promise<{ state: string; wikiDir: string; erro
     method: 'POST',
   })
   return body
+}
+
+export async function openWikiDir(): Promise<{ wikiDir: string }> {
+  const body = await jsonFetch<{ ok: true; wikiDir: string }>('/api/wiki/open', {
+    method: 'POST',
+  })
+  return { wikiDir: body.wikiDir }
 }
 
 // ─── Report (每日完成) ───

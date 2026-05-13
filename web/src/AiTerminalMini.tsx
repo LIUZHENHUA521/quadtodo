@@ -397,18 +397,29 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       }
       refitAttemptsRef.current = 0
       scheduleResizeSend(cols, rows)
-      // 成功 fit 后揭开容器：等 3 帧让 xterm canvas 真正画出当前尺寸再 visible。
-      // CanvasAddon 的渲染队列至少要一帧；保险起见多等两帧。再加 16ms 兜底覆盖
-      // 主线程被别的工作（diff 渲染、SSE 重渲）挤占导致 rAF 推迟的情况。
+      // 成功 fit 后揭开容器，但必须等 xterm 把 WriteBuffer 里积压的 chunks 全部解析进 buffer 后再 reveal，
+      // 否则用户在 Conversation tab 停留时积压的 replay + live-output 会在揭开后继续被 xterm 渲染，
+      // auto-scroll 把视口往下推，看起来就是"滚动下去"的动画。term.write('', cb) 是 xterm 文档保证的
+      // "drain" 信号：cb 只在当前 WriteBuffer 完全消费后 fire。在 cb 里 scrollToBottom 再 rAF 揭开，
+      // 保证 opacity:0→1 的那一帧 canvas 已经画在最底部。
       if (!viewportReadyRef.current) {
         viewportReadyRef.current = true
         const reveal = () => setViewportReady(true)
-        requestAnimationFrame(() =>
+        try {
+          term.write('', () => {
+            try { term.scrollToBottom() } catch { /* ignore: term may be torn down */ }
+            // 一帧让 canvas 把 scrollToBottom 后的状态画上去再揭开
+            requestAnimationFrame(() => requestAnimationFrame(reveal))
+          })
+        } catch {
+          // term 已 dispose 的极端情况：退回老的 rAF*3 + 16ms 兜底
           requestAnimationFrame(() =>
-            requestAnimationFrame(() => {
-              reveal()
-              setTimeout(reveal, 16)
-            })))
+            requestAnimationFrame(() =>
+              requestAnimationFrame(() => {
+                reveal()
+                setTimeout(reveal, 16)
+              })))
+        }
       }
     } catch (e) {
       console.warn('[AiTerminalMini] fit error:', e)
@@ -559,6 +570,8 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       // 只在"容器真的可见 + fit 算出有效 cols"时标记 ready；
       // 否则留给后续 IO/RO 触发的 doFit 来标记，避免在 display:none 容器里就揭开
       // 导致后面切到可见时 xterm 用旧 80×24 画一帧再扩大（"小→大"闪动的根因）。
+      // 揭开方式同 doFit 的 reveal 分支：等 WriteBuffer 全部消费 + scrollToBottom 后再揭，
+      // 保证用户看到的第一帧就是最底部，不会出现"滚动下去"的动画。
       if (
         !viewportReadyRef.current
         && container.offsetParent !== null
@@ -569,12 +582,19 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         const reveal = () => {
           if (!disposedRef.current && myGen === effectGenRef.current) setViewportReady(true)
         }
-        requestAnimationFrame(() =>
+        try {
+          term.write('', () => {
+            try { term.scrollToBottom() } catch { /* ignore */ }
+            requestAnimationFrame(() => requestAnimationFrame(reveal))
+          })
+        } catch {
           requestAnimationFrame(() =>
-            requestAnimationFrame(() => {
-              reveal()
-              setTimeout(reveal, 16)
-            })))
+            requestAnimationFrame(() =>
+              requestAnimationFrame(() => {
+                reveal()
+                setTimeout(reveal, 16)
+              })))
+        }
       }
 
       function connectWs() {
@@ -915,14 +935,10 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
               requestAnimationFrame(() => {
                 doFit()
                 // 重新可见后默认回到最底部 —— 隐藏期间 PTY 可能持续输出（live-output
-                // 事件刷新了 outputHistory），用户切回 Live tab 总是想看最新内容；
-                // xterm 自身只有"用户主动滚回底部 / 新输出到达"才会自动跟随，
-                // display:none ↔ flex 切换不算其中任何一种，要显式触发。
-                // 仅在"刚从隐藏切回"时调一次；常驻可见期间的滚动状态保留。
-                if (justEntered) {
-                  const term = termRef.current
-                  if (term) { try { term.scrollToBottom() } catch { /* ignore */ } }
-                }
+                // 事件刷新了 outputHistory），用户切回 Live tab 总是想看最新内容。
+                // 这一步由 doFit 内的 reveal 分支统一负责：用 term.write('', cb) 等 WriteBuffer
+                // 全部消费后再 scrollToBottom + 揭开容器，保证用户看到的第一帧就是最底部，
+                // 不会出现 xterm 边解析边 auto-scroll 的"滚动下去"动画。
               })
             })
           } else {

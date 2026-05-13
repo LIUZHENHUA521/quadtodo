@@ -627,9 +627,8 @@ export function createOpenClawHookHandler(deps = {}) {
 
     const permissionReminderEligible = evt === 'notification' && isPermissionReminderEligible(sessionId)
 
-    if (evt === 'stop') {
-      notifyWebTurnDone(sessionId, todoTitle)
-    }
+    // 注：原来这里会立即 notifyWebTurnDone。已经挪到 ③ 读完 JSONL 之后，
+    // 由 turnEndedNormally 把校验门串起来——只有 stop_reason === 'end_turn' 才翻 idle。
 
     // 2) cooldown：默认不再对 Stop 启用 cooldown
     //
@@ -710,6 +709,25 @@ export function createOpenClawHookHandler(deps = {}) {
       }
     } else if (sessionId) {
       logger.warn?.(`[openclaw-hook] cannot resolve transcript for sessionId=${sessionId} (nativeId=${nativeId} transcript_path=${hookTranscriptPath || 'null'} pty.findClaudeSession=${!!pty?.findClaudeSession}); falling back to PTY snippet`)
+    }
+
+    // 3b'. Stop hook 校验门：只有当 JSONL 末行 assistant.stop_reason === 'end_turn'
+    //      才视为"本轮真的结束"。Claude 自家 Stop hook 在 sub-agent 完成 / 中间停顿 /
+    //      内部 transition 等场景下也会 fire，stop_reason 会是 'tool_use' / 'max_tokens' / null。
+    //      读不到 jsonl（nativeId 缺失 / 文件没找到）则兜底 true，保持旧行为，不阻塞 dispatcher。
+    let turnEndedNormally = true
+    if (evt === 'stop' && nativeId && jsonlPath) {
+      const stopReason = turnRaw?.message?.stop_reason ?? null
+      if (stopReason !== 'end_turn') {
+        turnEndedNormally = false
+        logger.warn?.(`[openclaw-hook] Stop hook deferred: stopReason=${stopReason || 'null'} sid=${sessionId} nativeId=${nativeId} — waiting for jsonl watcher to fire on real end_turn`)
+      }
+    }
+
+    // 3b''. notifyWebTurnDone：向浏览器广播 turn_done。仅在确认 end_turn 时触发，避免
+    //       前端的 markSessionTurnDone（store/aiSessionStore.ts）把状态错误地翻成 idle。
+    if (evt === 'stop' && turnEndedNormally) {
+      notifyWebTurnDone(sessionId, todoTitle)
     }
 
     // 3c. 决定 cleanContent（jsonl 命中时优先；长内容截短）
@@ -822,13 +840,18 @@ export function createOpenClawHookHandler(deps = {}) {
       }
     }
 
-    // Stop 事件 = Claude 完成一轮回复 → 必须无条件更新 idle 状态 + flush dispatcher 队列，
-    // 不能受 result.ok 左右。理由：
+    // Stop 事件 = Claude 完成一轮回复 → 更新 idle 状态 + flush dispatcher 队列。
+    // 这里不受 result.ok 左右，原因仍然成立：
     //   - awaitingReply 描述的是 Claude 自身状态（finished a turn），跟"我们有没有把回复
     //     成功推到 telegram/lark"无关；
     //   - 推送失败（route 缺失、TG 限流、网络错）一旦把这两步吞掉，dispatcher 就永远以为
     //     busy，后续用户消息全部回 "🔄 已排队"，队列也不 flush，直到进程重启都不能恢复。
-    if (evt === 'stop' && sessionId && aiTerminal?.markSessionAwaitingReply) {
+    // 但额外加了 turnEndedNormally 门：JSONL 末行 stop_reason !== 'end_turn' 时 defer
+    // 这两个 mutation —— Claude 自家 Stop hook 在中间停顿 / sub-agent 完成 / 内部
+    // transition 等场景会假阳性 fire，把状态翻成 idle 后用户瞄一眼把 unread 清掉，徽标
+    // 消失，等真正 end_turn 时再 fire 一次又变"待确认"，体验劣化。jsonl watcher 会在
+    // 真 end_turn 时兜底走相同的状态翻转，dispatcher 不会卡住。
+    if (evt === 'stop' && turnEndedNormally && sessionId && aiTerminal?.markSessionAwaitingReply) {
       try {
         const ok = aiTerminal.markSessionAwaitingReply(sessionId, true)
         // mark 返回 false = no-op：session 不在 ait.sessions / status 不是 running|pending_confirm
@@ -841,7 +864,7 @@ export function createOpenClawHookHandler(deps = {}) {
       } catch (e) { logger.warn?.(`[openclaw-hook] markSessionAwaitingReply failed: ${e.message}`) }
     }
     // 顺序：上面已 markSessionAwaitingReply(true) 让 dispatcher 看到 idle，再 flush
-    if (evt === 'stop' && sessionId && sessionInputDispatcher?.onSessionIdle) {
+    if (evt === 'stop' && turnEndedNormally && sessionId && sessionInputDispatcher?.onSessionIdle) {
       Promise.resolve(sessionInputDispatcher.onSessionIdle(sessionId))
         .catch((e) => logger.warn?.(`[openclaw-hook] dispatcher.onSessionIdle failed: ${e.message}`))
     }

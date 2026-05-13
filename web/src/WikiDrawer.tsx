@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm'
 import { markdownComponents } from './markdownComponents'
 import dayjs from 'dayjs'
 import {
-  getWikiStatus, getWikiPending, getWikiTree, getWikiFile, runWiki,
+  getWikiStatus, getWikiPending, getWikiTree, getWikiFile, runWiki, openWikiDir,
   WikiStatus, WikiFile, WikiPendingTodo,
 } from './api'
 import './WikiDrawer.css'
@@ -117,9 +117,12 @@ export default function WikiDrawer({
     setSelected(next)
   }
 
-  const openInFinder = () => {
-    if (!status?.wikiDir) return
-    window.open(`file://${status.wikiDir}`)
+  const openInFinder = async () => {
+    try {
+      await openWikiDir()
+    } catch (e: any) {
+      message.error(`打开目录失败：${e.message}`)
+    }
   }
 
   const lastRunLabel = status?.lastRun

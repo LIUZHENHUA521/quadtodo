@@ -1,0 +1,73 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - img "AgentQuad" [ref=e8]
+      - generic [ref=e9]: AgentQuad
+    - generic [ref=e11] [cursor=pointer]:
+      - img [ref=e13]
+      - generic [ref=e15]: "7"
+      - generic [ref=e16]: running
+    - generic [ref=e18] [cursor=pointer]:
+      - img [ref=e20]
+      - generic [ref=e23]: "1"
+      - generic [ref=e24]: idle
+    - generic [ref=e26] [cursor=pointer]:
+      - img [ref=e28]
+      - generic [ref=e30]: "0"
+      - generic [ref=e31]: 待确认
+    - button "⌘ Search or run a command ⌘K" [ref=e32] [cursor=pointer]:
+      - generic [ref=e33]: ⌘
+      - generic [ref=e34]: Search or run a command
+      - generic [ref=e35]: ⌘K
+    - button "New todo" [ref=e36] [cursor=pointer]:
+      - img [ref=e37]
+    - button "Templates" [ref=e38] [cursor=pointer]:
+      - img [ref=e39]
+    - button "Recover session" [ref=e42] [cursor=pointer]:
+      - img [ref=e43]
+    - button [ref=e46] [cursor=pointer]:
+      - img [ref=e47]
+    - button [ref=e49] [cursor=pointer]:
+      - img [ref=e50]
+    - button [ref=e52] [cursor=pointer]:
+      - img [ref=e53]
+    - button "Toggle theme" [ref=e56] [cursor=pointer]:
+      - img [ref=e57]
+  - generic [ref=e63]:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic: P0
+                - generic: 重要且紧急
+                - generic: "0"
+              - generic:
+                - generic: 拖拽任务到此处
+          - generic:
+            - generic:
+              - generic:
+                - generic: P1
+                - generic: 重要不紧急
+                - generic: "0"
+              - generic:
+                - generic: 拖拽任务到此处
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic: P2
+                - generic: 紧急不重要
+                - generic: "0"
+              - generic:
+                - generic: 拖拽任务到此处
+          - generic:
+            - generic:
+              - generic:
+                - generic: P3
+                - generic: 不重要不紧急
+                - generic: "0"
+              - generic:
+                - generic: 拖拽任务到此处
+      - status

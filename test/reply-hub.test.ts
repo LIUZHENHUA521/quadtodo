@@ -100,7 +100,7 @@ describe('buildUnreadSessionItems', () => {
   it('takes the most recent lastTurnDoneAt across live and historical', () => {
     const items = buildUnreadSessionItems({
       todos: [todo({ id: 'todo-1', title: 'Hybrid', aiSessions: [session({ sessionId: 's1', lastTurnDoneAt: 2000 })] })],
-      liveSessions: [live({ sessionId: 's1', todoId: 'todo-1', lastTurnDoneAt: 7000 })],
+      liveSessions: [live({ sessionId: 's1', todoId: 'todo-1', status: 'idle', lastTurnDoneAt: 7000 })],
       lastSeenMap: new Map([['s1', 5000]]),
     })
 
@@ -135,7 +135,7 @@ describe('buildUnreadSessionItems', () => {
   it('falls back to live meta when a session is not in todos', () => {
     const items = buildUnreadSessionItems({
       todos: [],
-      liveSessions: [live({ sessionId: 's-orphan', todoId: 'todo-x', todoTitle: 'Orphan', quadrant: 2, lastTurnDoneAt: 6000 })],
+      liveSessions: [live({ sessionId: 's-orphan', todoId: 'todo-x', todoTitle: 'Orphan', quadrant: 2, status: 'idle', lastTurnDoneAt: 6000 })],
       lastSeenMap: new Map(),
     })
 
@@ -175,6 +175,50 @@ describe('buildUnreadSessionItems', () => {
     expect(items[0]).toMatchObject({ sessionId: 's-pc', timestamp: 5000 })
     // reason field has been removed in spec
     expect((items[0] as Record<string, unknown>).reason).toBeUndefined()
+  })
+
+  it('skips sessions that are currently running, even if they have an unread lastTurnDoneAt', () => {
+    // 复现 bug：会话上一轮已结束（lastTurnDoneAt > lastSeenAt），但 status 已切回 running
+    // 开始新一轮。此时 TodoCard 显示 running，顶栏不应再把它列为"待确认"。
+    const items = buildUnreadSessionItems({
+      todos: [todo({
+        id: 'todo-1',
+        title: 'Running again',
+        aiSessions: [session({ sessionId: 's-run', status: 'running', lastTurnDoneAt: 5000 })],
+      })],
+      liveSessions: [live({ sessionId: 's-run', todoId: 'todo-1', status: 'running', lastTurnDoneAt: 5000 })],
+      lastSeenMap: new Map([['s-run', 4000]]),
+    })
+    expect(items).toEqual([])
+  })
+
+  it('uses live status to override stale todo snapshot status', () => {
+    // todo snapshot 还停留在 idle，live 已切到 running —— 应按 live 的 running 跳过。
+    const items = buildUnreadSessionItems({
+      todos: [todo({
+        id: 'todo-1',
+        title: 'Stale snapshot',
+        aiSessions: [session({ sessionId: 's-x', status: 'idle', lastTurnDoneAt: 5000 })],
+      })],
+      liveSessions: [live({ sessionId: 's-x', todoId: 'todo-1', status: 'running', lastTurnDoneAt: 5000 })],
+      lastSeenMap: new Map([['s-x', 4000]]),
+    })
+    expect(items).toEqual([])
+  })
+
+  it('still surfaces running session once it transitions back to idle', () => {
+    // 反向：上面一旦 status 切回 idle，待确认就应重新出现。
+    const items = buildUnreadSessionItems({
+      todos: [todo({
+        id: 'todo-1',
+        title: 'Back to idle',
+        aiSessions: [session({ sessionId: 's-y', status: 'idle', lastTurnDoneAt: 5000 })],
+      })],
+      liveSessions: [live({ sessionId: 's-y', todoId: 'todo-1', status: 'idle', lastTurnDoneAt: 5000 })],
+      lastSeenMap: new Map([['s-y', 4000]]),
+    })
+    expect(items).toHaveLength(1)
+    expect(items[0].sessionId).toBe('s-y')
   })
 
   it('excludes pending_confirm sessions whose lastSeen already covers the latest reply', () => {

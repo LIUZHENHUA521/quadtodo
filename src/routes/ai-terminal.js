@@ -16,6 +16,28 @@ const MIN_RESIZE_COLS = 30
 const MIN_PTY_COLS = 80
 const LIVE_AI_STATUSES = new Set(['running', 'idle', 'pending_confirm'])
 const TERMINAL_RESIZE_STATUSES = new Set(['done', 'failed', 'stopped'])
+// 防御：claude end_turn 之后那几帧 TUI redraw 不计为"新一轮的活动"
+const EFFECTIVE_STATUS_OUTPUT_GRACE_MS = 500
+
+/**
+ * 计算前端展示用的 effectiveStatus —— 用 PTY 输出活性兜底"hook/watcher 判定结束错了"的边界。
+ *
+ * - LIVE session（running / idle / pending_confirm）且 lastOutputAt 晚于
+ *   lastTurnDoneAt + 500ms → PTY 还在喷新内容、所谓的"turn done"是假的 → 强制 running。
+ * - 其余情况返回 session.status 自身。
+ *
+ * 与 src/openclaw-hook.js 里的 stop_reason 校验门并存：双层防御，互不依赖。
+ */
+export function computeEffectiveStatus(session, now = Date.now()) {
+  if (!session || typeof session !== 'object') return null
+  const status = session.status
+  if (!LIVE_AI_STATUSES.has(status)) return status
+  const lastOutputAt = Number(session.lastOutputAt || 0)
+  const lastTurnDoneAt = Number(session.lastTurnDoneAt || 0)
+  if (!lastOutputAt) return status
+  if (lastOutputAt > lastTurnDoneAt + EFFECTIVE_STATUS_OUTPUT_GRACE_MS) return 'running'
+  return status
+}
 const DEFAULT_CONFIRM_PATTERNS = [
   /Press Enter to confirm/i,
   /Do you want to proceed/i,
@@ -602,6 +624,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
   router.get('/sessions', (req, res) => {
     try {
       const out = []
+      const now = Date.now()
       for (const [sessionId, s] of sessions) {
         const todo = db.getTodo(s.todoId)
         out.push({
@@ -611,6 +634,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
           quadrant: todo?.quadrant || 4,
           tool: s.tool,
           status: s.status,
+          effectiveStatus: computeEffectiveStatus(s, now),
           autoMode: s.autoMode || null,
           nativeSessionId: s.nativeSessionId || null,
           cwd: s.cwd || null,

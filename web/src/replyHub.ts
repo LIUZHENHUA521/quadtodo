@@ -1,4 +1,4 @@
-import type { AiSession, AiTool, Quadrant, Todo } from './api'
+import type { AiSession, AiStatus, AiTool, Quadrant, Todo } from './api'
 import type { SessionMeta } from './store/aiSessionStore'
 
 export interface UnreadSessionItem {
@@ -30,6 +30,9 @@ function uniqueTodoSessions(todo: Todo): AiSession[] {
 export function buildUnreadSessionItems({ todos, liveSessions, lastSeenMap }: BuildUnreadSessionItemsInput): UnreadSessionItem[] {
   const tsBySid = new Map<string, number>()
   const metaBySid = new Map<string, { todoId: string; todoTitle: string; quadrant: Quadrant; tool: AiTool; label?: string }>()
+  // 跟 deriveAiState 对齐：status === 'running' 优先于 unread，"会话在跑就别催待确认"。
+  // liveSessions 比 todo snapshot 实时，所以后写入会覆盖 todo 给的旧 status。
+  const statusBySid = new Map<string, AiStatus>()
 
   for (const todo of todos) {
     for (const session of uniqueTodoSessions(todo)) {
@@ -38,6 +41,7 @@ export function buildUnreadSessionItems({ todos, liveSessions, lastSeenMap }: Bu
         const prev = tsBySid.get(session.sessionId) || 0
         if (ts > prev) tsBySid.set(session.sessionId, ts)
       }
+      if (session.status) statusBySid.set(session.sessionId, session.status)
       if (!metaBySid.has(session.sessionId)) {
         metaBySid.set(session.sessionId, {
           todoId: todo.id,
@@ -56,6 +60,7 @@ export function buildUnreadSessionItems({ todos, liveSessions, lastSeenMap }: Bu
       const prev = tsBySid.get(live.sessionId) || 0
       if (ts > prev) tsBySid.set(live.sessionId, ts)
     }
+    if (live.status) statusBySid.set(live.sessionId, live.status)
     if (!metaBySid.has(live.sessionId)) {
       metaBySid.set(live.sessionId, {
         todoId: live.todoId,
@@ -68,6 +73,7 @@ export function buildUnreadSessionItems({ todos, liveSessions, lastSeenMap }: Bu
 
   const items: UnreadSessionItem[] = []
   for (const [sid, ts] of tsBySid) {
+    if (statusBySid.get(sid) === 'running') continue
     const lastSeen = lastSeenMap.get(sid) || 0
     if (ts <= lastSeen) continue
     const meta = metaBySid.get(sid)

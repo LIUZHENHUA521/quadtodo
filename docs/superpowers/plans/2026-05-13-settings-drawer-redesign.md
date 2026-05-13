@@ -41,7 +41,7 @@ Expected: 两个测试文件全 PASS
 
 Run:
 ```bash
-npm run -w web build 2>&1 | tail -10
+npm --prefix web run build 2>&1 | tail -10
 ```
 Expected: `vite build` 成功，无 TS 报错
 
@@ -177,7 +177,7 @@ import { getConfig, updateConfig, AppConfig, pickDirectory, ToolDiagnostic, test
 
 Run:
 ```bash
-npm run -w web build 2>&1 | tail -10
+npm --prefix web run build 2>&1 | tail -10
 ```
 Expected: 构建成功，无 TS 报错（特别注意：不应该有 "status is not defined" 或未使用 import 报错）
 
@@ -262,7 +262,7 @@ git push origin main
 
 Run:
 ```bash
-npm run -w web build 2>&1 | tail -10
+npm --prefix web run build 2>&1 | tail -10
 ```
 Expected: 构建成功
 
@@ -331,7 +331,7 @@ git push origin main
 
 Run:
 ```bash
-npm run -w web build 2>&1 | tail -10
+npm --prefix web run build 2>&1 | tail -10
 ```
 Expected: 构建成功
 
@@ -466,7 +466,7 @@ git push origin main
 
 Run:
 ```bash
-npm run -w web build 2>&1 | tail -10
+npm --prefix web run build 2>&1 | tail -10
 ```
 Expected: 构建成功
 
@@ -497,7 +497,7 @@ UI 布局重构，真验收要在浏览器里看。下面是 checklist，跑 dev
 启动后端（项目根 README 给的方式）+ web dev：
 ```bash
 # 在 quadtodo 仓库根另起一个 shell
-npm run -w web dev
+npm --prefix web run dev
 ```
 然后浏览器打开 web 地址（一般 http://localhost:5173 或 5174），点设置图标打开抽屉。
 

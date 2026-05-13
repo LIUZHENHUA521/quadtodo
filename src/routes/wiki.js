@@ -114,6 +114,21 @@ export function createWikiRouter({ service }) {
     }
   })
 
+  router.post('/open', async (_req, res) => {
+    try {
+      const s = service.status()
+      if (!s.wikiDir || !existsSync(s.wikiDir)) {
+        res.status(404).json({ ok: false, error: 'wiki_dir_missing' })
+        return
+      }
+      const { default: open } = await import('open')
+      await open(s.wikiDir)
+      res.json({ ok: true, wikiDir: s.wikiDir })
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message })
+    }
+  })
+
   router.get('/runs', (req, res) => {
     try {
       const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 20))
