@@ -1,8 +1,6 @@
 import type { AiSession, AiTool, Quadrant, Todo } from './api'
 import type { SessionMeta } from './store/aiSessionStore'
 
-export type UnreadReason = 'pending_confirm' | 'unread'
-
 export interface UnreadSessionItem {
   id: string
   sessionId: string
@@ -12,7 +10,6 @@ export interface UnreadSessionItem {
   tool: AiTool
   timestamp: number
   label?: string
-  reason: UnreadReason
 }
 
 export interface BuildUnreadSessionItemsInput {
@@ -33,7 +30,6 @@ function uniqueTodoSessions(todo: Todo): AiSession[] {
 export function buildUnreadSessionItems({ todos, liveSessions, lastSeenMap }: BuildUnreadSessionItemsInput): UnreadSessionItem[] {
   const tsBySid = new Map<string, number>()
   const metaBySid = new Map<string, { todoId: string; todoTitle: string; quadrant: Quadrant; tool: AiTool; label?: string }>()
-  const pendingConfirmSids = new Set<string>()
 
   for (const todo of todos) {
     for (const session of uniqueTodoSessions(todo)) {
@@ -55,18 +51,10 @@ export function buildUnreadSessionItems({ todos, liveSessions, lastSeenMap }: Bu
   }
 
   for (const live of liveSessions) {
-    if (live.status === 'pending_confirm') {
-      pendingConfirmSids.add(live.sessionId)
-      // pending_confirm sessions are always included; use the first available timestamp
-      const liveTs = live.lastTurnDoneAt || live.lastOutputAt || live.startedAt || 0
+    const ts = live.lastTurnDoneAt || 0
+    if (ts > 0) {
       const prev = tsBySid.get(live.sessionId) || 0
-      if (liveTs > prev) tsBySid.set(live.sessionId, liveTs)
-    } else {
-      const ts = live.lastTurnDoneAt || 0
-      if (ts > 0) {
-        const prev = tsBySid.get(live.sessionId) || 0
-        if (ts > prev) tsBySid.set(live.sessionId, ts)
-      }
+      if (ts > prev) tsBySid.set(live.sessionId, ts)
     }
     if (!metaBySid.has(live.sessionId)) {
       metaBySid.set(live.sessionId, {
@@ -80,18 +68,14 @@ export function buildUnreadSessionItems({ todos, liveSessions, lastSeenMap }: Bu
 
   const items: UnreadSessionItem[] = []
   for (const [sid, ts] of tsBySid) {
-    const isPendingConfirm = pendingConfirmSids.has(sid)
-    if (!isPendingConfirm) {
-      const lastSeen = lastSeenMap.get(sid) || 0
-      if (ts <= lastSeen) continue
-    }
+    const lastSeen = lastSeenMap.get(sid) || 0
+    if (ts <= lastSeen) continue
     const meta = metaBySid.get(sid)
     if (!meta) continue
     items.push({
       id: `unread:${sid}`,
       sessionId: sid,
       timestamp: ts,
-      reason: isPendingConfirm ? 'pending_confirm' : 'unread',
       ...meta,
     })
   }

@@ -143,13 +143,12 @@ describe('buildUnreadSessionItems', () => {
     expect(items[0]).toMatchObject({ sessionId: 's-orphan', todoId: 'todo-x', todoTitle: 'Orphan', quadrant: 2 })
   })
 
-  it('includes live pending_confirm sessions even when lastTurnDoneAt is not newer than lastSeen', () => {
+  it('excludes pending_confirm sessions that have no unread reply', () => {
     const items = buildUnreadSessionItems({
-      todos: [todo({ id: 'todo-1', title: 'Needs confirm' })],
+      todos: [todo({ id: 'todo-1', title: 'Already seen pending_confirm' })],
       liveSessions: [live({
         sessionId: 's-pc',
         todoId: 'todo-1',
-        todoTitle: 'Needs confirm',
         status: 'pending_confirm',
         lastOutputAt: 3000,
         lastTurnDoneAt: null,
@@ -157,77 +156,39 @@ describe('buildUnreadSessionItems', () => {
       lastSeenMap: new Map(),
     })
 
-    expect(items).toHaveLength(1)
-    expect(items[0]).toMatchObject({
-      id: 'unread:s-pc',
-      sessionId: 's-pc',
-      todoId: 'todo-1',
-      reason: 'pending_confirm',
-      timestamp: 3000,
-    })
+    expect(items).toEqual([])
   })
 
-  it('tags purely unread reply items with reason="unread"', () => {
+  it('treats pending_confirm with newer lastTurnDoneAt purely as unread', () => {
     const items = buildUnreadSessionItems({
-      todos: [todo({ id: 'todo-1', title: 'Has unread', aiSessions: [session({ sessionId: 's-u', lastTurnDoneAt: 7000 })] })],
-      liveSessions: [],
-      lastSeenMap: new Map([['s-u', 1000]]),
-    })
-
-    expect(items).toHaveLength(1)
-    expect(items[0].reason).toBe('unread')
-  })
-
-  it('dedupes when a session is both pending_confirm and unread, preferring reason=pending_confirm', () => {
-    const items = buildUnreadSessionItems({
-      todos: [todo({ id: 'todo-1', title: 'Both', aiSessions: [session({ sessionId: 's-both', lastTurnDoneAt: 5000 })] })],
+      todos: [todo({ id: 'todo-1', title: 'Pending with reply' })],
       liveSessions: [live({
-        sessionId: 's-both',
+        sessionId: 's-pc',
         todoId: 'todo-1',
         status: 'pending_confirm',
         lastTurnDoneAt: 5000,
-        lastOutputAt: 6000,
       })],
-      lastSeenMap: new Map([['s-both', 1000]]),
+      lastSeenMap: new Map([['s-pc', 4000]]),
     })
 
     expect(items).toHaveLength(1)
-    expect(items[0].reason).toBe('pending_confirm')
-    expect(items[0].timestamp).toBe(5000)
+    expect(items[0]).toMatchObject({ sessionId: 's-pc', timestamp: 5000 })
+    // reason field has been removed in spec
+    expect((items[0] as Record<string, unknown>).reason).toBeUndefined()
   })
 
-  it('sorts mixed reasons by timestamp desc', () => {
+  it('excludes pending_confirm sessions whose lastSeen already covers the latest reply', () => {
     const items = buildUnreadSessionItems({
-      todos: [
-        todo({ id: 'todo-a', title: 'A', aiSessions: [session({ sessionId: 's-unread-old', lastTurnDoneAt: 2000 })] }),
-        todo({ id: 'todo-b', title: 'B' }),
-      ],
-      liveSessions: [live({
-        sessionId: 's-pc-new',
-        todoId: 'todo-b',
-        status: 'pending_confirm',
-        lastOutputAt: 9000,
-      })],
-      lastSeenMap: new Map(),
-    })
-
-    expect(items.map(i => i.sessionId)).toEqual(['s-pc-new', 's-unread-old'])
-  })
-
-  it('keeps a pending_confirm session even when lastSeen has already caught up', () => {
-    const items = buildUnreadSessionItems({
-      todos: [todo({ id: 'todo-1', title: 'Already seen but pending' })],
+      todos: [todo({ id: 'todo-1', title: 'Seen pending' })],
       liveSessions: [live({
         sessionId: 's-pc',
         todoId: 'todo-1',
         status: 'pending_confirm',
         lastTurnDoneAt: 1000,
-        lastOutputAt: 1000,
       })],
-      lastSeenMap: new Map([['s-pc', 9999]]),
+      lastSeenMap: new Map([['s-pc', 1000]]),
     })
 
-    expect(items).toHaveLength(1)
-    expect(items[0].reason).toBe('pending_confirm')
+    expect(items).toEqual([])
   })
 })

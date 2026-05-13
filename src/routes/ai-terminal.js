@@ -288,7 +288,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
             ? replaceTodoAiSessionInPlace(todo, newAi)
             : mergeTodoAiSessions(todo, newAi),
         }
-        if (session.userClosedReason !== 'topic_closed' && !superseded) {
+        if (!session.userClosedReason && !superseded) {
           updates.status = todoStatus
         }
         db.updateTodo(session.todoId, updates)
