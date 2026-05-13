@@ -14,7 +14,8 @@ import {
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import dayjs from 'dayjs'
-import type { Todo, AiTool } from '../../api'
+import { updateTodo, type Todo, type AiTool, type StageTag } from '../../api'
+import { StageTagChip } from '../StageTagChip'
 import { useAppMessages } from '../../design/useAppMessages'
 import { deriveAiState, AI_STATE_LABEL } from '../../design/aiPresentationState'
 import { useAiSessionStore } from '../../store/aiSessionStore'
@@ -98,6 +99,15 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
     { key: 'start:cursor', label: '▶ 启动 Cursor' },
   ]
 
+  const handleStageTagChange = async (next: StageTag | null) => {
+    try {
+      await updateTodo(todo.id, { stageTag: next })
+      onRefresh()
+    } catch (e: any) {
+      message.error(e?.message || '阶段标签更新失败')
+    }
+  }
+
   return (
     <div
       ref={setNodeRef}
@@ -131,6 +141,7 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
             <div className="todo-card-title-row">
               <div className="todo-card-title">{todo.title}</div>
               <span className={`todo-status-chip ${statusChip.className}`}>{statusChip.text}</span>
+              <StageTagChip value={todo.stageTag} onChange={handleStageTagChange} />
             </div>
           </div>
         </div>
