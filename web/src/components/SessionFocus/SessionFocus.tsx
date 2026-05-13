@@ -10,11 +10,13 @@ import './SessionFocus.css'
 export function SessionFocus() {
   const focusedTodoId = useFocusStore((s) => s.focusedTodoId)
   const focusedSessionId = useFocusStore((s) => s.focusedSessionId)
+  const replaceFocusedSession = useFocusStore((s) => s.replaceFocusedSession)
   const focusedTab = useFocusStore((s) => s.focusedTab)
   const setTab = useFocusStore((s) => s.setTab)
   const clearFocus = useFocusStore((s) => s.clearFocus)
 
   const sessions = useAiSessionStore((s) => s.sessions)
+  const replaceSessionId = useAiSessionStore((s) => s.replaceSessionId)
 
   // 用户打开 focus mode 即视为"已读" —— 让 TodoCard 的待确认徽章清掉
   // (条件：sessionId 存在且 user 真在 focus 这个 session)
@@ -38,6 +40,12 @@ export function SessionFocus() {
     })
     return () => cancelAnimationFrame(id)
   }, [focusedTodoId, focusedTab])
+
+  const handleSessionSwitch = (nextSessionId: string) => {
+    if (!focusedSessionId) return
+    replaceSessionId(focusedSessionId, nextSessionId)
+    replaceFocusedSession(focusedSessionId, nextSessionId)
+  }
 
   if (!focusedTodoId) return null
 
@@ -70,6 +78,7 @@ export function SessionFocus() {
             status={todoStatus}
             cwd={session.cwd ?? null}
             onClose={clearFocus}
+            onSessionSwitch={handleSessionSwitch}
             hideTabs
             mode={sessionViewerMode}
             fillHeight
