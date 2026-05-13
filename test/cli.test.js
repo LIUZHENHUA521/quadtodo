@@ -9,6 +9,7 @@ import {
   collectReachableAddresses,
   buildMcpServerEntry,
   installMcpIntoClaudeSettings,
+  runStart,
 } from '../src/cli.js'
 import { loadConfig, setConfigValue, getConfigValue } from '../src/config.js'
 import { writeFileSync } from 'node:fs'
@@ -177,6 +178,11 @@ describe('cli helpers', () => {
     expect(check).toBeTruthy()
     expect(typeof check.ok).toBe('boolean')
     expect(check.detail || '').toMatch(/dist-web\/index\.html/)
+  })
+
+  it('exports runStart as an async function', () => {
+    expect(typeof runStart).toBe('function')
+    expect(runStart.constructor.name).toBe('AsyncFunction')
   })
 
   it('buildDoctorChecks is pure and sync-returns a predictable set of names', () => {

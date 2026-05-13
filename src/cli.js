@@ -337,149 +337,151 @@ program
   .description('Local four-quadrant todo CLI with embedded Claude Code / Codex terminal')
   .version(loadPkgVersion())
 
+export async function runStart(cmdOpts = {}) {
+  const rootDir = DEFAULT_ROOT_DIR
+  const cfg = loadConfig({ rootDir })
+  const defaultCwd = cmdOpts.cwd || cfg.defaultCwd || process.env.HOME || process.cwd()
+  const host = cmdOpts.expose
+    ? '0.0.0.0'
+    : (cmdOpts.host || cfg.host || '127.0.0.1')
+
+  // ─── stdout/stderr 复制到 ~/.agentquad/logs/agentquad.log ───
+  // 保留正常 console 输出 + 同步追加到日志文件，方便诊断
+  try {
+    const logsDir = join(rootDir, 'logs')
+    if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true })
+    const logFile = join(logsDir, 'agentquad.log')
+    // 启动时如果 log > 5MB 就截断到尾部 1MB
+    try {
+      const { statSync } = await import('node:fs')
+      const st = statSync(logFile)
+      if (st.size > 5 * 1024 * 1024) {
+        const buf = readFileSync(logFile)
+        const tail = buf.subarray(buf.length - 1024 * 1024)
+        writeFileSync(logFile, tail)
+      }
+    } catch { /* file 不存在或读不了，忽略 */ }
+    const { createWriteStream } = await import('node:fs')
+    const logStream = createWriteStream(logFile, { flags: 'a' })
+    logStream.write(`\n=== agentquad start ${new Date().toISOString()} pid=${process.pid} ===\n`)
+    const wrap = (orig) => (...args) => {
+      try {
+        const line = args.map((a) => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')
+        logStream.write(`${new Date().toISOString()} ${line}\n`)
+      } catch { /* 写 log 失败不阻塞 */ }
+      orig.apply(console, args)
+    }
+    console.log = wrap(console.log)
+    console.info = wrap(console.info)
+    console.warn = wrap(console.warn)
+    console.error = wrap(console.error)
+    console.debug = wrap(console.debug)
+  } catch (e) {
+    console.warn(`[startup] log file setup failed: ${e.message}; continuing without file log`)
+  }
+
+  const pf = pidFile(rootDir)
+  if (existsSync(pf)) {
+    const oldPid = Number(readFileSync(pf, 'utf8'))
+    if (oldPid && isAlive(oldPid)) {
+      console.error(`AgentQuad already running (pid ${oldPid}). Run 'agentquad stop' first.`)
+      process.exit(1)
+    }
+    try { unlinkSync(pf) } catch { /* ignore */ }
+  }
+
+  const port = cmdOpts.port || cfg.port
+  const { createServer } = await import('./server.js')
+  const srv = createServer({
+    dbFile: join(rootDir, 'data.db'),
+    logDir: join(rootDir, 'logs'),
+    tools: resolveToolsConfig(cfg.tools),
+    defaultCwd,
+    configRootDir: rootDir,
+    webDist: resolvePath(__dirname, '../dist-web'),
+    strictWebDist: true,
+  })
+
+  try {
+    await srv.listen(port, host)
+  } catch (e) {
+    if (e.code === 'EADDRINUSE') {
+      console.error(`port ${port} in use — run 'agentquad config set port <newPort>' or stop whoever holds it`)
+    } else if (e.code === 'EADDRNOTAVAIL') {
+      console.error(`host ${host} not available on this machine — try --host 0.0.0.0`)
+    } else {
+      console.error(`listen failed: ${e.message}`)
+    }
+    process.exit(1)
+  }
+
+  writeFileSync(pf, String(process.pid))
+  console.log(buildStartupBanner({ port, host }))
+  console.log(`AI terminal default cwd: ${defaultCwd}`)
+
+  // ─── 自动 bootstrap Claude Code hook（部署 notify.js + 合入 settings.json）───
+  // 设计：缺啥补啥 / 已装则 noop / 用户跑过 uninstall-hook 留下的 marker 会被尊重
+  // 任何错误一律 warn-skip，绝不让 hook bootstrap 把 agentquad start 挂掉
+  try {
+    const { bootstrapHooks } = await import('./openclaw-hook-installer.js')
+    const r = bootstrapHooks()
+    if (r.skipped) {
+      if (r.reason === 'uninstall_marker') {
+        console.log(`ℹ claude-code hook: 已被你 uninstall-hook 拒绝；想恢复跑 'agentquad openclaw bootstrap'`)
+      } else if (r.reason === 'malformed_settings') {
+        console.warn(`⚠ claude-code hook: ~/.claude/settings.json JSON 损坏，跳过自动安装；修好后跑 'agentquad openclaw bootstrap'`)
+      } else {
+        console.log(`ℹ claude-code hook bootstrap skipped: ${r.reason}`)
+      }
+    } else {
+      if (r.scriptResult.action === 'installed') {
+        console.log(`✓ claude-code hook script installed (v${r.scriptResult.version}) → ${r.scriptResult.scriptPath}`)
+      } else if (r.scriptResult.action === 'upgraded') {
+        console.log(`✓ claude-code hook script upgraded v${r.scriptResult.previousVersion ?? 0} → v${r.scriptResult.version} (backup: ${r.scriptResult.backup})`)
+      }
+      if (r.alreadyInstalled) {
+        // 静默：避免每次 start 都刷屏。doctor 会显示状态
+      } else if (r.hookResult) {
+        console.log(`✓ claude-code hooks installed: ${r.hookResult.added.join(', ')}`)
+      }
+    }
+  } catch (e) {
+    console.warn(`⚠ claude-code hook bootstrap failed: ${e?.message || e}`)
+  }
+
+  // listen 完成后异步发"重启完成 + Resume N 个会话"通知到 telegram。
+  // 不 await，发不发都不阻塞 boot；postText 走 telegram HTTPS 直发，不依赖 long-poll
+  if (typeof srv.notifyStartupRecovery === 'function') {
+    Promise.resolve().then(() => srv.notifyStartupRecovery()).catch(() => {})
+  }
+
+  if (cmdOpts.open !== false) {
+    try {
+      const { default: open } = await import('open')
+      // 浏览器自动打开仍走 127.0.0.1（避免 0.0.0.0 在浏览器里非法）
+      open(`http://127.0.0.1:${port}`)
+    } catch (e) {
+      console.warn(`could not auto-open browser: ${e.message}`)
+    }
+  }
+
+  const shutdown = async (signal) => {
+    console.log(`\nreceived ${signal}, shutting down...`)
+    try { unlinkSync(pf) } catch { /* ignore */ }
+    await srv.close()
+    process.exit(0)
+  }
+  process.on('SIGINT', () => shutdown('SIGINT'))
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
+}
+
 program.command('start')
   .option('-p, --port <port>', 'override port', (v) => Number(v))
   .option('--no-open', 'do not auto-open browser')
   .option('--cwd <path>', 'default cwd for AI terminal sessions')
   .option('--host <host>', 'bind address (e.g. 0.0.0.0 to allow Tailscale/LAN access)')
   .option('--expose', 'shorthand for --host 0.0.0.0 (bind all interfaces)')
-  .action(async (cmdOpts) => {
-    const rootDir = DEFAULT_ROOT_DIR
-    const cfg = loadConfig({ rootDir })
-    const defaultCwd = cmdOpts.cwd || cfg.defaultCwd || process.env.HOME || process.cwd()
-    const host = cmdOpts.expose
-      ? '0.0.0.0'
-      : (cmdOpts.host || cfg.host || '127.0.0.1')
-
-    // ─── stdout/stderr 复制到 ~/.agentquad/logs/agentquad.log ───
-    // 保留正常 console 输出 + 同步追加到日志文件，方便诊断
-    try {
-      const logsDir = join(rootDir, 'logs')
-      if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true })
-      const logFile = join(logsDir, 'agentquad.log')
-      // 启动时如果 log > 5MB 就截断到尾部 1MB
-      try {
-        const { statSync } = await import('node:fs')
-        const st = statSync(logFile)
-        if (st.size > 5 * 1024 * 1024) {
-          const buf = readFileSync(logFile)
-          const tail = buf.subarray(buf.length - 1024 * 1024)
-          writeFileSync(logFile, tail)
-        }
-      } catch { /* file 不存在或读不了，忽略 */ }
-      const { createWriteStream } = await import('node:fs')
-      const logStream = createWriteStream(logFile, { flags: 'a' })
-      logStream.write(`\n=== agentquad start ${new Date().toISOString()} pid=${process.pid} ===\n`)
-      const wrap = (orig) => (...args) => {
-        try {
-          const line = args.map((a) => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')
-          logStream.write(`${new Date().toISOString()} ${line}\n`)
-        } catch { /* 写 log 失败不阻塞 */ }
-        orig.apply(console, args)
-      }
-      console.log = wrap(console.log)
-      console.info = wrap(console.info)
-      console.warn = wrap(console.warn)
-      console.error = wrap(console.error)
-      console.debug = wrap(console.debug)
-    } catch (e) {
-      console.warn(`[startup] log file setup failed: ${e.message}; continuing without file log`)
-    }
-
-    const pf = pidFile(rootDir)
-    if (existsSync(pf)) {
-      const oldPid = Number(readFileSync(pf, 'utf8'))
-      if (oldPid && isAlive(oldPid)) {
-        console.error(`AgentQuad already running (pid ${oldPid}). Run 'agentquad stop' first.`)
-        process.exit(1)
-      }
-      try { unlinkSync(pf) } catch { /* ignore */ }
-    }
-
-    const port = cmdOpts.port || cfg.port
-    const { createServer } = await import('./server.js')
-    const srv = createServer({
-      dbFile: join(rootDir, 'data.db'),
-      logDir: join(rootDir, 'logs'),
-      tools: resolveToolsConfig(cfg.tools),
-      defaultCwd,
-      configRootDir: rootDir,
-      webDist: resolvePath(__dirname, '../dist-web'),
-      strictWebDist: true,
-    })
-
-    try {
-      await srv.listen(port, host)
-    } catch (e) {
-      if (e.code === 'EADDRINUSE') {
-        console.error(`port ${port} in use — run 'agentquad config set port <newPort>' or stop whoever holds it`)
-      } else if (e.code === 'EADDRNOTAVAIL') {
-        console.error(`host ${host} not available on this machine — try --host 0.0.0.0`)
-      } else {
-        console.error(`listen failed: ${e.message}`)
-      }
-      process.exit(1)
-    }
-
-    writeFileSync(pf, String(process.pid))
-    console.log(buildStartupBanner({ port, host }))
-    console.log(`AI terminal default cwd: ${defaultCwd}`)
-
-    // ─── 自动 bootstrap Claude Code hook（部署 notify.js + 合入 settings.json）───
-    // 设计：缺啥补啥 / 已装则 noop / 用户跑过 uninstall-hook 留下的 marker 会被尊重
-    // 任何错误一律 warn-skip，绝不让 hook bootstrap 把 agentquad start 挂掉
-    try {
-      const { bootstrapHooks } = await import('./openclaw-hook-installer.js')
-      const r = bootstrapHooks()
-      if (r.skipped) {
-        if (r.reason === 'uninstall_marker') {
-          console.log(`ℹ claude-code hook: 已被你 uninstall-hook 拒绝；想恢复跑 'agentquad openclaw bootstrap'`)
-        } else if (r.reason === 'malformed_settings') {
-          console.warn(`⚠ claude-code hook: ~/.claude/settings.json JSON 损坏，跳过自动安装；修好后跑 'agentquad openclaw bootstrap'`)
-        } else {
-          console.log(`ℹ claude-code hook bootstrap skipped: ${r.reason}`)
-        }
-      } else {
-        if (r.scriptResult.action === 'installed') {
-          console.log(`✓ claude-code hook script installed (v${r.scriptResult.version}) → ${r.scriptResult.scriptPath}`)
-        } else if (r.scriptResult.action === 'upgraded') {
-          console.log(`✓ claude-code hook script upgraded v${r.scriptResult.previousVersion ?? 0} → v${r.scriptResult.version} (backup: ${r.scriptResult.backup})`)
-        }
-        if (r.alreadyInstalled) {
-          // 静默：避免每次 start 都刷屏。doctor 会显示状态
-        } else if (r.hookResult) {
-          console.log(`✓ claude-code hooks installed: ${r.hookResult.added.join(', ')}`)
-        }
-      }
-    } catch (e) {
-      console.warn(`⚠ claude-code hook bootstrap failed: ${e?.message || e}`)
-    }
-
-    // listen 完成后异步发"重启完成 + Resume N 个会话"通知到 telegram。
-    // 不 await，发不发都不阻塞 boot；postText 走 telegram HTTPS 直发，不依赖 long-poll
-    if (typeof srv.notifyStartupRecovery === 'function') {
-      Promise.resolve().then(() => srv.notifyStartupRecovery()).catch(() => {})
-    }
-
-    if (cmdOpts.open !== false) {
-      try {
-        const { default: open } = await import('open')
-        // 浏览器自动打开仍走 127.0.0.1（避免 0.0.0.0 在浏览器里非法）
-        open(`http://127.0.0.1:${port}`)
-      } catch (e) {
-        console.warn(`could not auto-open browser: ${e.message}`)
-      }
-    }
-
-    const shutdown = async (signal) => {
-      console.log(`\nreceived ${signal}, shutting down...`)
-      try { unlinkSync(pf) } catch { /* ignore */ }
-      await srv.close()
-      process.exit(0)
-    }
-    process.on('SIGINT', () => shutdown('SIGINT'))
-    process.on('SIGTERM', () => shutdown('SIGTERM'))
-  })
+  .action(async (cmdOpts) => { await runStart(cmdOpts) })
 
 program.command('stop')
   .action(async () => {
