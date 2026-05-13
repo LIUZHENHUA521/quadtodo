@@ -55,9 +55,13 @@ export async function runFirstRunWizard({
     log(`[1/2] 检测到未安装：${missing.join(', ')}（AI 终端必需）`)
     const ans = (await ask(`      运行 'agentquad install-tools --all' 自动安装？(Y/n) `)).trim().toLowerCase()
     if (ans === '' || ans === 'y' || ans === 'yes') {
-      const code = await installTools(missing)
-      if (code === 0) installedTools = [...missing]
-      else log('\n⚠ 工具安装失败，AI 终端将不可用。修复后跑 agentquad install-tools --all\n')
+      try {
+        const code = await installTools(missing)
+        if (code === 0) installedTools = [...missing]
+        else log('\n⚠ 工具安装失败，AI 终端将不可用。修复后跑 agentquad install-tools --all\n')
+      } catch (e) {
+        log(`\n⚠ 工具安装异常（${e?.message || e}），AI 终端将不可用。\n`)
+      }
     } else {
       skippedInstall = true
     }

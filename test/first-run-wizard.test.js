@@ -66,10 +66,20 @@ describe('runFirstRunWizard', () => {
   it('continues startup even when user declines install', async () => {
     const checks = { claude: vi.fn(() => false), codex: vi.fn(() => false) }
     const installTools = vi.fn()
-    const ask = vi.fn().mockResolvedValueOnce('n').mockResolvedValueOnce('')
+    // 两个工具都缺 + 用户拒绝 → available = []，第二步不问，ask 只调用 1 次
+    const ask = vi.fn().mockResolvedValueOnce('n')
     const r = await runFirstRunWizard({ checks, installTools, ask, log: () => {} })
     expect(installTools).not.toHaveBeenCalled()
     expect(r.skippedInstall).toBe(true)
+  })
+
+  it('continues when installTools throws', async () => {
+    const checks = { claude: vi.fn(() => false), codex: vi.fn(() => true) }
+    const installTools = vi.fn(async () => { throw new Error('network fail') })
+    const ask = vi.fn().mockResolvedValueOnce('y').mockResolvedValueOnce('')
+    const r = await runFirstRunWizard({ checks, installTools, ask, log: () => {} })
+    expect(installTools).toHaveBeenCalledOnce()
+    expect(r.installedTools).toEqual([])
   })
 
   it('Y is the default answer (empty input = install)', async () => {
