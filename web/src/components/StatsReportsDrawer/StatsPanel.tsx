@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Segmented, DatePicker, Table, Collapse, Button, Empty, Spin } from 'antd'
+import { Segmented, DatePicker, Table, Collapse, Empty, Spin } from 'antd'
 import { useTranslation } from 'react-i18next'
-import { useAppMessages } from '../../design/useAppMessages'
 import { useTheme } from '../../design/ThemeProvider'
 import { Line, Pie } from '@ant-design/charts'
 import dayjs, { Dayjs } from 'dayjs'
@@ -60,7 +59,6 @@ function fetchReport(since: number, until: number): Promise<Report | null> {
  */
 export function StatsPanel({ active }: { active: boolean }) {
   const { t } = useTranslation(['settings'])
-  const { message } = useAppMessages()
   const [range, setRange] = useState<Range>('week')
   const [custom, setCustom] = useState<[Dayjs, Dayjs] | undefined>()
   const [report, setReport] = useState<Report | null>(null)
@@ -81,16 +79,6 @@ export function StatsPanel({ active }: { active: boolean }) {
       .finally(() => setLoading(false))
   }, [active, since, until])
 
-  async function copyMd() {
-    const r = await fetch(`/api/stats/report.md?since=${since}&until=${until}`)
-    const md = await r.text()
-    await navigator.clipboard.writeText(md)
-    message.success(t('settings:stats.copiedMd'))
-  }
-  function downloadMd() {
-    window.open(`/api/stats/report.md?since=${since}&until=${until}`, '_blank')
-  }
-
   return (
     <div className="stats-root">
       <div className="stats-toolbar">
@@ -107,10 +95,6 @@ export function StatsPanel({ active }: { active: boolean }) {
         {range === 'custom' && (
           <DatePicker.RangePicker onChange={v => v && setCustom(v as [Dayjs, Dayjs])} />
         )}
-        <div className="stats-toolbar-actions">
-          <Button onClick={copyMd}>{t('settings:stats.copyMd')}</Button>
-          <Button onClick={downloadMd}>{t('settings:stats.downloadMd')}</Button>
-        </div>
       </div>
 
       {loading && <div className="stats-loading"><Spin /></div>}
