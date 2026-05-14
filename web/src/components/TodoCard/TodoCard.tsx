@@ -300,6 +300,10 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                             <Tag color="warning" style={{ marginLeft: 6 }}>{t('todo:card.missingCwd')}</Tag>
                           </Tooltip>
                         )}
+                      </div>
+                    </div>
+                    {(nativeSessionId || (!session.label && editingLabelSessionId !== session.sessionId)) && (
+                      <div className="todo-history-actions">
                         {!session.label && editingLabelSessionId !== session.sessionId && (
                           <button
                             type="button"
@@ -310,26 +314,24 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                               setEditingLabelText('')
                             }}
                             title={t('todo:card.editLabelTooltip')}
-                            style={{ flexShrink: 0, marginLeft: 'auto' }}
+                            style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}
                           >
                             <Pencil size={10} />
                           </button>
                         )}
-                      </div>
-                    </div>
-                    {nativeSessionId && (
-                      <div className="todo-history-actions">
-                        <button
-                          type="button"
-                          className="todo-history-link"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onOpenNativeResume(todo, session)
-                          }}
-                          title={t('todo:card.localResumeTooltip')}
-                        >
-                          {t('todo:card.localResume')}
-                        </button>
+                        {nativeSessionId && (
+                          <button
+                            type="button"
+                            className="todo-history-link"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onOpenNativeResume(todo, session)
+                            }}
+                            title={t('todo:card.localResumeTooltip')}
+                          >
+                            {t('todo:card.localResume')}
+                          </button>
+                        )}
                       </div>
                     )}
                   </button>
