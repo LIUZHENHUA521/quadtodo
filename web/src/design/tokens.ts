@@ -17,6 +17,7 @@ export interface DesignTokens {
     idle: string
     error: string
   }
+  agent: { claude: string; codex: string; cursor: string }
   shadow: { subtle: string; elevated: string; floating: string }
 }
 
@@ -46,6 +47,7 @@ export const darkTokens: DesignTokens = {
     idle: '#6b7280',
     error: '#ef4444',
   },
+  agent: { claude: '#D97757', codex: '#cdd5e0', cursor: '#5BB0FF' },
   shadow: {
     subtle: '0 1px 2px rgba(0,0,0,0.30)',
     elevated: '0 6px 18px rgba(0,0,0,0.45)',
@@ -79,6 +81,7 @@ export const lightTokens: DesignTokens = {
     idle: '#6b7280',
     error: '#dc2626',
   },
+  agent: { claude: '#D97757', codex: '#1f2937', cursor: '#2D7DD2' },
   shadow: {
     subtle: '0 1px 2px rgba(0,0,0,0.04)',
     elevated: '0 6px 18px rgba(0,0,0,0.08)',

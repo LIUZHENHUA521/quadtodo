@@ -8,6 +8,15 @@ import {
   getTranscriptStats, listTodos, type TranscriptFile, type Todo, type AiTool,
 } from '../api'
 import { buildResumeCommand, type ResumeTool } from './resumeCommand'
+import { AgentIcon } from '../components/AgentIcon'
+
+const TOOL_DISPLAY: Record<AiTool, string> = { claude: 'Claude', codex: 'Codex', cursor: 'Cursor' }
+const toolOptionLabel = (tool: AiTool) => (
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+    <AgentIcon tool={tool} />
+    {TOOL_DISPLAY[tool]}
+  </span>
+)
 
 type Props = {
   open: boolean
@@ -264,7 +273,11 @@ export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId,
             <Select
               size="small" style={{ width: 120 }} value={tool} allowClear placeholder={t('transcript:searchDrawer.toolPlaceholder')}
               onChange={(v) => setTool(v || '')}
-              options={[{ value: 'claude', label: 'Claude' }, { value: 'codex', label: 'Codex' }, { value: 'cursor', label: 'Cursor' }]}
+              options={[
+                { value: 'claude', label: toolOptionLabel('claude') },
+                { value: 'codex', label: toolOptionLabel('codex') },
+                { value: 'cursor', label: toolOptionLabel('cursor') },
+              ]}
             />
             <Input size="small" style={{ width: 240 }} placeholder={t('transcript:searchDrawer.cwdPlaceholder')} value={cwd} onChange={(e) => setCwd(e.target.value)} allowClear />
             <Button size="small" type={unboundOnly ? 'primary' : 'default'} onClick={() => setUnboundOnly(v => !v)}>{t('transcript:searchDrawer.unboundOnly')}</Button>
@@ -279,7 +292,10 @@ export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId,
                   return (
                     <div key={f.id} style={{ border: '1px solid var(--border-subtle)', borderRadius: 6, padding: 10, minWidth: 0 }}>
                       <div style={resultHeaderStyle}>
-                        <Tag>{f.tool}</Tag>
+                        <Tag style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <AgentIcon tool={f.tool as AiTool} />
+                          {f.tool}
+                        </Tag>
                         {boundTodo ? (
                           <span style={boundTagSlotStyle}>
                             <Tooltip title={boundTodoTitle}>

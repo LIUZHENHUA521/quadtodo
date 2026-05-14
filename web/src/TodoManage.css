@@ -517,15 +517,6 @@ body {
   border: 1px solid var(--border-default);
 }
 
-.todo-history-title {
-  flex-shrink: 0;
-  min-width: 88px;
-  padding-top: 3px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
 .todo-history-list {
   flex: 1;
   display: flex;
@@ -636,6 +627,9 @@ body {
 }
 
 .todo-history-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
@@ -720,15 +714,11 @@ body {
   .todo-history-box {
     flex-direction: column;
     /* 切换到 column 后，主轴变成纵向、cross-axis 变成横向；
-       基础规则的 align-items:flex-start 会让 title/list 只占自身内容宽度，
-       这里改成 stretch 让它们撑满父容器宽度 */
+       基础规则的 align-items:flex-start 会让 list 只占自身内容宽度，
+       这里改成 stretch 让它撑满父容器宽度 */
     align-items: stretch;
     gap: 6px;
     padding: 8px;
-  }
-  .todo-history-title {
-    min-width: 0;
-    padding-top: 0;
   }
   .todo-history-item {
     flex-direction: column;

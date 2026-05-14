@@ -7,6 +7,7 @@ import dayjs from 'dayjs'
 import { useTranslation } from 'react-i18next'
 import { updateTodo, type Todo, type AiTool, type StageTag } from '../../api'
 import { StageTagChip } from '../StageTagChip'
+import { AgentIcon } from '../AgentIcon'
 import { useAppMessages } from '../../design/useAppMessages'
 import { deriveAiState, AI_STATE_LABEL_KEY, AI_STATE_ICON } from '../../design/aiPresentationState'
 import { useAiSessionStore } from '../../store/aiSessionStore'
@@ -83,9 +84,9 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
   const liveSessionsMap = useAiSessionStore(s => s.sessions)
 
   const aiMenuItems = [
-    { key: 'start:claude', label: t('todo:card.startClaude') },
-    { key: 'start:codex', label: t('todo:card.startCodex') },
-    { key: 'start:cursor', label: t('todo:card.startCursor') },
+    { key: 'start:claude', icon: <AgentIcon tool="claude" />, label: t('todo:card.startClaude') },
+    { key: 'start:codex', icon: <AgentIcon tool="codex" />, label: t('todo:card.startCodex') },
+    { key: 'start:cursor', icon: <AgentIcon tool="cursor" />, label: t('todo:card.startCursor') },
   ]
 
   const handleStageTagChange = async (next: StageTag | null) => {
@@ -202,7 +203,6 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
 
         {hasHistory && (
           <div className="todo-history-box" onClick={(e) => e.stopPropagation()}>
-            <div className="todo-history-title">{t('todo:card.historyTitle', { count: historySessions.length })}</div>
             <div className="todo-history-list">
               {historySessions.map((session) => {
                 const nativeSessionId = session.nativeSessionId || ''
@@ -275,7 +275,10 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                         </div>
                       )}
                       <div className="todo-history-headline">
-                        <span className="todo-history-tool">{toolDisplayName(session.tool)}</span>
+                        <span className="todo-history-tool">
+                          <AgentIcon tool={session.tool} />
+                          {toolDisplayName(session.tool)}
+                        </span>
                         <span className="todo-history-time">{formatSessionTime(session.startedAt || session.completedAt)}</span>
                         {sessionState !== 'idle' && (
                           <span className={`todo-ai-state todo-ai-state-${sessionState}`}>{AI_STATE_ICON[sessionState]()}{' '}{t(AI_STATE_LABEL_KEY[sessionState])}</span>

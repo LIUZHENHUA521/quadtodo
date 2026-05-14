@@ -170,7 +170,6 @@ const en = {
       startCursor: '▶ Start Cursor',
       addSubtodo: 'Add subtodo',
       deleteConfirm: 'Delete?',
-      historyTitle: 'History ({{count}})',
       sessionLabelPlaceholder: 'Enter session title...',
       editLabelTooltip: 'Edit title',
       localResumedTooltip: 'Resumed in local terminal at: {{time}}',

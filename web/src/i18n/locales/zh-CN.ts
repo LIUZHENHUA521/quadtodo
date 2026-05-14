@@ -167,7 +167,6 @@ const zh = {
       startCursor: '▶ 启动 Cursor',
       addSubtodo: '添加子待办',
       deleteConfirm: '确认删除？',
-      historyTitle: '历史会话 ({{count}})',
       sessionLabelPlaceholder: '输入会话标题...',
       editLabelTooltip: '编辑标题',
       localResumedTooltip: '已在本地 Terminal 继续：{{time}}',

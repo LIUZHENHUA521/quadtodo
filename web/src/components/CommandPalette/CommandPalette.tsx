@@ -7,6 +7,7 @@ import { useAiSessionStore } from '../../store/aiSessionStore'
 import { listTodos, updateTodo, type Todo } from '../../api'
 import { useAppMessages } from '../../design/useAppMessages'
 import { BarChart3, BookOpen, Settings, BarChartBig, FileText, Send, Moon } from 'lucide-react'
+import { AgentIcon } from '../AgentIcon'
 import './CommandPalette.css'
 
 type Page = 'default' | 'aiPicker'
@@ -149,19 +150,19 @@ export function CommandPalette() {
                 <Command.Item
                   onSelect={() => { setAiTool('claude'); setPage('aiPicker'); setSearch('') }}
                 >
-                  <span className="cmdk-icon">▶</span>
+                  <span className="cmdk-icon"><AgentIcon tool="claude" size={14} /></span>
                   <span>{t('palette:actions.startAi', { tool: 'claude' })}</span>
                 </Command.Item>
                 <Command.Item
                   onSelect={() => { setAiTool('codex'); setPage('aiPicker'); setSearch('') }}
                 >
-                  <span className="cmdk-icon">▶</span>
+                  <span className="cmdk-icon"><AgentIcon tool="codex" size={14} /></span>
                   <span>{t('palette:actions.startAi', { tool: 'codex' })}</span>
                 </Command.Item>
                 <Command.Item
                   onSelect={() => { setAiTool('cursor'); setPage('aiPicker'); setSearch('') }}
                 >
-                  <span className="cmdk-icon">▶</span>
+                  <span className="cmdk-icon"><AgentIcon tool="cursor" size={14} /></span>
                   <span>{t('palette:actions.startAi', { tool: 'cursor' })}</span>
                 </Command.Item>
               </Command.Group>

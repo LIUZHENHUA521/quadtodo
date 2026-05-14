@@ -10,6 +10,7 @@ import { getConfig, updateConfig, AppConfig, pickDirectory, ToolDiagnostic, test
 import { TelegramProbeModal } from './TelegramProbeModal'
 import telegramSetupMd from '../../docs/TELEGRAM-setup.md?raw'
 import larkSetupMd from '../../docs/LARK.md?raw'
+import { AgentIcon } from './components/AgentIcon'
 import './SettingsDrawer.css'
 
 const { Paragraph, Text } = Typography
@@ -698,9 +699,9 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         rules={[{ required: true, message: t('settings:tools.defaultToolRequired') }]}
       >
         <Radio.Group>
-          <Radio.Button value="claude">Claude</Radio.Button>
-          <Radio.Button value="codex">Codex</Radio.Button>
-          <Radio.Button value="cursor">Cursor</Radio.Button>
+          <Radio.Button value="claude"><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><AgentIcon tool="claude" />Claude</span></Radio.Button>
+          <Radio.Button value="codex"><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><AgentIcon tool="codex" />Codex</span></Radio.Button>
+          <Radio.Button value="cursor"><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><AgentIcon tool="cursor" />Cursor</span></Radio.Button>
         </Radio.Group>
       </Form.Item>
 
@@ -710,7 +711,15 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         <Segmented
           value={viewingTool}
           onChange={(v) => setViewingTool(v as ToolKey)}
-          options={TOOLS.map((t) => ({ label: TOOL_LABEL[t], value: t }))}
+          options={TOOLS.map((tool) => ({
+            value: tool,
+            label: (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <AgentIcon tool={tool} />
+                {TOOL_LABEL[tool]}
+              </span>
+            ),
+          }))}
         />
       </Form.Item>
 

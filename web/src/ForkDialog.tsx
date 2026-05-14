@@ -3,6 +3,14 @@ import { Modal, Form, Select, Slider, Switch, Input, Button, Spin } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { useAppMessages } from './design/useAppMessages'
 import { AiTool, Todo, forkAiSession } from './api'
+import { AgentIcon } from './components/AgentIcon'
+
+const toolOptionLabel = (tool: AiTool, name: string) => (
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+    <AgentIcon tool={tool} />
+    {name}
+  </span>
+)
 
 interface Props {
   open: boolean
@@ -89,9 +97,9 @@ export default function ForkDialog({ open, sourceTodo, sourceSessionId, todos, o
         <Form layout="vertical" size="small">
           <Form.Item label={t('transcript:forkDialog.toolLabel')}>
             <Select value={tool} onChange={setTool} options={[
-              { value: 'claude', label: 'Claude' },
-              { value: 'codex', label: 'Codex' },
-              { value: 'cursor', label: 'Cursor' },
+              { value: 'claude', label: toolOptionLabel('claude', 'Claude') },
+              { value: 'codex', label: toolOptionLabel('codex', 'Codex') },
+              { value: 'cursor', label: toolOptionLabel('cursor', 'Cursor') },
             ]} />
           </Form.Item>
           <Form.Item label={t('transcript:forkDialog.targetTodoLabel')}>

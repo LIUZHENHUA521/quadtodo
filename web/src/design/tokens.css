@@ -38,6 +38,11 @@
   --ai-idle: #6b7280;
   --ai-error: #ef4444;
 
+  /* Agent brand colors — small icon next to "Claude Code / Codex / Cursor" labels */
+  --agent-claude: #D97757;
+  --agent-codex: #cdd5e0;
+  --agent-cursor: #5BB0FF;
+
   /* Shadow */
   --shadow-subtle: 0 1px 2px rgba(0,0,0,0.30);
   --shadow-elevated: 0 6px 18px rgba(0,0,0,0.45);
@@ -73,6 +78,10 @@
   --ai-pending-confirm: #d97706;
   --ai-idle: #6b7280;
   --ai-error: #dc2626;
+
+  --agent-claude: #D97757;
+  --agent-codex: #1f2937;
+  --agent-cursor: #2D7DD2;
 
   --shadow-subtle: 0 1px 2px rgba(0,0,0,0.04);
   --shadow-elevated: 0 6px 18px rgba(0,0,0,0.08);

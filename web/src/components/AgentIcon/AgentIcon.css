@@ -1,0 +1,9 @@
+.agent-icon {
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: -2px;
+}
+
+.agent-icon-claude { color: var(--agent-claude); }
+.agent-icon-codex { color: var(--agent-codex); }
+.agent-icon-cursor { color: var(--agent-cursor); }
