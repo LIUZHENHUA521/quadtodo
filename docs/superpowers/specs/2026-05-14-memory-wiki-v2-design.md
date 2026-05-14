@@ -155,6 +155,8 @@
 5. 全部变更走一个 `git commit -m "wiki: upgrade schemaVersion 1→2"`
    - 若 commit 失败（无 user identity 等），走 v1 已有的 fallback identity 参数重试（`-c user.email=agentquad@local -c user.name=agentquad`）
 
+**回滚自身失败的兜底**：若 try/catch 触发回滚时 `git checkout -- .` 或 `rm .agentquad-wiki-meta.json` 自身也失败（比如 `.git` 损坏、磁盘 RO），不再继续清理——同时记录原始失败原因与回滚失败原因，保留当前（半升级）工作树原样退出。用户需手动处理；前端横幅明确两类错误都呈现。
+
 ### 6.2 默认 purpose.md（程序首次写入）
 
 ```markdown
@@ -275,7 +277,10 @@ sources/ 下这些新文件是本次要处理的素材：
 - 仍然 `claude -p --output-format text`（envelope 不重要，我们只看 exitCode 和文件 diff）
 - 新增 `--permission-mode bypassPermissions`（batch 场景没人按确认），由 `config.wiki.permissionMode` 暴露允许覆盖（默认 `bypassPermissions`，谨慎用户可改 `acceptEdits`）
 - 不显式 `--allowedTools`；默认工具集已含 Read/Write/Edit/Glob/Grep，足够用
-- **CLI 版本探测**：首次调用前用 `claude --help | grep -q permission-mode` 探测，不支持 → 回退到不带 flag 并在 WikiDrawer 顶栏弹永久横幅"当前 claude CLI 不支持 `--permission-mode`，可能在运行期间出现交互式确认；建议升级 claude code"
+- **CLI 版本探测**：进程生命周期内只跑一次 `claude --help` 探测 `permission-mode` 子串：
+  - **exit 0 + 有该字符串** → CLI 支持 → 加 flag，结果缓存到 module-level 变量
+  - **exit 0 + 无该字符串** → CLI 不支持 → 不加 flag，WikiDrawer 顶栏弹永久横幅"当前 claude CLI 不支持 `--permission-mode`，可能在运行期间出现交互式确认；建议升级 claude code"
+  - **`--help` 自身失败（exit !=0、spawn 错误）** → 不要静默降级；直接报错"claude CLI 探测失败：<stderr>"，要求用户排查（这通常意味着 CLI 根本就跑不起来，硬上 batch 也会立即失败）
 - **沙箱说明**：`bypassPermissions` 给模型不受限的 Write 能力；prompt 已要求 cwd=wikiDir，理论上 claude 不会写出 cwd 之外，但 quadtodo **不强制**沙箱（不添加 fs 拦截层）。用户需自行确保 wiki 目录与其他敏感目录隔离。
 
 **post-run 验产**（在 `gitCommit` 前执行）：
@@ -549,6 +554,7 @@ ALTER TABLE wiki_runs ADD COLUMN produced_summary_json TEXT;
 - [ ] claude exit code != 0 → wiki_runs 标失败、UI 显示错误并提供重试、未提交的脏 working tree 在下次 runOnce 时被 stash 保存
 - [ ] 同主题命名冲突：claude 把内容写入了已存在的 topics/xxx.md，没新建 entities/xxx.md
 - [ ] claude CLI 不支持 `--permission-mode` 标志时 → 探测失败 → 回退到不带 flag 并显示横幅
+- [ ] 上一次 runOnce 失败留下脏 working tree，下一次 runOnce 启动时执行 stash → wiki_runs.note 含 `stashed-prev: wiki-recovery-r<runId>-<ISO>` 标签 → WikiDrawer 顶栏 banner 显示对应 stash 名称与 `git stash apply stash@{N}` 命令
 
 ## 十、阶段划分（详细拆分留给 writing-plans）
 
