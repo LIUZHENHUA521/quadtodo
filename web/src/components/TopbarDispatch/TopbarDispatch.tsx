@@ -335,9 +335,11 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
       <Tooltip title={t('topbar:tooltip.statsReports')}>
         <button className="topbar-icon-btn" onClick={() => openDrawer('statsReports')} data-testid="topbar-stats-btn"><BarChart3 size={16} /></button>
       </Tooltip>
+      {/* 记忆 wiki 入口暂时隐藏，待重新设计后再开放（参考 docs/superpowers/specs/2026-05-14-memory-wiki-v2-design.md）
       <Tooltip title={t('topbar:tooltip.wiki')}>
         <button className="topbar-icon-btn" onClick={() => openDrawer('wiki')} data-testid="topbar-wiki-btn"><BookOpen size={16} /></button>
       </Tooltip>
+      */}
       <Tooltip title={t('topbar:tooltip.settings')}>
         <button className="topbar-icon-btn" onClick={() => openDrawer('settings')} data-testid="topbar-settings-btn"><Settings size={16} /></button>
       </Tooltip>

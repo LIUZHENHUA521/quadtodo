@@ -228,10 +228,12 @@ export function CommandPalette() {
                   <span className="cmdk-icon"><BarChart3 size={14} /></span>
                   <span>{t('palette:actions.openStatsReports')}</span>
                 </Command.Item>
+                {/* 记忆 wiki 入口暂时隐藏，待重新设计后再开放
                 <Command.Item onSelect={() => { openDrawer('wiki'); closePalette() }}>
                   <span className="cmdk-icon"><BookOpen size={14} /></span>
                   <span>{t('palette:actions.openWiki')}</span>
                 </Command.Item>
+                */}
                 <Command.Item onSelect={() => { openDrawer('settings'); closePalette() }}>
                   <span className="cmdk-icon"><Settings size={14} /></span>
                   <span>{t('palette:actions.openSettings')}</span>

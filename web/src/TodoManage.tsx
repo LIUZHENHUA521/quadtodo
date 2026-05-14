@@ -1385,6 +1385,7 @@ export default function TodoManage() {
                 fetchTodos()
               }}>{t('todo:detail.accept')}</Button>
             )}
+            {/* 沉淀到记忆按钮暂时隐藏，待 wiki 重新设计后再开放
             {detailTodo && (
               <Button
                 size="small" type="text"
@@ -1394,6 +1395,7 @@ export default function TodoManage() {
                 {todoCoverage[detailTodo.id] ? t('todo:detail.memorized') : t('todo:detail.memorize')}
               </Button>
             )}
+            */}
             {detailTodo && (
               <Button size="small" icon={<EditOutlined />} onClick={() => { closeDetail(); handleEdit(detailTodo) }}>{t('common:edit')}</Button>
             )}
@@ -1660,11 +1662,13 @@ export default function TodoManage() {
             onClick={() => { setMobileMenuOpen(false); openDrawer('report') }}
             block
           >{t('todo:mobileMenu.dailyReport')}</Button>
+          {/* 记忆 wiki 入口暂时隐藏，待重新设计后再开放
           <Button
             icon={<BookOutlined />}
             onClick={() => { setMobileMenuOpen(false); openDrawer('wiki') }}
             block
           >{t('todo:mobileMenu.wiki')}</Button>
+          */}
           <Button
             icon={<LineChartOutlined />}
             onClick={() => { setMobileMenuOpen(false); openDrawer('stats') }}
