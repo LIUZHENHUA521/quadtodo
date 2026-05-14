@@ -8,7 +8,7 @@ describe('default action', () => {
   it('bare `agentquad` does NOT print commander help when no args', () => {
     const r = spawnSync(process.execPath, [CLI], {
       encoding: 'utf8',
-      env: { ...process.env, AGENTQUAD_DRY_RUN: '1', AGENTQUAD_SKIP_WIZARD: '1' },
+      env: { ...process.env, AGENTQUAD_DRY_RUN: '1', AGENTQUAD_SKIP_WIZARD: '1', NO_UPDATE_NOTIFIER: '1' },
       timeout: 5000,
     })
     expect(r.stdout || r.stderr).not.toMatch(/Usage: agentquad \[options\] \[command\]/)
@@ -18,7 +18,7 @@ describe('default action', () => {
   it('unknown subcommand exits non-zero with helpful error', () => {
     const r = spawnSync(process.execPath, [CLI, 'strat'], {
       encoding: 'utf8',
-      env: { ...process.env, AGENTQUAD_DRY_RUN: '1', AGENTQUAD_SKIP_WIZARD: '1' },
+      env: { ...process.env, AGENTQUAD_DRY_RUN: '1', AGENTQUAD_SKIP_WIZARD: '1', NO_UPDATE_NOTIFIER: '1' },
       timeout: 5000,
     })
     expect(r.status).not.toBe(0)

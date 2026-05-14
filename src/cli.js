@@ -14,6 +14,7 @@ import {
   resolveToolsConfig,
 } from './config.js'
 import { shouldRunWizard, runFirstRunWizard } from './first-run-wizard.js'
+import updateNotifier from 'update-notifier'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -1007,6 +1008,13 @@ const isMain = (() => {
   }
 })()
 if (isMain) {
+  // 后台异步检查 npm 上有没有新版本，下次启动时给用户一行提示
+  // - 非 TTY / CI / NO_UPDATE_NOTIFIER=1 时 update-notifier 自动静默
+  // - 检查结果缓存在 ~/.config/configstore/，间隔 24h，不阻塞 CLI 启动
+  try {
+    const pkg = JSON.parse(readFileSync(resolvePath(__dirname, '../package.json'), 'utf8'))
+    updateNotifier({ pkg, updateCheckInterval: 1000 * 60 * 60 * 24 }).notify({ defer: false })
+  } catch { /* 离线 / configstore 不可写：静默忽略 */ }
   program.parseAsync(process.argv)
 }
 
