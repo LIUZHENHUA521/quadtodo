@@ -14,5 +14,4 @@ web/tsconfig.tsbuildinfo
 
 # npm pack output
 *.tgz
-*.png
 *.yml
