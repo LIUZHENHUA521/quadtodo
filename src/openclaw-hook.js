@@ -296,11 +296,13 @@ export function createOpenClawHookHandler(deps = {}) {
     return sess?.permissionMode || sess?.autoMode || 'default'
   }
 
-  function resolveExplicitTelegramRoute(sessionId) {
+  function resolveExplicitInteractiveRoute(sessionId) {
     if (!sessionId) return null
     if (!openclaw.hasExplicitRoute?.(sessionId)) return null
     const route = openclaw.resolveRoute?.(sessionId)
-    if (route?.channel === 'telegram' || !!route?.threadId) return route
+    if (!route) return null
+    if (route.channel === 'telegram' || !!route.threadId) return route
+    if (route.channel === 'lark' && route.rootMessageId) return route
     return null
   }
 
@@ -313,7 +315,7 @@ export function createOpenClawHookHandler(deps = {}) {
 
   function isPermissionReminderEligible(sessionId) {
     if (!sessionId) return false
-    if (!resolveExplicitTelegramRoute(sessionId)) return false
+    if (!resolveExplicitInteractiveRoute(sessionId)) return false
     if (suppressPermissionNotifications()) return false
     return getSessionPermissionMode(sessionId) !== 'bypass'
   }

@@ -1139,9 +1139,23 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
       <div className="tv-body" ref={scrollRef} onScroll={handleBodyScroll}>
         {loading && !data && <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>}
         {error && <div className="tv-error">{error}</div>}
-        {!loading && !error && data && data.turns.length === 0 && (
-          <Empty description={t('transcript:empty')} />
-        )}
+        {!loading && !error && data && data.turns.length === 0 && (() => {
+          const status = data.session.status
+          // 活跃态(running/pending_confirm)由下方 tv-thinking 块负责渲染"AI 思考中"等提示;
+          // idle 是 PTY 已起但还没产出的中间态,这里补一个"AI 启动中"指示,避免空屏被误读为"找不到记录"。
+          if (status === 'running' || status === 'pending_confirm') return null
+          if (status === 'idle') {
+            return (
+              <div className="tv-thinking" aria-live="polite">
+                <span className="tv-thinking-label">{t('transcript:emptyStarting')}</span>
+                <span className="tv-thinking-dots" aria-hidden="true">
+                  <i /><i /><i />
+                </span>
+              </div>
+            )
+          }
+          return <Empty description={t('transcript:empty')} />
+        })()}
         {displayedTurns.map((t, i) => {
           // Edit/StrReplace/Write 默认展开（用户最常想直接看 diff），其他工具默认折叠
           const isEditLike = t.role === 'tool_use' && (t.toolName === 'Edit' || t.toolName === 'StrReplace' || t.toolName === 'Write')

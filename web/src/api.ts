@@ -113,6 +113,7 @@ export interface AppConfig {
   port: number
   defaultTool: AiTool
   defaultCwd: string
+  defaultPermissionMode?: 'default' | 'acceptEdits' | 'bypass'
   tools: {
     claude: { command: string; bin: string; args: string[] }
     codex: { command: string; bin: string; args: string[] }

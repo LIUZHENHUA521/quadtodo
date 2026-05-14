@@ -312,6 +312,13 @@ const en = {
       close: 'Close',
       confirm: 'Confirm',
       untitled: '(untitled)',
+      resume: 'Resume',
+      resumeTooltip: 'Restart the process with claude --resume and continue the previous conversation',
+      resumeDisabledNoNative: 'This session has no native sessionId — cannot --resume',
+      resumeDisabledTool: 'Native resume is only supported for Claude sessions',
+      resumeFailed: 'Resume failed: {{reason}}',
+      resumeOk: 'Session resumed',
+      processEnded: 'Process ended',
     },
     aiState: {
       label: {
@@ -450,7 +457,8 @@ const en = {
       fullscreen: 'Fullscreen',
       exitFullscreen: 'Exit fullscreen (Esc)',
     },
-    empty: 'No transcript found (neither JSONL nor PTY log exists)',
+    empty: 'No transcript yet',
+    emptyStarting: 'AI starting',
     tool: {
       expandDiff: 'Expand diff',
       collapseDiff: 'Collapse diff',
@@ -640,8 +648,13 @@ const en = {
       pricing: 'Pricing',
     },
     section: {
+      language: '语言 / Language',
       startup: 'Startup',
       service: 'Service',
+    },
+    language: {
+      label: 'Interface language',
+      extra: 'Takes effect immediately. Your choice is remembered.',
     },
     general: {
       defaultCwdLabel: 'Default working directory',
@@ -652,6 +665,13 @@ const en = {
       pickDirPrompt: 'Pick default working directory',
       linkEditorLabel: 'Terminal link opens editor',
       linkEditorExtra: 'Clicking file paths in the terminal opens them with this editor; also the default for the card "Code" button.',
+      permissionModeLabel: 'Default permission mode',
+      permissionModeExtra: 'Used when starting/resuming web AI sessions. The mode picker in the terminal toolbar applies to the current browser only and overrides this setting. Default = each write op asks for confirmation; semi-managed = auto-approve file edits; fully managed (bypass) = fully automatic.',
+      permission: {
+        default: 'Default (confirm)',
+        acceptEdits: 'Semi',
+        bypass: 'Full (bypass)',
+      },
       portLabel: 'Service port',
       portRequired: 'Please enter a service port',
       portExtra: 'Port is saved to the config file and applies after restarting AgentQuad.',

@@ -62,6 +62,7 @@ import { useUnreadStore } from './store/unreadStore'
 import { useDrawerStackStore } from './store/drawerStackStore'
 import { useDrawerStack } from './hooks/useDrawerStack'
 import { useDispatchStore } from './store/dispatchStore'
+import { useAppConfigStore } from './store/appConfigStore'
 import { TopbarDispatch } from './components/TopbarDispatch'
 import { QuadrantBoard, QuadrantZone, QUADRANT_CONFIG } from './components/QuadrantBoard'
 import { SortableTodoCard } from './components/TodoCard'
@@ -529,6 +530,10 @@ export default function TodoManage() {
 
   useEffect(() => { fetchTodos() }, [fetchTodos])
 
+  // App-level config (e.g. defaultPermissionMode) is read once at startup so
+  // new sessions can inherit the saved 托管模式 when localStorage is empty.
+  useEffect(() => { void useAppConfigStore.getState().load() }, [])
+
   // CommandPalette's "恢复到待办" mutates a todo via the API directly, so the
   // board needs an explicit refetch hint to pick up the new status.
   useEffect(() => {
@@ -802,10 +807,11 @@ export default function TodoManage() {
   const handleAiExec = useCallback(async (todo: Todo, tool: AiTool, session?: Todo['aiSessions'][number]) => {
     try {
       const prompt = session?.prompt || buildTodoPrompt(todo, templates, t)
-      // 读取用户上次选择的托管模式（持久化在 localStorage），
+      // 读取托管模式：浏览器内手动覆盖 (localStorage) > 设置里的全局默认 (config) > undefined。
       // 这样新启动/恢复会话时能直接通过原生 CLI 标志生效，不依赖运行时的正则兜底。
       let permissionMode: string | null = null
       try { permissionMode = localStorage.getItem('quadtodo.autoMode') } catch { /* ignore */ }
+      if (!permissionMode) permissionMode = useAppConfigStore.getState().defaultPermissionMode
       const { sessionId } = await startAiExec({
         todoId: todo.id,
         prompt,
@@ -854,6 +860,7 @@ export default function TodoManage() {
     try {
       let permissionMode: string | null = null
       try { permissionMode = localStorage.getItem('quadtodo.autoMode') } catch { /* ignore */ }
+      if (!permissionMode) permissionMode = useAppConfigStore.getState().defaultPermissionMode
       const { sessionId } = await startAiExec({
         todoId: r.targetTodoId,
         prompt: r.prompt,

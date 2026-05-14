@@ -1,5 +1,7 @@
 import { Drawer, Alert, Typography, Form, Input, InputNumber, Button, Radio, Space, Tag, Switch, Collapse, Tabs, Segmented } from 'antd'
 import { useTranslation } from 'react-i18next'
+import { LANG_STORAGE_KEY } from './i18n'
+import type { SupportedLng } from './i18n/resources'
 import { useAppMessages } from './design/useAppMessages'
 import { MinusCircleOutlined, PlusOutlined, BookOutlined } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
@@ -7,6 +9,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { markdownComponents } from './markdownComponents'
 import { getConfig, updateConfig, AppConfig, pickDirectory, ToolDiagnostic, testTelegram, testLark, type ProbeHit, type DispatchChannelConfig } from './api'
+import { useAppConfigStore } from './store/appConfigStore'
 import { TelegramProbeModal } from './TelegramProbeModal'
 import telegramSetupMd from '../../docs/TELEGRAM-setup.md?raw'
 import larkSetupMd from '../../docs/LARK.md?raw'
@@ -100,7 +103,8 @@ const TOOL_LABEL: Record<ToolKey, string> = {
 }
 
 export default function SettingsDrawer({ open, onClose }: Props) {
-  const { t } = useTranslation(['settings'])
+  const { t, i18n } = useTranslation(['settings'])
+  const currentLang = (i18n.resolvedLanguage || i18n.language || 'zh-CN') as SupportedLng
   const { message } = useAppMessages()
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [toolDiagnostics, setToolDiagnostics] = useState<Record<ToolKey, ToolDiagnostic> | null>(null)
@@ -176,6 +180,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           port: result.config.port,
           defaultTool: result.config.defaultTool,
           defaultCwd: result.config.defaultCwd,
+          defaultPermissionMode: result.config.defaultPermissionMode || 'default',
           claudeCommand: joinCommandLine(result.config.tools.claude.command, result.config.tools.claude.args),
           claudeBin: result.config.tools.claude.bin,
           codexCommand: joinCommandLine(result.config.tools.codex.command, result.config.tools.codex.args),
@@ -257,6 +262,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         port: Number(values.port),
         defaultTool: values.defaultTool,
         defaultCwd: values.defaultCwd,
+        defaultPermissionMode: values.defaultPermissionMode || 'default',
         tools: {
           claude: buildToolPatch('claude', values.claudeCommand || '', values.claudeBin || ''),
           codex: buildToolPatch('codex', values.codexCommand || '', values.codexBin || ''),
@@ -334,6 +340,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       })
       setConfig(result.config)
       setToolDiagnostics(result.toolDiagnostics)
+      useAppConfigStore.getState().setDefaultPermissionMode(result.config.defaultPermissionMode || null)
       setTokenSource((result.config.telegram?.botTokenSource as 'agentquad' | 'missing' | undefined) || 'missing')
       setTokenMasked(result.config.telegram?.botTokenMasked || '')
       setLarkSecretSource((result.config.lark?.appSecretSource as 'agentquad' | 'missing' | undefined) || 'missing')
@@ -498,6 +505,26 @@ export default function SettingsDrawer({ open, onClose }: Props) {
 
   const runTab = (
     <>
+      <div className="settings-section-title">{t('settings:section.language')}</div>
+
+      <Form.Item
+        label={t('settings:language.label')}
+        extra={t('settings:language.extra')}
+      >
+        <Segmented
+          value={currentLang}
+          onChange={(v) => {
+            const lng = v as SupportedLng
+            void i18n.changeLanguage(lng)
+            try { localStorage.setItem(LANG_STORAGE_KEY, lng) } catch {}
+          }}
+          options={[
+            { label: '中文', value: 'zh-CN' },
+            { label: 'English', value: 'en-US' },
+          ]}
+        />
+      </Form.Item>
+
       <div className="settings-section-title">{t('settings:section.startup')}</div>
 
       <Form.Item
@@ -528,6 +555,18 @@ export default function SettingsDrawer({ open, onClose }: Props) {
           <Radio.Button value="trae-cn">Trae CN</Radio.Button>
           <Radio.Button value="trae">Trae</Radio.Button>
           <Radio.Button value="cursor">Cursor</Radio.Button>
+        </Radio.Group>
+      </Form.Item>
+
+      <Form.Item
+        name="defaultPermissionMode"
+        label={t('settings:general.permissionModeLabel')}
+        extra={t('settings:general.permissionModeExtra')}
+      >
+        <Radio.Group>
+          <Radio.Button value="default">{t('settings:general.permission.default')}</Radio.Button>
+          <Radio.Button value="acceptEdits">{t('settings:general.permission.acceptEdits')}</Radio.Button>
+          <Radio.Button value="bypass">{t('settings:general.permission.bypass')}</Radio.Button>
         </Radio.Group>
       </Form.Item>
 
@@ -750,8 +789,8 @@ export default function SettingsDrawer({ open, onClose }: Props) {
                 maxHeight: 460,
                 overflow: 'auto',
                 padding: '10px 14px',
-                background: '#fcfaf5',
-                border: '1px solid #ece7dd',
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border-subtle)',
                 borderRadius: 6,
                 fontSize: 13,
                 lineHeight: 1.65,
@@ -1119,10 +1158,10 @@ export default function SettingsDrawer({ open, onClose }: Props) {
                 key={key}
                 style={{
                   padding: 10,
-                  border: '1px solid #ece7dd',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: 6,
                   marginBottom: 8,
-                  background: '#fcfaf5',
+                  background: 'var(--surface-2)',
                 }}
               >
                 <Space wrap size={[12, 4]} style={{ width: '100%' }}>

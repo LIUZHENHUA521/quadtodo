@@ -34,9 +34,14 @@ describe('computeEffectiveStatus', () => {
     expect(computeEffectiveStatus(session, now)).toBe('running')
   })
 
-  it('status=pending_confirm 且 PTY 还在喷 → running（盖掉 stale pending）', () => {
+  it('status=pending_confirm 即使 PTY 还在喷也保持 pending_confirm（提示本身就是最近的输出，不能升级为 running）', () => {
     const session = { status: 'pending_confirm', lastOutputAt: now - 100, lastTurnDoneAt: now - 5000 }
-    expect(computeEffectiveStatus(session, now)).toBe('running')
+    expect(computeEffectiveStatus(session, now)).toBe('pending_confirm')
+  })
+
+  it('status=pending_confirm 且无 lastOutputAt → 保持 pending_confirm', () => {
+    const session = { status: 'pending_confirm', lastOutputAt: 0, lastTurnDoneAt: 0 }
+    expect(computeEffectiveStatus(session, now)).toBe('pending_confirm')
   })
 
   it('lastTurnDoneAt 未设置时（首轮还没结束过）→ lastOutputAt 任意值都视为 running', () => {

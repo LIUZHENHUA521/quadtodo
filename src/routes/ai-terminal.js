@@ -22,8 +22,11 @@ const EFFECTIVE_STATUS_OUTPUT_GRACE_MS = 500
 /**
  * 计算前端展示用的 effectiveStatus —— 用 PTY 输出活性兜底"hook/watcher 判定结束错了"的边界。
  *
- * - LIVE session（running / idle / pending_confirm）且 lastOutputAt 晚于
- *   lastTurnDoneAt + 500ms → PTY 还在喷新内容、所谓的"turn done"是假的 → 强制 running。
+ * - status === 'pending_confirm' 原样返回：这是后端用 PTY 输出 (confirm pattern)
+ *   主动设上的等待授权态，PTY 最近一定有输出（就是那条提示本身），不能再当成
+ *   "stale pending" 升级成 running，否则前端展示会把"待确认"误报成"running"。
+ * - 其它 LIVE session（running / idle）且 lastOutputAt 晚于 lastTurnDoneAt + 500ms
+ *   → PTY 还在喷新内容、所谓的"turn done"是假的 → 强制 running。
  * - 其余情况返回 session.status 自身。
  *
  * 与 src/openclaw-hook.js 里的 stop_reason 校验门并存：双层防御，互不依赖。
@@ -32,6 +35,7 @@ export function computeEffectiveStatus(session, now = Date.now()) {
   if (!session || typeof session !== 'object') return null
   const status = session.status
   if (!LIVE_AI_STATUSES.has(status)) return status
+  if (status === 'pending_confirm') return status
   const lastOutputAt = Number(session.lastOutputAt || 0)
   const lastTurnDoneAt = Number(session.lastTurnDoneAt || 0)
   if (!lastOutputAt) return status
@@ -52,10 +56,14 @@ const DEFAULT_CONFIRM_PATTERNS = [
   /按回车确认/i,
 ]
 
+// 把 CSI / OSC 序列替换为空格（而不是直接删除）：Claude Code 新版 TUI（ink）
+// 在单词之间用光标定位 CSI 序列代替空格渲染（如 "Do\x1b[5GYou\x1b[9Gwant"），
+// 直接删 CSI 会把单词粘成 "DoYouwant"，导致 "Do you want to" 这类 confirm 正则
+// 全部漏判，session.status 卡在 'running'。改成插空格后 collapse \s+ 还原词边界。
 function compactTerminalText(text = '') {
   return String(text)
-    .replace(/\x1b\[[0-9;?]*[A-Za-z~]/g, '')
-    .replace(/\x1b\][^\x07]*\x07/g, '')
+    .replace(/\x1b\[[0-9;?]*[A-Za-z~]/g, ' ')
+    .replace(/\x1b\][^\x07]*\x07/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -68,6 +76,8 @@ function detectConfirmMatch(text) {
   }
   return null
 }
+
+export { compactTerminalText, detectConfirmMatch }
 
 function isValidResizeSize(cols, rows) {
   return Number.isFinite(cols) && Number.isFinite(rows) && cols >= MIN_RESIZE_COLS && rows > 0

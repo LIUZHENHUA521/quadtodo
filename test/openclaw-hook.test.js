@@ -517,6 +517,86 @@ describe('openclaw-hook handler', () => {
     })
   })
 
+  it('Notification: non-bypass Lark session bypasses suppression with permission card', async () => {
+    const sessionId = 'ai-1778735186408-lark'
+    bridge = makeFakeBridge({
+      route: { channel: 'lark', rootMessageId: 'om_root_xxx', targetUserId: 'oc_chat_xxx' },
+    })
+    handler = createOpenClawHookHandler({
+      db, openclaw: bridge,
+      getConfig: () => ({ telegram: { suppressNotificationEvents: true, notificationCooldownMs: 0 } }),
+      aiTerminal: {
+        sessions: new Map([[sessionId, {
+          permissionMode: 'default',
+          recentOutput: 'Do you want to allow this command?',
+          outputHistory: [],
+        }]]),
+      },
+    })
+
+    const r = await handler.handle({ event: 'notification', sessionId, todoId: 't1' })
+
+    expect(r.action).toBe('sent')
+    expect(bridge.sent).toHaveLength(1)
+    expect(bridge.sent[0].message).toMatch(/^⚠️ Claude Code 正在等待授权确认。/)
+    expect(bridge.sent[0].message).toContain('Enter/Esc')
+    expect(bridge.sent[0].replyMarkup).toEqual({
+      inline_keyboard: [[
+        { text: '允许（Enter）', callback_data: 'qt:perm:lark:allow' },
+        { text: '拒绝/退出（Esc）', callback_data: 'qt:perm:lark:deny' },
+      ]],
+    })
+  })
+
+  it('Notification: bypass Lark session stays suppressed', async () => {
+    const sessionId = 'ai-lark-bypass'
+    bridge = makeFakeBridge({
+      route: { channel: 'lark', rootMessageId: 'om_root_xxx', targetUserId: 'oc_chat_xxx' },
+    })
+    handler = createOpenClawHookHandler({
+      db, openclaw: bridge,
+      aiTerminal: {
+        sessions: new Map([[sessionId, {
+          permissionMode: 'bypass',
+          recentOutput: 'Do you want to allow this command?',
+          outputHistory: [],
+        }]]),
+      },
+    })
+
+    const r = await handler.handle({ event: 'notification', sessionId, todoId: 't1' })
+
+    expect(r.ok).toBe(true)
+    expect(r.action).toBe('skipped')
+    expect(r.reason).toBe('notification_suppressed')
+    expect(bridge.postText).not.toHaveBeenCalled()
+  })
+
+  it('Notification: Lark session without rootMessageId stays suppressed', async () => {
+    const sessionId = 'ai-lark-no-root'
+    bridge = makeFakeBridge({
+      route: { channel: 'lark', targetUserId: 'oc_chat_xxx' }, // 没有 rootMessageId
+    })
+    handler = createOpenClawHookHandler({
+      db, openclaw: bridge,
+      getConfig: () => ({ telegram: { suppressNotificationEvents: true } }),
+      aiTerminal: {
+        sessions: new Map([[sessionId, {
+          permissionMode: 'default',
+          recentOutput: 'Do you want to allow this command?',
+          outputHistory: [],
+        }]]),
+      },
+    })
+
+    const r = await handler.handle({ event: 'notification', sessionId, todoId: 't1' })
+
+    expect(r.ok).toBe(true)
+    expect(r.action).toBe('skipped')
+    expect(r.reason).toBe('notification_suppressed')
+    expect(bridge.postText).not.toHaveBeenCalled()
+  })
+
   it('Notification: non-bypass Telegram generic content stays suppressed by default', async () => {
     const sessionId = 'ai-1777799249191-fwu8'
     bridge = makeFakeBridge({ route: { channel: 'telegram', threadId: 123 } })

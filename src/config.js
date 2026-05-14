@@ -313,6 +313,7 @@ function defaultConfig() {
 		host: "127.0.0.1",
 		defaultTool: "claude",
 		defaultCwd: homedir(),
+		defaultPermissionMode: "default",
 		tools: resolveToolsConfig(),
 		webhook: { ...DEFAULT_WEBHOOK_CONFIG },
 		openclaw: {
@@ -366,6 +367,7 @@ export function normalizeConfig(cfg = {}) {
 	return {
 		...defaults,
 		...cfg,
+		defaultPermissionMode: normalizePermissionMode(cfg.defaultPermissionMode, "default"),
 		tools: {
 			...mergedTools,
 			...finalTools,

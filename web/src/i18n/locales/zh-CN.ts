@@ -309,6 +309,13 @@ const zh = {
       close: '关闭',
       confirm: '确认',
       untitled: '(未命名)',
+      resume: '恢复会话',
+      resumeTooltip: '使用 claude --resume 重启进程，继续之前的对话',
+      resumeDisabledNoNative: '该会话缺少原生 sessionId，无法 --resume',
+      resumeDisabledTool: '仅 Claude 会话支持原生恢复',
+      resumeFailed: '恢复会话失败：{{reason}}',
+      resumeOk: '已恢复会话',
+      processEnded: '进程已结束',
     },
     aiState: {
       label: {
@@ -447,7 +454,8 @@ const zh = {
       fullscreen: '全屏',
       exitFullscreen: '退出全屏 (Esc)',
     },
-    empty: '没有找到会话记录（JSONL 文件和 PTY 日志都不存在）',
+    empty: '暂无对话记录',
+    emptyStarting: 'AI 启动中',
     tool: {
       expandDiff: '展开 diff',
       collapseDiff: '收起 diff',
@@ -637,8 +645,13 @@ const zh = {
       pricing: '价目表',
     },
     section: {
+      language: '语言 / Language',
       startup: '启动',
       service: '服务',
+    },
+    language: {
+      label: '界面语言',
+      extra: '切换后立即生效，并会记住你的选择。',
     },
     general: {
       defaultCwdLabel: '默认启动目录',
@@ -649,6 +662,13 @@ const zh = {
       pickDirPrompt: '选择默认启动目录',
       linkEditorLabel: '终端链接打开编辑器',
       linkEditorExtra: '终端中的文件路径点击时会使用该编辑器打开；也是卡片「代码」按钮的默认项。',
+      permissionModeLabel: '默认托管模式',
+      permissionModeExtra: '新建/恢复 Web 端 AI 会话时使用。终端工具栏切换的模式只对当前浏览器生效，会优先于本设置。默认 = 每次写操作都需确认；半托管 = 自动批文件编辑；完全托管（bypass）= 全自动跑。',
+      permission: {
+        default: '默认（需确认）',
+        acceptEdits: '半托管',
+        bypass: '完全托管',
+      },
       portLabel: '服务端口',
       portRequired: '请输入服务端口',
       portExtra: '端口会保存到配置文件，重启 AgentQuad 后生效。',

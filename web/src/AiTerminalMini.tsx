@@ -18,6 +18,7 @@ import { PRESET_LABELS, PRESET_ORDER, TerminalPresetName, TERMINAL_PRESETS, deri
 import { useTheme } from './design/ThemeProvider'
 import { useAiSessionStore } from './store/aiSessionStore'
 import { useDispatchStore } from './store/dispatchStore'
+import { useAppConfigStore } from './store/appConfigStore'
 import {
   getBrowserNotificationPermission,
   shouldSendTurnDoneSystemNotification,
@@ -145,7 +146,12 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   const [toolMissing, setToolMissing] = useState<null | { tool: string; bin: string; fix: string }>(null)
   const [height, setHeight] = useState(420)
   const [autoMode, setAutoMode] = useState<string | null>(() => {
-    try { return localStorage.getItem('quadtodo.autoMode') || null } catch { return null }
+    // 浏览器内手动覆盖优先；否则回退到设置里的全局默认（settings drawer → defaultPermissionMode）。
+    try {
+      const ls = localStorage.getItem('quadtodo.autoMode')
+      if (ls) return ls
+    } catch { /* ignore */ }
+    return useAppConfigStore.getState().defaultPermissionMode
   })
   const [switchingMode, setSwitchingMode] = useState(false)
   const prevAutoModeRef = useRef<string | null>(autoMode)
