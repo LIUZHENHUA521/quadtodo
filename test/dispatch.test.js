@@ -2,11 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { resolveTool } from '../src/dispatch.js'
 
 const cfg = {
-  defaultTool: 'claude',
   dispatch: {
     lark: { default: 'claude', perUser: { 'lark_user_a': 'codex' } },
     telegram: { default: 'codex', perChat: { '12345': 'claude' } },
-    web: { default: 'claude' },
   },
 }
 
@@ -27,15 +25,11 @@ describe('resolveTool', () => {
     expect(resolveTool({ channel: 'telegram', chatId: '12345' }, cfg)).toBe('claude')
   })
 
-  it('global defaultTool when no dispatch entry', () => {
-    expect(resolveTool({ channel: 'unknown' }, cfg)).toBe('claude')
+  it('unknown channel falls back to "claude"', () => {
+    expect(resolveTool({ channel: 'openclaw' }, cfg)).toBe('claude')
   })
 
-  it('falls back to "claude" when defaultTool missing', () => {
-    expect(resolveTool({ channel: 'web' }, {})).toBe('claude')
-  })
-
-  it('back-compat: missing dispatch section → defaultTool', () => {
-    expect(resolveTool({ channel: 'lark' }, { defaultTool: 'codex' })).toBe('codex')
+  it('falls back to "claude" when dispatch missing', () => {
+    expect(resolveTool({ channel: 'lark' }, {})).toBe('claude')
   })
 })

@@ -69,7 +69,7 @@ describe('openclaw-wizard state machine', () => {
     pending = createPendingQuestionCoordinator({ db })
     wizard = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
   })
 
@@ -117,7 +117,7 @@ describe('openclaw-wizard state machine', () => {
       db, aiTerminal: ai, openclaw: bridge, pending,
       pty: { has: () => false, write: () => {} },
       telegramBot: fakeBot,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude', telegram: { useTopics: true } }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, telegram: { useTopics: true } }),
     })
     // 用 numeric chatId 触发 looksLikeTelegram=true 路径，one-shot 携带所有 hint
     const r = await w2.handleInbound({
@@ -174,7 +174,7 @@ describe('openclaw-wizard state machine', () => {
   it('one-shot create uses configured default Telegram permission mode', async () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude', telegram: { defaultPermissionMode: 'default' } }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, telegram: { defaultPermissionMode: 'default' } }),
     })
     const r = await w2.handleInbound({
       peer: 'u1',
@@ -188,7 +188,7 @@ describe('openclaw-wizard state machine', () => {
   it('one-shot create uses configured acceptEdits Telegram permission mode', async () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude', telegram: { defaultPermissionMode: 'acceptEdits' } }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, telegram: { defaultPermissionMode: 'acceptEdits' } }),
     })
     const r = await w2.handleInbound({
       peer: 'u1',
@@ -272,7 +272,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({ peer: 'u1', text: 'c 用户登录失败提示账号不存在' })
     expect(r.action).toBe('stdin_proxy')
@@ -303,7 +303,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai2, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({ peer: 'u1', text: 'c' })
     expect(r.action).toBe('stdin_proxy')
@@ -327,7 +327,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai2, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({ peer: 'u1', text: 'c' })
     expect(r.action).toBe('stdin_proxy_ambiguous')
@@ -346,7 +346,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({ peer: 'u1', text: '退出' })
     expect(r.action).toBe('detached')
@@ -363,7 +363,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: { has: () => true, write: () => {} },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({ peer: 'u1', text: 'exit' })
     expect(r.action).toBe('no_active_link')
@@ -379,7 +379,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: { has: () => true, write: () => {} },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     for (const phrase of ['quit', 'bye', 'detach', '断开', '离开']) {
       cleared = 0
@@ -441,7 +441,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: aiWithDb, openclaw: bridge, pending,
       telegramBot: fakeTelegramBot,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       chatId: '-1003985889503',
@@ -473,7 +473,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
       telegramBot: fakeTelegramBot,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       chatId: '-100',
@@ -518,7 +518,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: aiWithDb, openclaw: bridge, pending,
       larkBot: fakeLarkBot,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       channel: 'lark',
@@ -576,7 +576,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: aiWithDb, openclaw: bridge, pending,
       larkBot: fakeLarkBot,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       channel: 'lark',
@@ -648,7 +648,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: aiWithDb, openclaw: bridge, pending,
       larkBot: fakeLarkBot, pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     // 第 1 步：起 wizard 直到 finalize
@@ -699,7 +699,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: aiWithDb, openclaw: bridge, pending,
       larkBot: fakeLarkBot,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       channel: 'lark',
@@ -739,7 +739,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: aiWithDb, openclaw: bridgeWithSpy, pending,
       larkBot: fakeLarkBot,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const r = await w2.handleInbound({
@@ -775,7 +775,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({ chatId: '-100', threadId: 42, text: 'c' })
     expect(r.action).toBe('stdin_proxy')
@@ -801,7 +801,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending: { submitReply },
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       channel: 'lark',
@@ -840,7 +840,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       channel: 'lark',
@@ -871,7 +871,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       channel: 'lark',
@@ -911,7 +911,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai2, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       channel: 'lark',
@@ -956,7 +956,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai2, openclaw: fakeBridge, pending: { submitReply },
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       channel: 'lark',
@@ -978,7 +978,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai2, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({ peer: 'u1', text: 'arbitrary' })
     expect(r.action).toBe('fallback')
@@ -1001,7 +1001,7 @@ describe('openclaw-wizard state machine', () => {
       telegramBot: fakeTelegramBot,
       loadingTracker,
       getConfig: () => ({
-        defaultCwd: '/tmp', port: 5677, defaultTool: 'claude',
+        defaultCwd: '/tmp', port: 5677,
         telegram: { defaultSupergroupId: '-1009', allowedChatIds: ['-1009'] },
       }),
     })
@@ -1114,7 +1114,7 @@ describe('openclaw-wizard state machine', () => {
       larkBot: fakeLarkBot,
       loadingTracker,
       getConfig: () => ({
-        defaultCwd: '/tmp', port: 5677, defaultTool: 'claude',
+        defaultCwd: '/tmp', port: 5677,
         lark: { enabled: true, chatId: 'oc_chat_auto', autoCreateTopic: true },
       }),
     })
@@ -1151,7 +1151,7 @@ describe('openclaw-wizard state machine', () => {
       db, aiTerminal: ai, openclaw: bridge, pending,
       larkBot: fakeLarkBot,
       getConfig: () => ({
-        defaultCwd: '/tmp', port: 5677, defaultTool: 'claude',
+        defaultCwd: '/tmp', port: 5677,
         lark: { enabled: true, chatId: 'oc_chat_anchor', autoCreateTopic: true },
       }),
     })
@@ -1184,7 +1184,7 @@ describe('openclaw-wizard state machine', () => {
       db, aiTerminal: ai, openclaw: bridge, pending,
       larkBot: fakeLarkBot,
       getConfig: () => ({
-        defaultCwd: '/tmp', port: 5677, defaultTool: 'claude',
+        defaultCwd: '/tmp', port: 5677,
         lark: { enabled: true, chatId: 'oc_chat_fb', autoCreateTopic: true },
       }),
     })
@@ -1312,7 +1312,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending, pty: fakePty,
       telegramBot: fakeTelegramBot,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleTopicEvent({ type: 'closed', chatId: '-100', threadId: 42 })
     expect(r.ok).toBe(true)
@@ -1349,7 +1349,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
       telegramBot: fakeTelegramBot,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleTopicEvent({ type: 'reopened', chatId: '-100', threadId: 99 })
     expect(r.ok).toBe(true)
@@ -1381,7 +1381,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
       telegramBot: { editForumTopic: vi.fn(async () => ({})), sendMessage: vi.fn(async () => ({ message_id: 1 })) },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude', telegram: { defaultPermissionMode: 'default' } }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, telegram: { defaultPermissionMode: 'default' } }),
     })
     const r = await w2.handleTopicEvent({ chatId: '-100', threadId: 199, type: 'reopened' })
     expect(r.ok).toBe(true)
@@ -1443,7 +1443,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending, pty: fakePty,
       telegramBot: fakeTelegramBot,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleTopicEvent({ type: 'closed', chatId: '-100', threadId: 555 })
     expect(r.ok).toBe(true)
@@ -1455,7 +1455,7 @@ describe('openclaw-wizard state machine', () => {
   it('handleTopicEvent: returns no_todo when threadId is unknown', async () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleTopicEvent({ type: 'closed', chatId: '-100', threadId: 99999 })
     expect(r.ok).toBe(false)
@@ -1500,7 +1500,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending, pty: fakePty,
       larkBot: fakeLarkBot,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleLarkThreadClose({
       chatId: 'oc_chat_xx',
@@ -1523,7 +1523,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
       larkBot: { replyInThread: vi.fn() },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleLarkThreadClose({ chatId: 'oc_chat_xx', rootMessageId: 'om_no_match' })
     expect(r.ok).toBe(false)
@@ -1537,7 +1537,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     for (const cmd of ['/usage', '/status', '/config', '/agents', '/skills', '/permissions', '/mcp', '/hooks', '/model', '/effort']) {
       const r = await w2.handleInbound({ peer: 'u1', text: cmd })
@@ -1556,7 +1556,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     for (const trig of ['esc', 'ESC', '退出菜单', 'cancel modal', 'cancel-modal']) {
       writes.length = 0
@@ -1586,7 +1586,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: fakeAi, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     // chatId 是 supergroup（-100 开头），threadId 空 → General
     const r = await w2.handleInbound({
@@ -1618,7 +1618,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: fakeAi, openclaw: fakeBridge, pending,
       pty: { has: () => true, write: (sid, data) => writes.push({ sid, data }) },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       chatId: '-1003985889503',
@@ -1644,7 +1644,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: fakeAi, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     // 1:1 DM：chatId 是正数（非 supergroup），threadId 空但**不是** General
     const r = await w2.handleInbound({
@@ -1663,7 +1663,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     for (const trig of ['中断', '打断', '停一下', '^C', '^c', 'ctrl+c', 'Ctrl-C', 'ctrlc', 'interrupt']) {
       writes.length = 0
@@ -1682,7 +1682,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     // "请中断这个分析任务" → 不该当作 interrupt，整句送 PTY
     const r = await w2.handleInbound({ peer: 'u1', text: '请中断这个分析任务' })
@@ -1704,7 +1704,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: fakeAi, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       chatId: '-1003985889503',
@@ -1741,7 +1741,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({ peer: 'u1', text: '/clear' })
     expect(r.action).toBe('stdin_proxy')
@@ -1755,7 +1755,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       peer: 'u1',
@@ -1774,7 +1774,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       peer: 'u1',
@@ -1792,7 +1792,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       peer: 'u1',
@@ -1814,7 +1814,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: fakeAi, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const r = await w2.handleInbound({
       chatId: '-1003985889503',     // supergroup
@@ -1834,7 +1834,7 @@ describe('openclaw-wizard state machine', () => {
     const w2 = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     // 即便有 last push，"帮我做 X" 还是走 wizard 启动
     const r = await w2.handleInbound({ peer: 'u1', text: '帮我做 X' })
@@ -1858,7 +1858,7 @@ describe('listWorkdirOptions: 默认目录 + 子目录', () => {
     pending = createPendingQuestionCoordinator({ db })
     wizard = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
-      getConfig: () => ({ defaultCwd: tmpRoot, port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: tmpRoot, port: 5677 }),
     })
   })
 
@@ -1912,7 +1912,7 @@ describe('openclaw-wizard inline keyboard (callback_query)', () => {
     pending = createPendingQuestionCoordinator({ db })
     wizard = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
   })
 
@@ -2014,7 +2014,7 @@ describe('openclaw-wizard inline keyboard (callback_query)', () => {
         has: vi.fn((sid) => sid === 'sess-perm-allow'),
         write: vi.fn((sid, data) => writes.push({ sid, data })),
       },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const r = await wizard.handleCallback({
@@ -2044,7 +2044,7 @@ describe('openclaw-wizard inline keyboard (callback_query)', () => {
         has: vi.fn((sid) => sid === 'sess-lark-allow'),
         write: vi.fn((sid, data) => writes.push({ sid, data })),
       },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const r = await wizard.handleCallback({
@@ -2068,7 +2068,7 @@ describe('openclaw-wizard inline keyboard (callback_query)', () => {
         has: vi.fn((sid) => sid === 'sess-perm-deny'),
         write: vi.fn((sid, data) => writes.push({ sid, data })),
       },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const r = await wizard.handleCallback({
@@ -2090,7 +2090,7 @@ describe('openclaw-wizard inline keyboard (callback_query)', () => {
     wizard = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
       pty: { has: vi.fn(() => true), write },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const r = await wizard.handleCallback({
@@ -2110,7 +2110,7 @@ describe('openclaw-wizard inline keyboard (callback_query)', () => {
     wizard = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
       pty: { has: vi.fn(() => true), write },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const r = await wizard.handleCallback({
@@ -2129,7 +2129,7 @@ describe('openclaw-wizard inline keyboard (callback_query)', () => {
     wizard = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
       pty: { has: vi.fn(() => true), write },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const r = await wizard.handleCallback({
@@ -2148,7 +2148,7 @@ describe('openclaw-wizard inline keyboard (callback_query)', () => {
     wizard = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
       pty: { has: vi.fn(() => false), write },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const r = await wizard.handleCallback({
@@ -2173,7 +2173,7 @@ describe('openclaw-wizard inline keyboard (callback_query)', () => {
         has: vi.fn((sid) => sid === 'sess-perm-throw'),
         write: vi.fn(() => { throw writeError }),
       },
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const r = await wizard.handleCallback({
@@ -2271,7 +2271,7 @@ describe('openclaw-wizard /list /pending /stop slash commands', () => {
     wizard = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
       pty: makeFakePty(ptyStops),
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
   })
 
@@ -2482,7 +2482,7 @@ describe('openclaw-wizard ask_user button callbacks (qt:ans / qt:ext)', () => {
     pending = createPendingQuestionCoordinator({ db })
     wizard = createOpenClawWizard({
       db, aiTerminal: ai, openclaw: bridge, pending,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
   })
 
@@ -2681,7 +2681,7 @@ describe('openclaw-wizard multi-session routing (qt:rt:* + first-route hint)', (
     const wizard = createOpenClawWizard({
       db, aiTerminal: ai2, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const r = await wizard.handleInbound({ peer: 'u1', text: 'hi' })
@@ -2717,7 +2717,7 @@ describe('openclaw-wizard multi-session routing (qt:rt:* + first-route hint)', (
     }
     const wizard = createOpenClawWizard({
       db, aiTerminal: ai2, openclaw: fakeBridge, pending,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const cb = await wizard.handleCallback({
@@ -2740,7 +2740,7 @@ describe('openclaw-wizard multi-session routing (qt:rt:* + first-route hint)', (
     }
     const wizard = createOpenClawWizard({
       db, aiTerminal: ai2, openclaw: fakeBridge, pending,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
     const cb = await wizard.handleCallback({
       chatId: '-100', threadId: null,
@@ -2767,7 +2767,7 @@ describe('openclaw-wizard multi-session routing (qt:rt:* + first-route hint)', (
     const wizard = createOpenClawWizard({
       db, aiTerminal: ai2, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const r1 = await wizard.handleInbound({ chatId: '-100', threadId: null, text: 'hi' })
@@ -2802,7 +2802,7 @@ describe('openclaw-wizard multi-session routing (qt:rt:* + first-route hint)', (
     const wizard = createOpenClawWizard({
       db, aiTerminal: ai2, openclaw: fakeBridge, pending,
       pty: fakePty,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     await wizard.handleCallback({

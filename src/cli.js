@@ -375,10 +375,7 @@ export async function runStart(cmdOpts = {}) {
       flags: { wizard: cmdOpts.wizard !== false },
     })
     if (need) {
-      const r = await runFirstRunWizard()
-      if (r.defaultTool) {
-        setConfigValue('defaultTool', r.defaultTool, { rootDir })
-      }
+      await runFirstRunWizard()
     }
   } catch (e) {
     console.warn(`⚠ first-run wizard skipped: ${e?.message || e}`)

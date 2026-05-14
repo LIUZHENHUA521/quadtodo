@@ -8,6 +8,5 @@ export function resolveTool({ channel, userId, chatId, override } = {}, config =
     if (chatId && ch.perChat && SUPPORTED_TOOLS.includes(ch.perChat[chatId])) return ch.perChat[chatId]
     if (SUPPORTED_TOOLS.includes(ch.default)) return ch.default
   }
-  if (SUPPORTED_TOOLS.includes(config?.defaultTool)) return config.defaultTool
   return 'claude'
 }

@@ -44,19 +44,18 @@ describe('runFirstRunWizard', () => {
   it('skips install prompt when both tools already present', async () => {
     const checks = { claude: vi.fn(() => true), codex: vi.fn(() => true) }
     const installTools = vi.fn()
-    const ask = vi.fn().mockResolvedValueOnce('')   // default tool prompt
+    const ask = vi.fn()
     const r = await runFirstRunWizard({ checks, installTools, ask, log: () => {} })
     expect(installTools).not.toHaveBeenCalled()
+    expect(ask).not.toHaveBeenCalled()
     expect(r.installedTools).toEqual([])
-    expect(['claude', 'codex']).toContain(r.defaultTool)
+    expect(r.defaultTool).toBeUndefined()
   })
 
   it('prompts to install when claude missing, user says Y → installs', async () => {
     const checks = { claude: vi.fn(() => false), codex: vi.fn(() => true) }
     const installTools = vi.fn(async () => 0)
-    const ask = vi.fn()
-      .mockResolvedValueOnce('y')   // install?
-      .mockResolvedValueOnce('')    // default tool (Enter = claude)
+    const ask = vi.fn().mockResolvedValueOnce('y')   // install?
     const r = await runFirstRunWizard({ checks, installTools, ask, log: () => {} })
     expect(installTools).toHaveBeenCalledOnce()
     expect(r.installedTools).toContain('claude')
@@ -66,7 +65,6 @@ describe('runFirstRunWizard', () => {
   it('continues startup even when user declines install', async () => {
     const checks = { claude: vi.fn(() => false), codex: vi.fn(() => false) }
     const installTools = vi.fn()
-    // 两个工具都缺 + 用户拒绝 → available = []，第二步不问，ask 只调用 1 次
     const ask = vi.fn().mockResolvedValueOnce('n')
     const r = await runFirstRunWizard({ checks, installTools, ask, log: () => {} })
     expect(installTools).not.toHaveBeenCalled()
@@ -76,7 +74,7 @@ describe('runFirstRunWizard', () => {
   it('continues when installTools throws', async () => {
     const checks = { claude: vi.fn(() => false), codex: vi.fn(() => true) }
     const installTools = vi.fn(async () => { throw new Error('network fail') })
-    const ask = vi.fn().mockResolvedValueOnce('y').mockResolvedValueOnce('')
+    const ask = vi.fn().mockResolvedValueOnce('y')
     const r = await runFirstRunWizard({ checks, installTools, ask, log: () => {} })
     expect(installTools).toHaveBeenCalledOnce()
     expect(r.installedTools).toEqual([])
@@ -85,9 +83,7 @@ describe('runFirstRunWizard', () => {
   it('Y is the default answer (empty input = install)', async () => {
     const checks = { claude: vi.fn(() => false), codex: vi.fn(() => true) }
     const installTools = vi.fn(async () => 0)
-    const ask = vi.fn()
-      .mockResolvedValueOnce('')   // empty = Y
-      .mockResolvedValueOnce('')
+    const ask = vi.fn().mockResolvedValueOnce('')   // empty = Y
     const r = await runFirstRunWizard({ checks, installTools, ask, log: () => {} })
     expect(installTools).toHaveBeenCalledOnce()
   })

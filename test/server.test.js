@@ -178,7 +178,7 @@ describe("server", () => {
 		const r = await request(srv.app).get("/api/config");
 		expect(r.status).toBe(200);
 		expect(r.body.ok).toBe(true);
-		expect(r.body.config.defaultTool).toBe("claude");
+		expect(r.body.config.defaultTool).toBeUndefined();
 		expect(r.body.config.lark).toMatchObject({
 			enabled: false,
 			appId: "",

@@ -52,7 +52,7 @@ export async function runFirstRunWizard({
   let skippedInstall = false
 
   if (missing.length > 0) {
-    log(`[1/2] 检测到未安装：${missing.join(', ')}（AI 终端必需）`)
+    log(`[1/1] 检测到未安装：${missing.join(', ')}（AI 终端必需）`)
     const ans = (await ask(`      运行 'agentquad install-tools --all' 自动安装？(Y/n) `)).trim().toLowerCase()
     if (ans === '' || ans === 'y' || ans === 'yes') {
       try {
@@ -67,16 +67,5 @@ export async function runFirstRunWizard({
     }
   }
 
-  const available = []
-  if (claudeOK || installedTools.includes('claude')) available.push('claude')
-  if (codexOK || installedTools.includes('codex')) available.push('codex')
-
-  let defaultTool = 'claude'
-  if (available.length > 0) {
-    const optsStr = available.join(' / ')
-    const ans = (await ask(`[2/2] 选择默认 AI 工具 (${optsStr}) [默认: ${available[0]}]: `)).trim().toLowerCase()
-    defaultTool = available.includes(ans) ? ans : available[0]
-  }
-
-  return { skipped: false, installedTools, defaultTool, skippedInstall }
+  return { skipped: false, installedTools, skippedInstall }
 }

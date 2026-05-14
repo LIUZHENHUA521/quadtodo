@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { computeDispatchStats } from '../web/src/design/useDispatchStats.ts'
-import type { LiveSession, Todo } from '../web/src/api.ts'
+import type { AiSession, LiveSession, Todo } from '../web/src/api.ts'
 
 function makeSession(overrides: Partial<LiveSession> & Pick<LiveSession, 'sessionId' | 'todoId'>): LiveSession {
   return {
@@ -77,5 +77,75 @@ describe('computeDispatchStats — 按 todoId 折叠', () => {
     const stats = computeDispatchStats(sessions, NO_LAST_SEEN, NO_TODOS)
     expect(stats.idleCount).toBe(0)
     expect(stats.runningCount).toBe(0)
+  })
+})
+
+function makeAiSession(overrides: Partial<AiSession> & Pick<AiSession, 'sessionId' | 'status'>): AiSession {
+  return {
+    sessionId: overrides.sessionId,
+    tool: overrides.tool ?? 'claude',
+    nativeSessionId: overrides.nativeSessionId ?? null,
+    cwd: overrides.cwd ?? null,
+    status: overrides.status,
+    startedAt: overrides.startedAt ?? 1000,
+    completedAt: overrides.completedAt ?? null,
+    prompt: overrides.prompt ?? '',
+    lastTurnDoneAt: overrides.lastTurnDoneAt ?? null,
+  }
+}
+
+function makeTodo(id: string, aiSession: AiSession | null): Todo {
+  return {
+    id,
+    parentId: null,
+    title: id,
+    description: '',
+    quadrant: 1,
+    status: 'todo',
+    dueDate: null,
+    workDir: null,
+    brainstorm: false,
+    appliedTemplateIds: [],
+    sortOrder: 0,
+    aiSession,
+    aiSessions: aiSession ? [aiSession] : [],
+    recurringRuleId: null,
+    instanceDate: null,
+    completedAt: null,
+    stageTag: null,
+    createdAt: 0,
+    updatedAt: 0,
+  }
+}
+
+describe('computeDispatchStats — DB 兜底僵尸 idle', () => {
+  it('DB 持久化 status=idle 但 live store 没有的 session，不再计入 idleCount', () => {
+    // 场景：agentquad 重启后，ai_done 的 todo 没被 recoverPendingTodosOnStartup 起回来，
+    // todo.aiSession.status='idle' 但 live sessions Map 里没这条 sessionId —— PTY 已死。
+    const todos = [
+      makeTodo('todo-zombie', makeAiSession({ sessionId: 's-dead', status: 'idle' })),
+    ]
+    const stats = computeDispatchStats(new Map(), NO_LAST_SEEN, todos)
+    expect(stats.idleCount).toBe(0)
+  })
+
+  it('DB 持久化 status=running 但 live store 没有的 session 仍然按 running 计入（首启 3s 兜底）', () => {
+    const todos = [
+      makeTodo('todo-fresh', makeAiSession({ sessionId: 's-fresh', status: 'running' })),
+    ]
+    const stats = computeDispatchStats(new Map(), NO_LAST_SEEN, todos)
+    expect(stats.runningCount).toBe(1)
+    expect(stats.idleCount).toBe(0)
+  })
+
+  it('真实 live idle session 仍然计入 idle，不会被新规则误伤', () => {
+    const sessions = buildSessions([
+      makeSession({ sessionId: 's-live-idle', todoId: 'todo-live', status: 'idle' }),
+    ])
+    const todos = [
+      makeTodo('todo-live', makeAiSession({ sessionId: 's-live-idle', status: 'idle' })),
+    ]
+    const stats = computeDispatchStats(sessions, NO_LAST_SEEN, todos)
+    expect(stats.idleCount).toBe(1)
   })
 })

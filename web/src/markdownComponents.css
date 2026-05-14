@@ -1,12 +1,78 @@
-.aq-md-code-pre {
+/* ---------- 块状代码：wrapper 承担视觉外框，pre 仅负责内容滚动 ----------
+   外框放在 wrapper 上而非 .aq-md-code-pre 自身，是为了让 .todo-card .aq-md-code-pre
+   等老选择器不会因为这次升级被强制撑出更大的外边距/圆角。 */
+.aq-md-code-block {
+  position: relative;
   background: var(--surface-2);
-  padding: 10px 12px;
-  border-radius: 6px;
-  overflow-x: auto;
-  font-size: 12px;
-  line-height: 1.55;
-  margin: 6px 0;
   border: 1px solid var(--border-default);
+  border-radius: 8px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+
+.aq-md-code-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+  border-bottom: 1px solid var(--border-subtle);
+  min-height: 26px;
+}
+
+.aq-md-code-lang {
+  margin-right: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+
+.aq-md-code-copy {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.aq-md-code-block:hover .aq-md-code-copy,
+.aq-md-code-copy:focus-visible,
+.aq-md-code-copy.aq-md-code-copy--copied {
+  opacity: 1;
+}
+
+.aq-md-code-copy:hover {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+.aq-md-code-copy.aq-md-code-copy--copied {
+  color: var(--ai-running);
+  border-color: color-mix(in srgb, var(--ai-running) 35%, transparent);
+}
+
+.aq-md-code-pre {
+  margin: 0;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.aq-md-code-pre code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .aq-md-inline-code {
@@ -15,4 +81,47 @@
   border-radius: 4px;
   font-size: 12.5px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ---------- 表格：极简风（仅表头底分割线 + 行分割线，无垂直边框） ---------- */
+.aq-md-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 8px 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.aq-md-table-wrap::-webkit-scrollbar { height: 6px; }
+.aq-md-table-wrap::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+.aq-md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.aq-md-table thead th {
+  text-align: left;
+  padding: 6px 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+
+.aq-md-table tbody td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  vertical-align: top;
+}
+
+.aq-md-table tbody tr:last-child td {
+  border-bottom: none;
 }

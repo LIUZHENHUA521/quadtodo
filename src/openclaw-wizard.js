@@ -341,7 +341,7 @@ function mapDispatcherResultToWizardReply(result, sid, imagePaths) {
  *   - aiTerminal: spawnSession({sessionId, todoId, prompt, tool, cwd, permissionMode, label, extraEnv})
  *   - openclaw: registerSessionRoute(sessionId, {targetUserId, threadId?, topicName?, ...})
  *   - pending: submitReply(text), listPending() （不直接被调用，但提供给路由层判断）
- *   - getConfig: () => 配置快照（拿 defaultCwd / port / defaultTool）
+ *   - getConfig: () => 配置快照（拿 defaultCwd / port / dispatch / 渠道权限模式）
  *   - telegramBot: 可选，提供 createForumTopic / sendMessage —— 启用每任务一 topic
  */
 export function createOpenClawWizard({

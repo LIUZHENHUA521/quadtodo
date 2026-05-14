@@ -549,7 +549,6 @@ export function createServer(opts = {}) {
 			process.env.HOME ||
 			process.cwd(),
 		tools: tools || resolveToolsConfig(initialConfig?.tools),
-		defaultTool: initialConfig?.defaultTool || "claude",
 	};
 	// Codex sidecar：把 AgentQuad session ↔ codex native id 的映射落到 ~/.agentquad/codex-sessions/，
 	// 重启后 restoreFromDisk() 复活内存映射。Phase A 只暂存元数据；Phase C 起 IM 推送链路会用它
@@ -724,7 +723,6 @@ export function createServer(opts = {}) {
 			saveConfig(next, { rootDir: configRootDir });
 
 			runtimeConfig.defaultCwd = next.defaultCwd || runtimeConfig.defaultCwd;
-			runtimeConfig.defaultTool = next.defaultTool || runtimeConfig.defaultTool;
 			runtimeConfig.tools = resolveToolsConfig(next.tools);
 			pty.tools = runtimeConfig.tools;
 
@@ -768,7 +766,6 @@ export function createServer(opts = {}) {
 				toolDiagnostics: inspectToolsConfig(next.tools),
 				runtimeApplied: {
 					defaultCwd: runtimeConfig.defaultCwd,
-					defaultTool: runtimeConfig.defaultTool,
 					larkRestart,
 				},
 				telegramRestart,

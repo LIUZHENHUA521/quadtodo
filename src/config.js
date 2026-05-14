@@ -311,7 +311,6 @@ function defaultConfig() {
 		// 要让同网段其他设备（含 Tailscale 虚拟网段 100.x.x.x）访问，可设为 "0.0.0.0"。
 		// CLI 上也可以用 `agentquad start --expose` / `--host 0.0.0.0` 临时覆盖。
 		host: "127.0.0.1",
-		defaultTool: "claude",
 		defaultCwd: homedir(),
 		defaultPermissionMode: "default",
 		tools: resolveToolsConfig(),
@@ -341,7 +340,7 @@ function defaultConfig() {
 }
 
 function normalizeDispatch(d = {}) {
-	const channels = ['lark', 'telegram', 'web'];
+	const channels = ['lark', 'telegram'];
 	const out = {};
 	for (const ch of channels) {
 		const src = (d && typeof d[ch] === 'object' && d[ch] !== null) ? d[ch] : {};
@@ -352,6 +351,9 @@ function normalizeDispatch(d = {}) {
 
 export function normalizeConfig(cfg = {}) {
 	const defaults = defaultConfig();
+	// 旧 config.json 里残留的 defaultTool 字段（已废弃）。剥离后再 spread，
+	// 避免 ...cfg 把死字段又拷回 normalized config。
+	const { defaultTool: _ignoredDefaultTool, ...cfgRest } = cfg;
 	const mergedTools = {
 		...defaults.tools,
 		...(cfg.tools || {}),
@@ -366,7 +368,7 @@ export function normalizeConfig(cfg = {}) {
 	}
 	return {
 		...defaults,
-		...cfg,
+		...cfgRest,
 		defaultPermissionMode: normalizePermissionMode(cfg.defaultPermissionMode, "default"),
 		tools: {
 			...mergedTools,

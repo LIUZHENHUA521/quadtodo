@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppMessages } from './design/useAppMessages'
 import {
   ReloadOutlined, BranchesOutlined, SearchOutlined,
-  FullscreenOutlined, FullscreenExitOutlined, StopOutlined, PoweroffOutlined,
+  StopOutlined, PoweroffOutlined,
 } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -506,7 +506,6 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   // jsonl 只有消息收尾才落盘；服务端推来的 PTY 实时文本不再直接展示，
   // 这里只保留它作为"AI 正在生成"的信号。
   const [liveOutput, setLiveOutput] = useState<string | null>(null)
-  const [fullscreen, setFullscreen] = useState(false)
   const [height, setHeight] = useState<number>(() => {
     try {
       // rebrand: localStorage key kept for backward compatibility
@@ -529,15 +528,6 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   // —— 否则之前用户只能看到一行轻提示，文字框里没有任何反馈
   const imageCounterRef = useRef(0)
   const composerImagesRef = useRef<Map<string, string>>(new Map())
-
-  useEffect(() => {
-    if (!fullscreen) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setFullscreen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [fullscreen])
 
   const onDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault()
@@ -1063,6 +1053,10 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   const handleInterrupt = useCallback(async () => {
     try {
       await sendAiInput(sessionId, '\x03')
+      // 乐观更新：服务端 scheduleInterruptIdleCheck 有 1.5s+ grace 才会广播 turn_done，
+      // 这期间 transcriptState 还是 running → "AI 思考中" 卡住。先在 live store 把
+      // awaitingReply 翻 true，让 deriveAiState 立即返回 idle，UI 同步切空闲。
+      useAiSessionStore.getState().markSessionAwaitingReply(sessionId, true)
       message.success(t('transcript:message.interrupted'), 1)
     } catch (e: any) {
       const msg = e?.message === 'session_not_found'
@@ -1119,15 +1113,10 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
 
   const wrapperClassName = [
     'tv-wrapper',
-    fullscreen ? 'tv-wrapper--fullscreen' : '',
     fillHeight ? 'tv-wrapper--fill' : '',
   ].filter(Boolean).join(' ')
 
-  const wrapperStyle: React.CSSProperties = fullscreen
-    ? {}
-    : fillHeight
-      ? {}
-      : { height }
+  const wrapperStyle: React.CSSProperties = fillHeight ? {} : { height }
 
   const sessionCwd = data?.session && (data.session as any).cwd ? String((data.session as any).cwd) : (cwd || null)
 
@@ -1155,14 +1144,6 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           {allToolsCollapsed ? t('transcript:toolbar.expandAll') : t('transcript:toolbar.collapseAll')}
         </Button>
         <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => { void fetchData('reset') }} loading={loading} />
-        <Tooltip title={fullscreen ? t('transcript:toolbar.exitFullscreen') : t('transcript:toolbar.fullscreen')}>
-          <Button
-            size="small"
-            type="text"
-            icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
-            onClick={() => setFullscreen(v => !v)}
-          />
-        </Tooltip>
       </div>
       <div className="tv-body" ref={scrollRef} onScroll={handleBodyScroll}>
         {loading && !data && <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>}
@@ -1219,7 +1200,12 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           //   产出）。如果 PTY 正在推 liveOutput，则 tool_use/tool_result/thinking
           //   也视为活跃生成；assistant 仍不显示，避免回复结束后 loading 挂住。
           //   sending 兜底覆盖发送到 optimistic turn 刷新前那一瞬。
-          if (status !== 'running') return null
+          //
+          // 用 transcriptState（live store + awaitingReply）而非 data?.session.status：
+          // 后者是 transcript fetch 时的 snapshot，用户打断后 awaitingReply 翻 true 时
+          // snapshot 仍是 running，会让 pill 一直挂在屏上。底部状态栏和 TodoCard pill
+          // 都用 transcriptState 走的，这里跟齐。
+          if (transcriptState !== 'running') return null
           const lastTurn = displayedTurns[displayedTurns.length - 1]
           const liveActiveRoles = new Set(['user', 'tool_use', 'tool_result', 'thinking'])
           const waiting = sending || !lastTurn || lastTurn.role === 'user' || (!!liveOutput && liveActiveRoles.has(lastTurn.role))
@@ -1345,7 +1331,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           {t('transcript:composer.sendLabel')}
         </button>
       </div>
-      {!fullscreen && !fillHeight && (
+      {!fillHeight && (
         <div
           className="tv-resize-handle"
           onMouseDown={onDragStart}
@@ -1354,9 +1340,6 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
         >
           <div className="tv-resize-grip" />
         </div>
-      )}
-      {fullscreen && (
-        <div className="tv-fullscreen-hint">{t('transcript:fullscreenHint')}</div>
       )}
     </div>
   )

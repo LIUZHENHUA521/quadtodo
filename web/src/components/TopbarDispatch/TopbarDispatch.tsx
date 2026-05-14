@@ -74,6 +74,9 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
   })
   // Fallback: 把 todos 里有 active aiSession 但 live store 还没收到的，按 todo.aiSession.status
   // 也归并进来，避免首启 3s 内 running pill 计数为 0、点开 popover 看不到这条新会话。
+  // 与 useDispatchStats 保持一致：idle 不走 DB 兜底——DB 里 idle 但 live sessions Map 里
+  // 没有的意味着 PTY 已死（重启后未被 recoverPendingTodosOnStartup 起回来），这类「僵尸
+  // idle」点开就是一个被杀掉的进程，既不该算进计数，也不该出现在 popover 列表里。
   for (const todo of todos) {
     const sid = todo.aiSession?.sessionId
     if (!sid || sessions.has(sid)) continue
@@ -88,7 +91,6 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
       startedAt: todo.aiSession?.startedAt ?? 0,
     }
     if (state === 'running') runningRaw.push(entry)
-    else if (state === 'idle' && !isClosedAiStatus(status)) idleRaw.push(entry)
   }
   const runningList = dedupByTodoId(runningRaw)
   const runningTodoIds = new Set(runningList.map((entry) => entry.todoId))

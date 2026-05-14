@@ -125,7 +125,7 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
           />
           <div className="todo-card-main">
             <div className="todo-card-title-row">
-              <div className="todo-card-title">{todo.title}</div>
+              <div className="todo-card-title" title={todo.title}>{todo.title}</div>
               <StageTagChip value={todo.stageTag} onChange={handleStageTagChange} />
             </div>
           </div>

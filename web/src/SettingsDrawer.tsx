@@ -131,11 +131,9 @@ export default function SettingsDrawer({ open, onClose }: Props) {
   const [dispatchDraft, setDispatchDraft] = useState<{
     lark: DispatchChannelConfig
     telegram: DispatchChannelConfig
-    web: DispatchChannelConfig
   }>({
     lark: { default: 'claude', perUser: {}, perChat: {} },
     telegram: { default: 'claude', perUser: {}, perChat: {} },
-    web: { default: 'claude', perUser: {}, perChat: {} },
   })
   const [form] = Form.useForm()
 
@@ -178,7 +176,6 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         setToolDiagnostics(result.toolDiagnostics)
         form.setFieldsValue({
           port: result.config.port,
-          defaultTool: result.config.defaultTool,
           defaultCwd: result.config.defaultCwd,
           defaultPermissionMode: result.config.defaultPermissionMode || 'default',
           claudeCommand: joinCommandLine(result.config.tools.claude.command, result.config.tools.claude.args),
@@ -226,7 +223,6 @@ export default function SettingsDrawer({ open, onClose }: Props) {
         setTokenSource((result.config.telegram?.botTokenSource as 'agentquad' | 'missing' | undefined) || 'missing')
         setTokenMasked(result.config.telegram?.botTokenMasked || '')
         setLarkSecretSource((result.config.lark?.appSecretSource as 'agentquad' | 'missing' | undefined) || 'missing')
-        setViewingTool((result.config.defaultTool as ToolKey) || 'claude')
         const d = result.config.dispatch || {}
         setDispatchDraft({
           lark: {
@@ -238,11 +234,6 @@ export default function SettingsDrawer({ open, onClose }: Props) {
             default: (d.telegram?.default === 'codex' ? 'codex' : 'claude'),
             perUser: { ...(d.telegram?.perUser || {}) },
             perChat: { ...(d.telegram?.perChat || {}) },
-          },
-          web: {
-            default: (d.web?.default === 'codex' ? 'codex' : 'claude'),
-            perUser: { ...(d.web?.perUser || {}) },
-            perChat: { ...(d.web?.perChat || {}) },
           },
         })
         setErr(null)
@@ -260,7 +251,6 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       setSaving(true)
       const result = await updateConfig({
         port: Number(values.port),
-        defaultTool: values.defaultTool,
         defaultCwd: values.defaultCwd,
         defaultPermissionMode: values.defaultPermissionMode || 'default',
         tools: {
@@ -330,11 +320,6 @@ export default function SettingsDrawer({ open, onClose }: Props) {
             default: dispatchDraft.telegram.default || 'claude',
             perUser: { ...(dispatchDraft.telegram.perUser || {}) },
             perChat: { ...(dispatchDraft.telegram.perChat || {}) },
-          },
-          web: {
-            default: dispatchDraft.web.default || 'claude',
-            perUser: { ...(dispatchDraft.web.perUser || {}) },
-            perChat: { ...(dispatchDraft.web.perChat || {}) },
           },
         },
       })
@@ -594,7 +579,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
 
   // ── Dispatch sub-section: per-channel default tool + perUser/perChat overrides ──
   const renderPerKeyEditor = (
-    channel: 'lark' | 'telegram' | 'web',
+    channel: 'lark' | 'telegram',
     field: 'perUser' | 'perChat',
     placeholder: string,
   ) => {
@@ -693,7 +678,7 @@ export default function SettingsDrawer({ open, onClose }: Props) {
     >
       <Collapse
         ghost
-        items={(['lark', 'telegram', 'web'] as const).map((channel) => ({
+        items={(['lark', 'telegram'] as const).map((channel) => ({
           key: channel,
           label: <span style={{ fontWeight: 500 }}>{channel}</span>,
           children: (
@@ -726,11 +711,6 @@ export default function SettingsDrawer({ open, onClose }: Props) {
                   {renderPerKeyEditor('telegram', 'perChat', t('settings:dispatch.perChatPlaceholder'))}
                 </Form.Item>
               )}
-              {channel === 'web' && (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('settings:dispatch.webHint')}
-                </Text>
-              )}
             </>
           ),
         }))}
@@ -743,19 +723,6 @@ export default function SettingsDrawer({ open, onClose }: Props) {
       <div className="settings-card">
         <div className="settings-card-header">{t('settings:section.toolDefaults')}</div>
         <div className="settings-card-body">
-          <Form.Item
-            name="defaultTool"
-            label={t('settings:tools.defaultToolLabel')}
-            extra={t('settings:tools.defaultToolExtra')}
-            rules={[{ required: true, message: t('settings:tools.defaultToolRequired') }]}
-          >
-            <Radio.Group>
-              <Radio.Button value="claude"><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><AgentIcon tool="claude" />Claude</span></Radio.Button>
-              <Radio.Button value="codex"><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><AgentIcon tool="codex" />Codex</span></Radio.Button>
-              <Radio.Button value="cursor"><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><AgentIcon tool="cursor" />Cursor</span></Radio.Button>
-            </Radio.Group>
-          </Form.Item>
-
           {dispatchSection}
         </div>
       </div>

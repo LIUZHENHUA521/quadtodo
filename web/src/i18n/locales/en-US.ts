@@ -689,9 +689,6 @@ const en = {
       portExtra: 'Port is saved to the config file and applies after restarting AgentQuad.',
     },
     tools: {
-      defaultToolLabel: 'Default tool',
-      defaultToolExtra: 'The AI tool used by default when opening a new session.',
-      defaultToolRequired: 'Please pick a default tool',
       viewToolLabel: 'View tool config',
       cmdLabel: 'Launch command',
       binLabel: 'Binary path',
@@ -715,7 +712,7 @@ const en = {
     },
     dispatch: {
       label: 'Per-channel tool dispatch',
-      extra: 'Set default tool per channel (Lark / Telegram / Web) and override per user / chat. Priority: override > perUser > perChat > channel default > global defaultTool.',
+      extra: 'Set default tool per channel (Lark / Telegram) and override per user / chat. Priority: override > perUser > perChat > channel default > "claude".',
       channelDefaultLabel: 'Channel default tool',
       perUserLabel: 'Per-user override (perUser, open_id -> tool)',
       perChatLabel: 'Per-chat override (perChat, chat_id -> tool)',
@@ -725,7 +722,6 @@ const en = {
       userIdAddon: 'user id',
       chatIdAddon: 'chat id',
       add: 'Add',
-      webHint: 'Web clients can pass a tool field explicitly when creating sessions; without it, the web channel default is used.',
     },
     telegram: {
       enableLabel: 'Enable Telegram',

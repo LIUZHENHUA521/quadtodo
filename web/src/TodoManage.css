@@ -121,6 +121,11 @@ body {
   font-weight: 600;
   line-height: 1.4;
   color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .todo-card-meta {
@@ -367,7 +372,7 @@ body {
 
 .todo-card-title-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   justify-content: space-between;
 }
@@ -492,11 +497,10 @@ body {
 }
 
 .todo-card-footer {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
-  justify-content: space-between;
 }
 
 .todo-card-toolbar {
@@ -529,8 +533,6 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  /* flex-wrap 兜底：即使容器查询没触发，也允许 actions 在塞不下时换到下一行 */
-  flex-wrap: wrap;
   width: 100%;
   min-width: 0;
   padding: 6px 8px 6px 14px;
@@ -693,54 +695,6 @@ body {
 
 .todo-history-delete:hover {
   color: color-mix(in srgb, var(--ai-error) 75%, var(--text-primary));
-}
-
-/* 卡片宽度 ≤ 720px 时折叠为竖向布局：title 顶部、actions 单独成行
-   响应的是卡片自身宽度（容器查询），不是视口——四象限里每张卡只有 ~330px。
-   阈值取 720px 是因为 actions 行包含「切到该 tab」时整体需要 ~230px，
-   加上 body 最小内容（Claude Code + 时间）≈155px、title 块 ≈100px、padding/gap ≈30px，
-   row 布局至少要 ~535px 才能不裁切；为容纳后续可能继续变宽的 actions 留充足余量 */
-@container todo-card-shell (max-width: 720px) {
-  .todo-card-footer {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-  .todo-card-toolbar {
-    justify-content: flex-end;
-    flex-wrap: wrap;
-  }
-  .todo-history-box {
-    flex-direction: column;
-    /* 切换到 column 后，主轴变成纵向、cross-axis 变成横向；
-       基础规则的 align-items:flex-start 会让 list 只占自身内容宽度，
-       这里改成 stretch 让它撑满父容器宽度 */
-    align-items: stretch;
-    gap: 6px;
-    padding: 8px;
-  }
-  .todo-history-item {
-    flex-direction: column;
-    gap: 6px;
-    padding: 8px 10px 8px 18px;
-  }
-  .todo-history-actions {
-    margin-left: 0;
-    width: 100%;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 14px;
-    padding-top: 6px;
-    border-top: 1px dashed var(--border-default);
-  }
-  .todo-history-native-id,
-  .todo-history-command {
-    white-space: normal;
-    word-break: break-all;
-    overflow: visible;
-    text-overflow: clip;
-    line-height: 1.45;
-  }
 }
 
 .todo-primary-action {

@@ -111,7 +111,6 @@ export interface PricingConfig {
 
 export interface AppConfig {
   port: number
-  defaultTool: AiTool
   defaultCwd: string
   defaultPermissionMode?: 'default' | 'acceptEdits' | 'bypass'
   tools: {
@@ -169,7 +168,6 @@ export interface AppConfig {
   dispatch?: {
     lark?: DispatchChannelConfig
     telegram?: DispatchChannelConfig
-    web?: DispatchChannelConfig
     [key: string]: DispatchChannelConfig | undefined
   }
 }
@@ -543,8 +541,8 @@ export async function getConfig(): Promise<{ config: AppConfig; toolDiagnostics:
   return { config: body.config, toolDiagnostics: body.toolDiagnostics }
 }
 
-export async function updateConfig(patch: Partial<AppConfig>): Promise<{ config: AppConfig; toolDiagnostics: Record<AiTool, ToolDiagnostic>; runtimeApplied: { defaultCwd: string; defaultTool: AiTool } }> {
-  const body = await jsonFetch<{ ok: true; config: AppConfig; toolDiagnostics: Record<AiTool, ToolDiagnostic>; runtimeApplied: { defaultCwd: string; defaultTool: AiTool } }>('/api/config', {
+export async function updateConfig(patch: Partial<AppConfig>): Promise<{ config: AppConfig; toolDiagnostics: Record<AiTool, ToolDiagnostic>; runtimeApplied: { defaultCwd: string } }> {
+  const body = await jsonFetch<{ ok: true; config: AppConfig; toolDiagnostics: Record<AiTool, ToolDiagnostic>; runtimeApplied: { defaultCwd: string } }>('/api/config', {
     method: 'PUT',
     body: JSON.stringify(patch),
   })

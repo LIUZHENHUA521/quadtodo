@@ -39,11 +39,9 @@ describe('openclaw-wizard dispatch resolution', () => {
     const cfg = {
       defaultCwd: '/tmp',
       port: 5677,
-      defaultTool: 'claude',
       dispatch: {
         lark: { default: 'claude', perUser: { 'open_a': 'codex' } },
         telegram: { default: 'claude' },
-        web: { default: 'claude' },
       },
     }
     wizard = createOpenClawWizard({
@@ -112,7 +110,7 @@ describe('openclaw-wizard dispatch resolution', () => {
     wizard = createOpenClawWizard({
       db, aiTerminal: aiWithSessions, openclaw: bridgeWithLastPush, pending,
       pty, sessionInputDispatcher: dispatcher, loadingTracker,
-      getConfig: () => ({ defaultCwd: '/tmp', port: 5677, defaultTool: 'claude' }),
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
     })
 
     const r = await wizard.handleInbound({
@@ -138,7 +136,6 @@ describe('openclaw-wizard dispatch resolution', () => {
     const cfg = {
       defaultCwd: '/tmp',
       port: 5677,
-      defaultTool: 'claude',
       dispatch: {
         lark: { default: 'codex' },
       },

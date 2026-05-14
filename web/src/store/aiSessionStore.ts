@@ -22,6 +22,7 @@ interface AiSessionState {
   removeSession: (sessionId: string) => void
   updateSessionStatus: (sessionId: string, status: AiStatus, completedAt?: number | null) => void
   markSessionTurnDone: (sessionId: string, status: AiStatus, timestamp: number) => void
+  markSessionAwaitingReply: (sessionId: string, awaitingReply: boolean) => void
   recordOutputBytes: (sessionId: string, len: number, at?: number) => void
   setResources: (list: ResourceSnapshot[]) => void
   replaceSessionId: (oldId: string, nextId: string) => void
@@ -78,6 +79,18 @@ export const useAiSessionStore = create<AiSessionState>((set) => ({
       lastTurnDoneAt: timestamp,
       awaitingReply: true,
     })
+    return { sessions: m }
+  }),
+
+  // 用户手动打断（按下 Ctrl+C）后乐观更新：服务端有 1.5s+ grace 才会广播 turn_done，
+  // 这期间 deriveAiState 还是 running → "AI 思考中" pill 卡住。先把 awaitingReply 翻 true，
+  // pill 立即消失；后续服务端真正的 turn_done 广播会用 markSessionTurnDone 兜底定型。
+  markSessionAwaitingReply: (sessionId, awaitingReply) => set((state) => {
+    const s = state.sessions.get(sessionId)
+    if (!s) return {}
+    if (s.awaitingReply === awaitingReply) return {}
+    const m = new Map(state.sessions)
+    m.set(sessionId, { ...s, awaitingReply })
     return { sessions: m }
   }),
 

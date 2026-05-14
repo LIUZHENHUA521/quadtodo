@@ -18,16 +18,51 @@
 .stat-pill-clickable:hover { border-color: var(--accent-electric); }
 
 .stat-pill-alert {
-  background: color-mix(in srgb, var(--ai-pending-confirm) 10%, transparent);
-  border-color: color-mix(in srgb, var(--ai-pending-confirm) 30%, transparent);
+  background: color-mix(in srgb, var(--ai-pending-confirm) 22%, transparent);
+  border-color: color-mix(in srgb, var(--ai-pending-confirm) 70%, transparent);
   color: var(--ai-pending-confirm);
+  animation: stat-pill-alert-pulse 1.6s ease-in-out infinite;
+}
+.stat-pill-alert:hover {
+  border-color: var(--ai-pending-confirm);
 }
 
 .stat-pill-value {
   color: var(--text-primary);
   font-weight: 600;
 }
-.stat-pill-alert .stat-pill-value { color: var(--ai-pending-confirm); }
+.stat-pill-alert .stat-pill-value {
+  color: var(--ai-pending-confirm);
+  font-weight: 700;
+  font-size: var(--text-sm);
+}
+.stat-pill-alert .stat-pill-label {
+  color: color-mix(in srgb, var(--ai-pending-confirm) 90%, transparent);
+}
+.stat-pill-alert .stat-pill-custom-icon {
+  animation: stat-pill-alert-icon-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes stat-pill-alert-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ai-pending-confirm) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--ai-pending-confirm) 22%, transparent);
+  }
+}
+
+@keyframes stat-pill-alert-icon-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-pill-alert,
+  .stat-pill-alert .stat-pill-custom-icon {
+    animation: none;
+  }
+}
 
 .stat-pill-dot {
   width: 7px; height: 7px; border-radius: 50%;

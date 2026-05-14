@@ -686,9 +686,6 @@ const zh = {
       portExtra: '端口会保存到配置文件，重启 AgentQuad 后生效。',
     },
     tools: {
-      defaultToolLabel: '默认工具',
-      defaultToolExtra: '新开会话时默认启动的 AI 工具。',
-      defaultToolRequired: '请选择默认工具',
       viewToolLabel: '查看工具配置',
       cmdLabel: '启动命令',
       binLabel: '二进制路径',
@@ -712,7 +709,7 @@ const zh = {
     },
     dispatch: {
       label: '按渠道分发工具',
-      extra: '可针对 Lark / Telegram / Web 分别设默认工具，并对特定用户 / 会话覆盖。优先级：override > perUser > perChat > 渠道默认 > 全局 defaultTool。',
+      extra: '可针对 Lark / Telegram 分别设默认工具，并对特定用户 / 会话覆盖。优先级：override > perUser > perChat > 渠道默认 > "claude"。',
       channelDefaultLabel: '渠道默认工具',
       perUserLabel: '按用户覆盖（perUser，open_id → 工具）',
       perChatLabel: '按会话覆盖（perChat，chat_id → 工具）',
@@ -722,7 +719,6 @@ const zh = {
       userIdAddon: '用户 id',
       chatIdAddon: '会话 id',
       add: '添加',
-      webHint: 'Web 端可在创建会话时显式传 tool 字段覆盖；如未传则取 web 渠道默认。',
     },
     telegram: {
       enableLabel: '启用 Telegram',

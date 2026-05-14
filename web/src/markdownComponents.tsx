@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useCallback, useState } from 'react'
 import hljs from 'highlight.js'
 import './markdownComponents.css'
 
@@ -9,7 +9,11 @@ import './markdownComponents.css'
 export function MarkdownPre({ children }: { children?: React.ReactNode }) {
   const first = React.Children.toArray(children)[0]
   if (!React.isValidElement(first)) {
-    return <pre className="aq-md-code-pre hljs">{children}</pre>
+    return (
+      <div className="aq-md-code-block">
+        <pre className="aq-md-code-pre hljs">{children}</pre>
+      </div>
+    )
   }
   const { className, children: codeContent } = (first as React.ReactElement<{ className?: string; children?: React.ReactNode }>).props
   const code = String(codeContent ?? '').replace(/\n$/, '')
@@ -23,9 +27,38 @@ export function MarkdownPre({ children }: { children?: React.ReactNode }) {
     html = code
   }
   return (
-    <pre className="aq-md-code-pre hljs">
-      <code dangerouslySetInnerHTML={{ __html: html }} />
-    </pre>
+    <div className="aq-md-code-block">
+      <div className="aq-md-code-header">
+        {lang && <span className="aq-md-code-lang">{lang}</span>}
+        <CopyButton text={code} />
+      </div>
+      <pre className="aq-md-code-pre hljs">
+        <code dangerouslySetInnerHTML={{ __html: html }} />
+      </pre>
+    </div>
+  )
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const onCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* clipboard 不可用（http 非 localhost / 旧浏览器）静默失败 */
+    }
+  }, [text])
+  return (
+    <button
+      type="button"
+      className={`aq-md-code-copy${copied ? ' aq-md-code-copy--copied' : ''}`}
+      onClick={onCopy}
+      aria-label={copied ? 'Copied' : 'Copy code'}
+    >
+      {copied ? '✓ Copied' : 'Copy'}
+    </button>
   )
 }
 
@@ -33,7 +66,16 @@ export function MarkdownCode({ className, children }: { className?: string; chil
   return <code className={`aq-md-inline-code${className ? ` ${className}` : ''}`}>{children}</code>
 }
 
+export function MarkdownTable({ children }: { children?: React.ReactNode }) {
+  return (
+    <div className="aq-md-table-wrap">
+      <table className="aq-md-table">{children}</table>
+    </div>
+  )
+}
+
 export const markdownComponents = {
   pre: MarkdownPre as any,
   code: MarkdownCode as any,
+  table: MarkdownTable as any,
 }

@@ -26,7 +26,7 @@ describe("config", () => {
 		const cfg = loadConfig({ rootDir: tmpRoot });
 
 		expect(cfg.port).toBe(5677);
-		expect(cfg.defaultTool).toBe("claude");
+		expect(cfg.defaultTool).toBeUndefined();
 		expect(cfg.tools.claude.command).toBe("claude-w");
 		expect(cfg.tools.codex.command).toBe("codex");
 		expect(cfg.tools.claude.bin).toBeDefined();
@@ -266,7 +266,6 @@ describe('dispatch defaults', () => {
 		expect(c.dispatch).toEqual({
 			lark: { default: 'claude' },
 			telegram: { default: 'claude' },
-			web: { default: 'claude' },
 		});
 	});
 
@@ -276,6 +275,19 @@ describe('dispatch defaults', () => {
 		expect(c.dispatch.lark.default).toBe('codex');
 		expect(c.dispatch.lark.perUser.u1).toBe('claude');
 		expect(c.dispatch.telegram.default).toBe('claude');
+	});
+
+	it('drops legacy dispatch.web from input', async () => {
+		const { normalizeConfig } = await import('../src/config.js');
+		const c = normalizeConfig({ dispatch: { web: { default: 'codex', perUser: { 'u1': 'claude' } } } });
+		expect(c.dispatch.web).toBeUndefined();
+	});
+
+	it('drops legacy top-level defaultTool from input', async () => {
+		const { normalizeConfig } = await import('../src/config.js');
+		const c = normalizeConfig({ defaultTool: 'codex', port: 1234 });
+		expect(c.defaultTool).toBeUndefined();
+		expect(c.port).toBe(1234);
 	});
 });
 

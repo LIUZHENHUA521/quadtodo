@@ -33,6 +33,9 @@ export function computeDispatchStats(
   })
   // 同 TodoCard 的 fallback：todos 里有 active aiSession 但 live store 还没 poll 到的，
   // 按 todo.aiSession.status 计入，避免 running 计数延迟 3s。
+  // 注意：这里 *不* 走 idle 兜底。DB 里 status='idle' 但 live sessions Map 里没有，意味着
+  // PTY 已经死掉（agentquad 重启后 recoverPendingTodosOnStartup 只恢复 ai_running/ai_pending
+  // 的 todo，ai_done 的 idle 会话 PTY 不会被起回来），这种「僵尸 idle」不该再算空闲。
   for (const t of todos) {
     const sid = t.aiSession?.sessionId
     if (!sid || sessions.has(sid)) continue
@@ -41,7 +44,6 @@ export function computeDispatchStats(
     const state = deriveAiState(status, unread)
     if (state === 'running') runningTodoIds.add(t.id)
     else if (state === 'pending') pendingCount += 1
-    else if (!isClosedAiStatus(status)) idleTodoIds.add(t.id)
   }
   // running 和 idle 在同一 todo 上互斥：running 优先，从 idle 集合里剔除。
   for (const id of runningTodoIds) idleTodoIds.delete(id)
