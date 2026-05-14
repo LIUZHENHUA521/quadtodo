@@ -334,20 +334,8 @@ export function createOpenClawHookHandler(deps = {}) {
     }
   }
 
-  function isPermissionishNotification(text) {
-    return /do you want to allow|allow\s+(this|the).*(command|tool|operation)|requires?\s+(permission|approval|authorization)|needs?\s+(permission|approval|authorization)|permission\s+required|waiting\s+for\s+(permission|approval|authorization)|是否.*(允许|授权|批准)|需要.*(确认|授权|批准|允许)|等待.*(确认|授权|批准|允许)/i.test(String(text || ''))
-  }
-
-  function buildPermissionishProbe({ cleanContent, snippet, historicalRaw, hookPayload, message }) {
-    const parts = [cleanContent, snippet, historicalRaw, message]
-    if (hookPayload && typeof hookPayload === 'object') {
-      parts.push(hookPayload.message, hookPayload.summary)
-    }
-    return parts.filter((part) => typeof part === 'string' && part.trim()).join('\n')
-  }
-
   function buildPermissionNotificationMessage(message) {
-    return `⚠️ Claude Code 正在等待授权确认。\n按钮会向终端发送 Enter/Esc。\n\n${message}`
+    return `⚠️ Claude Code 正在等待你的响应。\n按钮会向终端发送 Enter/Esc。\n\n${message}`
   }
 
   // ── token usage footer 配置 ──
@@ -780,30 +768,21 @@ export function createOpenClawHookHandler(deps = {}) {
       historicalRaw,
     })
 
-    const permissionish = evt === 'notification' && isPermissionishNotification(buildPermissionishProbe({
-      cleanContent,
-      snippet,
-      historicalRaw,
-      hookPayload,
-      message,
-    }))
-
-    // permissionish Notification 命中 → 翻 session.status 成 pending_confirm，
-    // 让前端 deriveAiState 渲染"待确认"。注意这里独立于 Telegram 抑制/cooldown：
-    // 即便后续不推 IM，也要把内部状态翻正。markPendingConfirm 幂等 + 仅对 LIVE session 生效。
-    if (permissionish && sessionId) {
+    // Claude Code Notification hook fire 本身就是"需要用户介入"的可信信号——
+    // 不再用正则/关键词反推 message 内容是不是"权限相关"。任何 Notification 都
+    // 翻 session.status 成 pending_confirm，让前端 deriveAiState 渲染"待确认"。
+    // markPendingConfirm 幂等 + 仅对 LIVE session 生效。
+    if (evt === 'notification' && sessionId) {
       try { aiTerminal?.markPendingConfirm?.(sessionId, { source: 'claude-notification' }) } catch { /* ignore */ }
     }
 
-    // 1b-pre) 默认抑制 idle Notification（noise）。Notification 需要先构造可检查的内容，
-    // 只有显式 Telegram 路由上的非 bypass 授权提示才允许绕过抑制。
-    if (evt === 'notification' && notificationSuppressed() && !(permissionReminderEligible && permissionish)) {
+    // 1b-pre) bypass 模式下 session 不会真的卡在等用户，Notification 是 idle 心跳噪音，
+    // 默认抑制。非 bypass session 的 Notification 直接放过（不再做文本侧筛选）。
+    if (evt === 'notification' && notificationSuppressed() && !permissionReminderEligible) {
       return { ok: true, action: 'skipped', reason: 'notification_suppressed' }
     }
 
-    // 1b) Notification cooldown（idle/permission 提醒太频繁的关键修复）
-    //     Notification 是 Claude Code 每隔 ~60s 触发一次的 idle 心跳；
-    //     单 session 内默认 10 分钟内只发一次，可通过 telegram.notificationCooldownMs 调
+    // 1b) Notification cooldown（同一 session 单位时间内只推一次，默认 10 分钟）
     if (evt === 'notification') {
       const cd = notificationCooldownMs()
       if (cd > 0 && isOnCooldown(sessionId, evt, cd)) {
@@ -812,7 +791,9 @@ export function createOpenClawHookHandler(deps = {}) {
     }
 
     let replyMarkup = null
-    if (evt === 'notification' && permissionReminderEligible && permissionish) {
+    if (evt === 'notification' && permissionReminderEligible) {
+      // 非 bypass session 收到 Notification：附 Enter/Esc 快速响应按钮。
+      // 即便不是授权请求（例如 idle 提醒），点 Enter 给 Claude 一个空 line 也是无害的。
       message = buildPermissionNotificationMessage(message)
       replyMarkup = buildPermissionReplyMarkup(sessionId)
     }
