@@ -802,6 +802,26 @@ export class PtyManager extends EventEmitter {
           // 反向扫，跳过 system / attachment / last-prompt 等元数据行，
           // 找最近一条 type ∈ {user, assistant} 的有效行。
           const lines = content.split('\n')
+          // 每次 mtime 推进都刷新 usage（不能等下面的 kind-变化早 return —— 同一轮
+          // 内追加 assistant 消息时 kind 不变，会 return 跳过 usage 解析）。
+          for (let i = lines.length - 1; i >= 0; i--) {
+            const ln = (lines[i] || '').trim()
+            if (!ln.startsWith('{')) continue
+            let obj
+            try { obj = JSON.parse(ln) } catch { continue }
+            if (obj.type !== 'assistant') continue
+            const u = obj.message?.usage
+            if (!u) continue
+            session.usage = {
+              input: Number(u.input_tokens) || 0,
+              output: Number(u.output_tokens) || 0,
+              cacheRead: Number(u.cache_read_input_tokens) || 0,
+              cacheCreation: Number(u.cache_creation_input_tokens) || 0,
+              model: obj.message?.model || null,
+              ts: obj.timestamp ? Date.parse(obj.timestamp) : Date.now(),
+            }
+            break
+          }
           let kind = null  // 'turn-started' | 'turn-done' | null
           for (let i = lines.length - 1; i >= 0; i--) {
             const line = lines[i].trim()
@@ -857,26 +877,6 @@ export class PtyManager extends EventEmitter {
             this.emit('claude-turn-started', { sessionId, nativeId })
           } else {
             this.emit('claude-turn-done', { sessionId, nativeId })
-          }
-          // 顺手解析最新一条 assistant 的 usage，给 /sessions API 拼 token / context% 用。
-          // 反向找最近 assistant 消息（不一定是触发 kind 的那条；turn-started 也要更新）。
-          for (let i = lines.length - 1; i >= 0; i--) {
-            const ln = (lines[i] || '').trim()
-            if (!ln.startsWith('{')) continue
-            let obj
-            try { obj = JSON.parse(ln) } catch { continue }
-            if (obj.type !== 'assistant') continue
-            const u = obj.message?.usage
-            if (!u) continue
-            session.usage = {
-              input: Number(u.input_tokens) || 0,
-              output: Number(u.output_tokens) || 0,
-              cacheRead: Number(u.cache_read_input_tokens) || 0,
-              cacheCreation: Number(u.cache_creation_input_tokens) || 0,
-              model: obj.message?.model || null,
-              ts: obj.timestamp ? Date.parse(obj.timestamp) : Date.now(),
-            }
-            break
           }
         } catch { /* ignore — watcher 不能影响 PTY 主链路 */ }
       }, 2000)
