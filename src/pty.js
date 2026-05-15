@@ -577,6 +577,10 @@ export class PtyManager extends EventEmitter {
     } catch (error) {
       // ptyFactory failed → session record is stranded (no proc → no onExit to clean it up).
       // Remove it explicitly so callers can retry / start a new session with the same id.
+      // Task 10: 防止 ptyFactory 失败时孤立 runtime mcp config 文件
+      if (session.mcpConfigPath) {
+        try { if (existsSync(session.mcpConfigPath)) unlinkSync(session.mcpConfigPath) } catch { /* ignore */ }
+      }
       this.sessions.delete(sessionId)
       error.message = `PTY spawn failed for ${tool} (bin=${toolCfg.bin}, cwd=${effectiveCwd}, args=${JSON.stringify(args)}): ${error.message}`
       throw error

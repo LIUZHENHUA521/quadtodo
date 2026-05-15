@@ -529,7 +529,9 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       const parentDepth = parentDepthRaw !== undefined && parentDepthRaw !== '' ? Number(parentDepthRaw) : -1
       autoEnv.QUADTODO_DEPTH = String(parentDepth + 1)
       // parentTodoId 优先来自 MCP 工具显式传入；否则 fallback 到 process.env（适合 PTY 嵌套场景，但 AgentQuad 主进程通常没设）
-      autoEnv.QUADTODO_PARENT_TODO_ID = String(parentTodoId || process.env.QUADTODO_TODO_ID || '')
+      autoEnv.QUADTODO_PARENT_TODO_ID = parentTodoId != null
+        ? String(parentTodoId)
+        : String(process.env.QUADTODO_TODO_ID || '')
       // 添加 QUADTODO_URL 让 hook/child agent 知道访问哪个端口
       const cfgPort = cfg?.port || 5677
       autoEnv.QUADTODO_URL = `http://127.0.0.1:${cfgPort}`
