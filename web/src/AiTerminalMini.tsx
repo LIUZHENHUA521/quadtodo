@@ -414,6 +414,8 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     const term = termRef.current
     const container = containerRef.current
     if (!fit || !term || !container) return
+    // hidden-mount 路径：term 还没 open 时 fit.fit() 不能跑（FitAddon 内部读 term.element）
+    if (!termOpenedRef.current) return
     // 容器处于 display:none 或尚未布局完成时跳过，避免 fit() 把 cols 算成小值污染 xterm 状态
     if (container.offsetParent === null) return
     if (container.clientWidth < MIN_CONTAINER_WIDTH || container.clientHeight < 20) {
@@ -1181,8 +1183,6 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
                 // 不会出现 xterm 边解析边 auto-scroll 的"滚动下去"动画。
               })
             })
-            // TODO(claude): debug log，验证修复生效后移除
-            console.log('[AiTerminalMini] live tab visible: refit needed (proposed vs term mismatch or first reveal)')
             scheduleJustEnteredRefit(100)
             scheduleJustEnteredRefit(300)
             scheduleJustEnteredRefit(600)
@@ -1242,6 +1242,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
         termRef.current = null
         wsRef.current = null
         fitRef.current = null
+        openTermFnRef.current = null  // 防止 cleanup 后 IO 还能拿到旧 term 的闭包
       }
     })()
 
