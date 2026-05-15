@@ -9,13 +9,12 @@ import { updateTodo, type Todo, type AiTool, type StageTag, type LiveSession } f
 import { StageTagChip } from '../StageTagChip'
 import { AgentIcon } from '../AgentIcon'
 import { useAppMessages } from '../../design/useAppMessages'
-import { deriveAiState, AI_STATE_LABEL_KEY, AI_STATE_ICON } from '../../design/aiPresentationState'
+import { deriveAiState, AI_STATE_LABEL_KEY, AI_STATE_ICON, isClosedAiStatus } from '../../design/aiPresentationState'
 import { useAiSessionStore } from '../../store/aiSessionStore'
 import { useUnreadStore, isSessionUnread } from '../../store/unreadStore'
 import { useDispatchStore } from '../../store/dispatchStore'
 import { useFocusStore } from '../../store/focusStore'
 import { todoDndId } from '../../TodoManage'
-import { ActivitySparkline } from '../ActivitySparkline'
 import { formatRelativeShort } from '../../utils/time'
 
 function formatDate(ts: number | null) {
@@ -194,8 +193,12 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
               <Button size="small" icon={<Plus size={13} />} onClick={() => onCreateSubtodo(todo)} className="todo-primary-action" />
             </Tooltip>
           )}
-          <Popconfirm title={t('todo:card.deleteConfirm')} onConfirm={() => onDelete(todo)}>
-            <Button size="small" danger icon={<Trash2 size={13} />} onClick={(e) => e.stopPropagation()} className="todo-danger-action" />
+          <Popconfirm
+            title={t('todo:card.deleteConfirm')}
+            okButtonProps={{ danger: true }}
+            onConfirm={() => onDelete(todo)}
+          >
+            <Button size="small" icon={<Trash2 size={13} />} onClick={(e) => e.stopPropagation()} className="todo-danger-action" aria-label={t('todo:card.deleteConfirm')} />
           </Popconfirm>
           </div>
         </div>
@@ -221,6 +224,9 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                   sessionUnread,
                   liveSession?.awaitingReply ?? false,
                 )
+                // PTY 已死的会话（done/failed/stopped）一律不渲染状态徽章 + LiveInfoBadge：
+                // 卡片回归普通 todo 外观，避免被误认为"空闲可发"。详情页负责提供 Resume 入口。
+                const sessionClosed = isClosedAiStatus(liveSession?.effectiveStatus ?? liveSession?.status ?? session.status)
                 return (
                   <button
                     key={session.sessionId}
@@ -284,13 +290,12 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                           {toolDisplayName(session.tool)}
                         </span>
                         <span className="todo-history-time">{formatSessionTime(session.startedAt || session.completedAt)}</span>
-                        {(sessionState !== 'idle' || liveSession) && (
+                        {!sessionClosed && (sessionState !== 'idle' || liveSession) && (
                           <span className={`todo-ai-state todo-ai-state-${sessionState}`}>{AI_STATE_ICON[sessionState]()}{' '}{t(AI_STATE_LABEL_KEY[sessionState])}</span>
                         )}
-                        {liveSession && (sessionState === 'running' || sessionState === 'pending' || sessionState === 'idle') && (
+                        {!sessionClosed && liveSession && (sessionState === 'running' || sessionState === 'pending' || sessionState === 'idle') && (
                           <LiveInfoBadge
                             state={sessionState}
-                            sessionId={session.sessionId}
                             liveSession={liveSession}
                             onOpenFocus={() => useDispatchStore.getState().openFocus(todo.id, session.sessionId)}
                           />
@@ -414,12 +419,10 @@ function truncatePromptText(text: string): string {
 
 function LiveInfoBadge({
   state,
-  sessionId,
   liveSession,
   onOpenFocus,
 }: {
   state: 'running' | 'pending' | 'idle'
-  sessionId: string
   liveSession: LiveSession
   onOpenFocus: () => void
 }) {
@@ -428,7 +431,7 @@ function LiveInfoBadge({
     const lastOutputAt = liveSession.lastOutputAt
     return (
       <span className="todo-history-live todo-history-live--running" onClick={(e) => e.stopPropagation()}>
-        <ActivitySparkline sessionId={sessionId} width={56} height={14} />
+        <span className="todo-history-pulse-dot" aria-hidden />
         {lastOutputAt ? (
           <span className="todo-history-live-text">
             {t('todo:card.liveActive', { ago: formatRelativeShort(Date.now() - lastOutputAt) })}

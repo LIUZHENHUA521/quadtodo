@@ -510,6 +510,10 @@ const en = {
       interruptDisabled: 'Session is not running',
       endEnabled: 'Terminate PTY process',
       endDisabled: 'Session is not running',
+      resume: 'Resume',
+      resuming: 'Resuming…',
+      resumeEnabled: 'Restart PTY and continue the previous native session',
+      resumeUnavailable: 'No native session ID to resume; please start a new session',
     },
     endConfirm: {
       title: 'End session',
@@ -520,7 +524,10 @@ const en = {
     composer: {
       placeholderPending: 'Awaiting confirmation. Enter to confirm, or add a note...',
       placeholderDefault: 'Type your message or paste anything...  Enter send / Shift+Enter newline / slash commands / Cmd+V image',
+      placeholderClosedResumable: 'Session has ended. Click "Resume" above to restart the PTY before sending.',
+      placeholderClosedNoResume: 'Session has ended and has no native session ID to resume.',
       sendTooltip: 'Send (Enter)',
+      sendDisabledClosed: 'Session ended — resume first',
       sendLabel: 'send',
     },
     resize: {
@@ -529,6 +536,7 @@ const en = {
     message: {
       interrupted: 'Interrupt sent (Ctrl+C)',
       sessionEnded: 'Session ended',
+      resumed: 'Session resumed',
     },
     error: {
       loadFailed: 'Load failed',
@@ -540,6 +548,7 @@ const en = {
       interruptFailed: 'Interrupt failed',
       endAlreadyEnded: 'Session already ended',
       endFailed: 'Failed to end session',
+      resumeFailed: 'Failed to resume session',
     },
     searchDrawer: {
       title: 'Recover transcripts',

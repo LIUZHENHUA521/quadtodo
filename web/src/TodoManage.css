@@ -722,19 +722,38 @@ body {
   flex-shrink: 0;
 }
 
+.todo-history-pulse-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 35%, transparent);
+  animation: todo-history-live-pulse 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes todo-history-live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 35%, transparent); }
+  50%      { box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 0%,  transparent); }
+}
+
 .todo-history-link:hover {
   color: color-mix(in srgb, var(--accent-electric) 80%, var(--text-primary));
 }
 
 .todo-history-delete {
   flex-shrink: 0;
-  color: var(--ai-error);
+  color: var(--text-tertiary);
   font-size: 12px;
   cursor: pointer;
+  transition: color 0.15s;
 }
 
-.todo-history-delete:hover {
-  color: color-mix(in srgb, var(--ai-error) 75%, var(--text-primary));
+.todo-history-delete:hover,
+.todo-history-delete:focus,
+.todo-card:focus-within .todo-history-delete {
+  color: var(--ai-error);
 }
 
 .todo-primary-action {
@@ -743,6 +762,14 @@ body {
 
 .todo-danger-action {
   border-radius: 999px;
+  color: var(--text-tertiary);
+}
+
+.todo-danger-action:hover,
+.todo-danger-action:focus,
+.todo-card:focus-within .todo-danger-action {
+  color: var(--ai-error) !important;
+  border-color: var(--ai-error) !important;
 }
 
 /* ─── 闪烁动画（待确认状态） ─── */

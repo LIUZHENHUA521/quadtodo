@@ -447,6 +447,9 @@ export default function TodoManage() {
 
   const handleStopSession = useCallback(async (sessionId: string) => {
     await stopAiExec(sessionId)
+    // 顶栏 × 后立即刷新 todos：否则卡片角标要等 3s poll 才感知 stopped，
+    // 中间窗口里 deriveAiState 仍展示 idle，用户以为可发消息。
+    useDispatchStore.getState().signal('refreshTodos')
   }, [])
 
   const handleOpenAttentionItem = useCallback((item: UnreadSessionItem) => {

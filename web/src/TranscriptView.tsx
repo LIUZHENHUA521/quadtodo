@@ -14,7 +14,7 @@ import './design/highlight.css'
 import { getTranscript, PermissionPrompt, ResumeSessionInput, sendAiInput, startAiExec, stopAiExec, TranscriptResponse, TranscriptTurn, uploadImage } from './api'
 import { markdownComponents } from './markdownComponents'
 import './TranscriptView.css'
-import { deriveAiState, type AiPresentationState } from './design/aiPresentationState'
+import { deriveAiState, isClosedAiStatus, type AiPresentationState } from './design/aiPresentationState'
 import { useUnreadStore, isSessionUnread } from './store/unreadStore'
 import { useAiSessionStore } from './store/aiSessionStore'
 import { useDispatchStore } from './store/dispatchStore'
@@ -625,6 +625,7 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   const [data, setData] = useState<TranscriptResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [resuming, setResuming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [keyword, setKeyword] = useState('')
   const [searchIdx, setSearchIdx] = useState(0)
@@ -1263,6 +1264,21 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     }
   }, [sessionId, message, t])
 
+  // Resume：PTY 已死的会话（done/failed/stopped）显式重启原生 session，让 composer 重新可用。
+  const handleResume = useCallback(async () => {
+    if (!resumeTarget?.nativeSessionId || resuming) return
+    setResuming(true)
+    try {
+      await resumeSession()
+      message.success(t('transcript:message.resumed'), 1.5)
+      try { composerRef.current?.focus?.() } catch { /* ignore */ }
+    } catch (e: any) {
+      message.error(e?.message || t('transcript:error.resumeFailed'))
+    } finally {
+      setResuming(false)
+    }
+  }, [resumeTarget, resuming, resumeSession, message, t])
+
   const toggleAllTools = () => {
     const next = !allToolsCollapsed
     setAllToolsCollapsed(next)
@@ -1436,6 +1452,8 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
       {(() => {
         const canInterrupt = transcriptState === 'running' || data?.session.status === 'pending_confirm'
         const status = data?.session.status
+        const sessionClosed = isClosedAiStatus(status)
+        const canResume = sessionClosed && !!resumeTarget?.nativeSessionId
         const statusDotCls =
           transcriptState === 'pending' ? 'tv-statusbar-dot--warn' :
           transcriptState === 'running' ? 'tv-statusbar-dot--running' :
@@ -1461,85 +1479,109 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
               </>
             )}
             <div style={{ flex: 1 }} />
-            <Tooltip title={canInterrupt ? t('transcript:statusbar.interruptEnabled') : t('transcript:statusbar.interruptDisabled')}>
-              <button
-                className="tv-statusbar-btn"
-                disabled={!canInterrupt}
-                onClick={() => { void handleInterrupt() }}
-              >
-                <StopOutlined /> {t('transcript:statusbar.interrupt')}
-              </button>
-            </Tooltip>
-            <Popconfirm
-              title={t('transcript:endConfirm.title')}
-              description={t('transcript:endConfirm.description')}
-              okText={t('transcript:endConfirm.okText')}
-              okButtonProps={{ danger: true }}
-              cancelText={t('transcript:endConfirm.cancelText')}
-              onConfirm={() => { void handleEndSession() }}
-              disabled={!canInterrupt}
-            >
-              <Tooltip title={canInterrupt ? t('transcript:statusbar.endEnabled') : t('transcript:statusbar.endDisabled')}>
-                <button className="tv-statusbar-btn tv-statusbar-btn--danger" disabled={!canInterrupt}>
-                  <PoweroffOutlined /> {t('transcript:statusbar.end')}
+            {sessionClosed ? (
+              <Tooltip title={canResume ? t('transcript:statusbar.resumeEnabled') : t('transcript:statusbar.resumeUnavailable')}>
+                <button
+                  className="tv-statusbar-btn"
+                  disabled={!canResume || resuming}
+                  onClick={() => { void handleResume() }}
+                >
+                  <ReloadOutlined /> {resuming ? t('transcript:statusbar.resuming') : t('transcript:statusbar.resume')}
                 </button>
               </Tooltip>
-            </Popconfirm>
+            ) : (
+              <>
+                <Tooltip title={canInterrupt ? t('transcript:statusbar.interruptEnabled') : t('transcript:statusbar.interruptDisabled')}>
+                  <button
+                    className="tv-statusbar-btn"
+                    disabled={!canInterrupt}
+                    onClick={() => { void handleInterrupt() }}
+                  >
+                    <StopOutlined /> {t('transcript:statusbar.interrupt')}
+                  </button>
+                </Tooltip>
+                <Popconfirm
+                  title={t('transcript:endConfirm.title')}
+                  description={t('transcript:endConfirm.description')}
+                  okText={t('transcript:endConfirm.okText')}
+                  okButtonProps={{ danger: true }}
+                  cancelText={t('transcript:endConfirm.cancelText')}
+                  onConfirm={() => { void handleEndSession() }}
+                  disabled={!canInterrupt}
+                >
+                  <Tooltip title={canInterrupt ? t('transcript:statusbar.endEnabled') : t('transcript:statusbar.endDisabled')}>
+                    <button className="tv-statusbar-btn tv-statusbar-btn--danger" disabled={!canInterrupt}>
+                      <PoweroffOutlined /> {t('transcript:statusbar.end')}
+                    </button>
+                  </Tooltip>
+                </Popconfirm>
+              </>
+            )}
           </div>
         )
       })()}
-      <div
-        className="tv-composer"
-        onCompositionStart={() => { composingRef.current = true }}
-        onCompositionEnd={() => {
-          composingRef.current = false
-          composingEndAtRef.current = performance.now()
-        }}
-      >
-        <span className="tv-composer-prompt" aria-hidden>›</span>
-        <Mentions
-          ref={composerRef}
-          value={composer}
-          onChange={(v) => setComposer(v)}
-          prefix="/"
-          variant="borderless"
-          options={slashOptions}
-          placeholder={data?.session.status === 'pending_confirm'
+      {(() => {
+        const sessionClosed = isClosedAiStatus(data?.session.status)
+        const canResume = sessionClosed && !!resumeTarget?.nativeSessionId
+        const placeholder = sessionClosed
+          ? (canResume ? t('transcript:composer.placeholderClosedResumable') : t('transcript:composer.placeholderClosedNoResume'))
+          : data?.session.status === 'pending_confirm'
             ? t('transcript:composer.placeholderPending')
-            : t('transcript:composer.placeholderDefault')}
-          autoSize={{ minRows: 1, maxRows: 8 }}
-          filterOption={(input, option) => {
-            const v = String(option?.value || '').toLowerCase()
-            return v.includes(input.toLowerCase())
-          }}
-          onCompositionStart={() => { composingRef.current = true }}
-          onCompositionEnd={() => {
-            composingRef.current = false
-            composingEndAtRef.current = performance.now()
-          }}
-          onPressEnter={(e) => {
-            // 下拉打开时 Mentions 内部会拦截 Enter 做选项确认，不会走到这里
-            if (e.shiftKey) return
-            // 组字中：不论 React 合成事件还是原生 flag，任一命中都不发送
-            const native = e.nativeEvent as KeyboardEvent
-            if (composingRef.current || native?.isComposing || native?.keyCode === 229) return
-            // 有些浏览器在 compositionend 前就派 keydown(Enter)，composingRef 已经
-            // 被提前 reset；给 80ms 保护窗口吃掉这种"选完候选词后紧跟的 Enter"
-            if (performance.now() - composingEndAtRef.current < 80) return
-            e.preventDefault()
-            void handleSendMessage()
-          }}
-          onPaste={handleComposerPaste}
-        />
-        <button
-          className="tv-composer-send"
-          disabled={!composer.trim() || sending}
-          onClick={() => { void handleSendMessage() }}
-          title={t('transcript:composer.sendTooltip')}
-        >
-          {t('transcript:composer.sendLabel')}
-        </button>
-      </div>
+            : t('transcript:composer.placeholderDefault')
+        return (
+          <div
+            className="tv-composer"
+            onCompositionStart={() => { composingRef.current = true }}
+            onCompositionEnd={() => {
+              composingRef.current = false
+              composingEndAtRef.current = performance.now()
+            }}
+          >
+            <span className="tv-composer-prompt" aria-hidden>›</span>
+            <Mentions
+              ref={composerRef}
+              value={composer}
+              onChange={(v) => setComposer(v)}
+              prefix="/"
+              variant="borderless"
+              options={slashOptions}
+              placeholder={placeholder}
+              disabled={sessionClosed}
+              autoSize={{ minRows: 1, maxRows: 8 }}
+              filterOption={(input, option) => {
+                const v = String(option?.value || '').toLowerCase()
+                return v.includes(input.toLowerCase())
+              }}
+              onCompositionStart={() => { composingRef.current = true }}
+              onCompositionEnd={() => {
+                composingRef.current = false
+                composingEndAtRef.current = performance.now()
+              }}
+              onPressEnter={(e) => {
+                // 下拉打开时 Mentions 内部会拦截 Enter 做选项确认，不会走到这里
+                if (e.shiftKey) return
+                // 组字中：不论 React 合成事件还是原生 flag，任一命中都不发送
+                const native = e.nativeEvent as KeyboardEvent
+                if (composingRef.current || native?.isComposing || native?.keyCode === 229) return
+                // 有些浏览器在 compositionend 前就派 keydown(Enter)，composingRef 已经
+                // 被提前 reset；给 80ms 保护窗口吃掉这种"选完候选词后紧跟的 Enter"
+                if (performance.now() - composingEndAtRef.current < 80) return
+                e.preventDefault()
+                void handleSendMessage()
+              }}
+              onPaste={handleComposerPaste}
+            />
+            <button
+              className="tv-composer-send"
+              disabled={!composer.trim() || sending || sessionClosed}
+              onClick={() => { void handleSendMessage() }}
+              title={sessionClosed ? t('transcript:composer.sendDisabledClosed') : t('transcript:composer.sendTooltip')}
+            >
+              {t('transcript:composer.sendLabel')}
+            </button>
+          </div>
+        )
+      })()}
       {!fillHeight && (
         <div
           className="tv-resize-handle"

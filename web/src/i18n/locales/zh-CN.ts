@@ -507,6 +507,10 @@ const zh = {
       interruptDisabled: '会话未在运行',
       endEnabled: '终止 PTY 进程',
       endDisabled: '会话已不在运行',
+      resume: '恢复会话',
+      resuming: '恢复中…',
+      resumeEnabled: '重启 PTY，继续上次的原生会话',
+      resumeUnavailable: '此会话没有可恢复的原生会话 ID，请新建会话',
     },
     endConfirm: {
       title: '结束会话',
@@ -517,7 +521,10 @@ const zh = {
     composer: {
       placeholderPending: '等待确认，回车确认 / 输入补充说明…',
       placeholderDefault: 'Type your message or paste anything…  ⏎ send · ⇧⏎ newline · / commands · ⌘V image',
+      placeholderClosedResumable: '会话已结束，点上方"恢复会话"重启 PTY 后再发消息',
+      placeholderClosedNoResume: '会话已结束，且没有可恢复的原生会话 ID',
       sendTooltip: '发送 (Enter)',
+      sendDisabledClosed: '会话已结束，请先恢复会话',
       sendLabel: 'send',
     },
     resize: {
@@ -526,6 +533,7 @@ const zh = {
     message: {
       interrupted: '已发送中断（Ctrl+C）',
       sessionEnded: '会话已结束',
+      resumed: '会话已恢复',
     },
     error: {
       loadFailed: '加载失败',
@@ -537,6 +545,7 @@ const zh = {
       interruptFailed: '中断失败',
       endAlreadyEnded: '会话已经结束了',
       endFailed: '结束会话失败',
+      resumeFailed: '恢复会话失败',
     },
     searchDrawer: {
       title: '历史会话找回',
