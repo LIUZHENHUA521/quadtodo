@@ -246,13 +246,14 @@ export function createSessionInputDispatcher({ pty, aiTerminal, callbacks = {}, 
     try {
       writeToPty(pty, sessionId, payload, logger)
       markBusyAfterWrite(aiTerminal, sessionId)
-      // 取队列里最新的 channel；混合 channel 场景极少见，echo 会跳过那一个 channel
-      const lastChan = q.items[q.items.length - 1]?.channel
-      if (lastChan && combinedText) recordOrigin(sessionId, combinedText, lastChan)
     } catch (e) {
       logger?.warn?.(`[dispatcher] flush write failed sid=${sessionId}: ${e.message}`)
       return { flushed: 0, error: e.message }
     }
+    // 写入成功才记 origin —— 跟 idle / soft-interrupt 两条路径保持一致（recordOrigin 不抛错，所以放 try 外）
+    // 取队列里最新的 channel；混合 channel 场景极少见，echo 会跳过那一个 channel
+    const lastChan = q.items[q.items.length - 1]?.channel
+    if (lastChan && combinedText) recordOrigin(sessionId, combinedText, lastChan)
     if (callbacks.onFlush) {
       try { await callbacks.onFlush({ sessionId, count }) }
       catch (e) { logger?.warn?.(`[dispatcher] onFlush callback failed: ${e.message}`) }
