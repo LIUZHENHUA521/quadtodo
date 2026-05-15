@@ -491,6 +491,12 @@ const en = {
       waitingConfirm: 'Waiting for confirmation',
       aiThinking: 'AI thinking',
     },
+    queue: {
+      title: 'Queued ({{count}})',
+      hint: 'Will auto-send in order once AI is idle',
+      badge: 'queued',
+      remove: 'Remove from queue',
+    },
     permission: {
       title: 'AI is waiting for authorization',
       allow: 'Allow (Enter)',

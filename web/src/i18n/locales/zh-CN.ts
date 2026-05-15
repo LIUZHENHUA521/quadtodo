@@ -488,6 +488,12 @@ const zh = {
       waitingConfirm: '等待确认',
       aiThinking: 'AI 思考中',
     },
+    queue: {
+      title: '排队中 ({{count}})',
+      hint: 'AI 空闲后按顺序自动发送',
+      badge: 'queued',
+      remove: '从队列移除',
+    },
     permission: {
       title: 'AI 等待授权',
       allow: '允许（Enter）',

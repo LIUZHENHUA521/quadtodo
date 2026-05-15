@@ -469,6 +469,67 @@
 }
 .tv-composer-send:disabled { opacity: 0.35; cursor: not-allowed; }
 
+/* ---------- 消息排队卡片（AI 思考中、用户发出的消息暂存于此） ---------- */
+.tv-queue {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 12px 4px;
+  background: color-mix(in srgb, var(--ai-running) 6%, var(--surface-1));
+  border-top: 1px solid color-mix(in srgb, var(--ai-running) 25%, var(--border-subtle));
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.tv-queue-header {
+  display: flex; align-items: baseline; gap: 8px;
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+.tv-queue-title { color: var(--ai-running); font-weight: 600; }
+.tv-queue-hint { color: var(--text-tertiary); }
+.tv-queue-list {
+  margin: 0; padding: 0; list-style: none;
+  display: flex; flex-direction: column; gap: 3px;
+  max-height: 140px; overflow: auto;
+}
+.tv-queue-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 6px;
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.tv-queue-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ai-running) 16%, transparent);
+  color: var(--ai-running);
+  font-size: 10.5px; font-weight: 600;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+.tv-queue-text {
+  flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tv-queue-remove {
+  flex-shrink: 0;
+  background: none; border: none;
+  color: var(--text-tertiary);
+  font-size: 14px; line-height: 1;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.tv-queue-remove:hover {
+  color: var(--ai-error);
+  background: color-mix(in srgb, var(--ai-error) 10%, transparent);
+}
+
 /* ---------- 授权请求卡片（pending_confirm 时显示在 statusbar 上方） ---------- */
 .tv-permission-card {
   display: flex; flex-direction: column; gap: 8px;

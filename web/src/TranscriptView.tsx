@@ -472,6 +472,17 @@ const TurnItem = React.memo(function TurnItem({ turn, index, keyword, canFork, c
 
 type LocalTurn = TranscriptTurn & { optimisticId?: string }
 
+// AI 思考中时用户发的消息先排队，不立刻打到 PTY。
+//   text:           原始 composer 文本，含 [Image #N] 占位符，给用户看用
+//   payloadText:    占位符已替换成 @<path> 的最终文本，flush 时直接发
+//   imagePlaceholders: 入队时已经从 composerImagesRef 删掉的占位符（debug 用）
+type QueuedMessage = {
+  id: string
+  text: string
+  payloadText: string
+  imagePlaceholders: string[]
+}
+
 // 把"增量 turns + 它们在整段 transcript 里的起点"按位置安全合并进 current。
 // 用来解决 SSE 推送 和 主动 incremental fetch 两条通路对同一段区间重复 append
 // 导致 Conversation 出现重复消息的问题（偶发，取决于谁先到）。
@@ -633,6 +644,19 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
   const [allToolsCollapsed, setAllToolsCollapsed] = useState(true)
   const [composer, setComposer] = useState(() => readDraft(todoId, sessionId)?.text ?? '')
   const [optimisticTurns, setOptimisticTurns] = useState<LocalTurn[]>([])
+  // Composer 队列：AI 思考中时发送 → 排进队列，等 AI 空闲再实际发到 PTY。
+  // 不直接发 PTY 的原因：CLI 思考中时收 PTY 输入有时会被吞 / 拼到上一条 prompt 后面；
+  // 而且我们之前的乐观回合会被无关 SSE snapshot 清掉（"3 秒就没了"）。
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
+  // flush 节奏控制：见 useEffect 中的 flush gate。tick 用来把 fallback 计时器
+  // 转回 React 状态变化以重跑 effect。
+  const [flushTick, setFlushTick] = useState(0)
+  const queuedMessagesSeqRef = useRef(0)
+  // 上次 flush 后是否见到 transcriptState === 'running'。flush 成功后归 false：
+  // 用来阻止"快速连发"——server 还没把 status 翻成 running 之前不发下一条。
+  const sawRunningSinceLastFlushRef = useRef(true)
+  const lastFlushAtRef = useRef(0)
+  const flushFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 用户点了"自定义答复"折叠卡片后，记录被折叠的那一轮 permissionPrompt.createdAt。
   // 后端再次广播同一轮（createdAt 没变）就保持折叠；新一轮（createdAt 变了）卡片重新出现。
   const [permissionCardDismissedAt, setPermissionCardDismissedAt] = useState<number | null>(null)
@@ -763,6 +787,9 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
       imageCounterRef.current = 0
     }
     setOptimisticTurns([])
+    setQueuedMessages([])
+    sawRunningSinceLastFlushRef.current = true
+    lastFlushAtRef.current = 0
     setCollapsedTools({})
     setAllToolsCollapsed(true)
     // 关键：session 切换时把"用户在底部"标志位拨回 true。否则上个 session 用户滚上去留下来的
@@ -1097,6 +1124,29 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     return nextSessionId
   }, [onSessionRecovered, resumeTarget, t, todoId, sessionId])
 
+  // 提前算出 transcriptState：handleSendMessage 用它来决定走"排队"还是"直发"，
+  // flush effect 也复用它做空闲窗口判定。原本这块在文件靠下，但 handleSendMessage
+  // 要 close-over 它，提前到这里避免 TDZ。
+  const transcriptSessionId = data?.session?.sessionId ?? null
+  const transcriptLiveSession = useAiSessionStore((s) =>
+    transcriptSessionId ? s.sessions.get(transcriptSessionId) : undefined,
+  )
+  const transcriptLastSeen = useUnreadStore((s) =>
+    transcriptSessionId ? s.lastSeenAt.get(transcriptSessionId) : undefined,
+  )
+  const transcriptUnread = isSessionUnread(
+    transcriptLiveSession?.lastTurnDoneAt,
+    transcriptLastSeen,
+  )
+  // live session 比 fetched data.session 新；data.session 在 transcript fetch 那一刻
+  // 是 snapshot，可能没赶上后续 running → done 切换。live 优先，data 兜底（fetch 完成
+  // 但 live store 还没 poll 到的边角窗口）。
+  const transcriptState = deriveAiState(
+    transcriptLiveSession?.status ?? data?.session?.status,
+    transcriptUnread,
+    transcriptLiveSession?.awaitingReply ?? false,
+  )
+
   const sendSessionInput = useCallback(async (payload: string, optimisticText?: string) => {
     const optimisticId = optimisticText
       ? `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -1141,7 +1191,13 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     }
   }, [fetchData, resumeSession, resumeTarget, sessionId, t])
 
-  const handleSendMessage = useCallback(async () => {
+  // 用户点 send / 回车 的两条路径：
+  //   - AI 思考中（running）或队列里已有人在等：排队，等 flush effect 在空闲窗口按序发出
+  //   - 否则（idle / pending_confirm 等 AI 等用户输入的态）：照旧直接打 PTY，
+  //     保留 permission-card 场景下"回车确认"那种立等可发的体验
+  // 排队的好处：UI 上一直看得到这条消息（不会像之前的乐观回合被无关 snapshot 擦掉），
+  // 而且多条快速连发会被串行成"一来一回"，避免被 CLI 拼成一坨。
+  const handleSendMessage = useCallback(() => {
     const text = composer.trim()
     if (!text) return
     const usedPlaceholders: string[] = []
@@ -1149,21 +1205,50 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
       if (acc.includes(placeholder)) usedPlaceholders.push(placeholder)
       return acc.replace(new RegExp(escapeRegExp(placeholder), 'g'), `@${path}`)
     }, text)
+
+    const liveStatus = transcriptLiveSession?.status ?? data?.session.status
+    const aiBusy =
+      (liveStatus === 'running' && !(transcriptLiveSession?.awaitingReply ?? false)) ||
+      sending || queuedMessages.length > 0
+    const isPermissionPending = data?.session.status === 'pending_confirm'
+
+    if (aiBusy && !isPermissionPending) {
+      // 占位符已替换进 payloadText、composer 也要清空 → 现在就从 imagesRef 删，
+      // 避免下次 draft 写回时把已用过的占位符再持久化下来。
+      usedPlaceholders.forEach((placeholder) => composerImagesRef.current.delete(placeholder))
+      queuedMessagesSeqRef.current += 1
+      const queued: QueuedMessage = {
+        id: `q-${Date.now()}-${queuedMessagesSeqRef.current}`,
+        text,
+        payloadText,
+        imagePlaceholders: usedPlaceholders,
+      }
+      setQueuedMessages((prev) => [...prev, queued])
+      setComposer('')
+      clearDraft(todoId, sessionId)
+      return
+    }
+
+    // 直接发：保留 pending_confirm 场景"回车答复"的现成体验
     setSending(true)
     setComposer('')
-    try {
-      await sendSessionInput(`${payloadText}\r`, text)
-      usedPlaceholders.forEach((placeholder) => composerImagesRef.current.delete(placeholder))
-      // 发送成功：立刻删 key，防 debounce 把"空 composer"的空 entry 又写回去。
-      // composerImagesRef 已被清掉本轮用过的占位符，残留的（未引用的图）也直接连同 key 清掉。
-      clearDraft(todoId, sessionId)
-    } catch (e: any) {
-      setComposer(text)
-      message.error(e?.message || t('transcript:error.sendFailed'))
-    } finally {
-      setSending(false)
-    }
-  }, [composer, message, sendSessionInput, t, todoId, sessionId])
+    void (async () => {
+      try {
+        await sendSessionInput(`${payloadText}\r`, text)
+        usedPlaceholders.forEach((placeholder) => composerImagesRef.current.delete(placeholder))
+        clearDraft(todoId, sessionId)
+      } catch (e: any) {
+        setComposer(text)
+        message.error(e?.message || t('transcript:error.sendFailed'))
+      } finally {
+        setSending(false)
+      }
+    })()
+  }, [composer, message, sendSessionInput, t, todoId, sessionId, transcriptLiveSession, data?.session.status, sending, queuedMessages.length])
+
+  const removeQueuedMessage = useCallback((id: string) => {
+    setQueuedMessages((prev) => prev.filter((q) => q.id !== id))
+  }, [])
 
   /**
    * 粘贴图片：上传成本地文件，发送时把 [Image #N] 占位符替换成 Claude/Codex
@@ -1291,25 +1376,65 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     setCollapsedTools(map)
   }
 
-  const transcriptSessionId = data?.session?.sessionId ?? null
-  const transcriptLiveSession = useAiSessionStore((s) =>
-    transcriptSessionId ? s.sessions.get(transcriptSessionId) : undefined,
-  )
-  const transcriptLastSeen = useUnreadStore((s) =>
-    transcriptSessionId ? s.lastSeenAt.get(transcriptSessionId) : undefined,
-  )
-  const transcriptUnread = isSessionUnread(
-    transcriptLiveSession?.lastTurnDoneAt,
-    transcriptLastSeen,
-  )
-  // live session 比 fetched data.session 新；data.session 在 transcript fetch 那一刻
-  // 是 snapshot，可能没赶上后续 running → done 切换。live 优先，data 兜底（fetch 完成
-  // 但 live store 还没 poll 到的边角窗口）。
-  const transcriptState = deriveAiState(
-    transcriptLiveSession?.status ?? data?.session?.status,
-    transcriptUnread,
-    transcriptLiveSession?.awaitingReply ?? false,
-  )
+  // Flush 队列：在 AI 空闲时按顺序把队首消息发到 PTY。
+  // 重跑触发：queue / sending / transcriptState / session.status / flushTick 任何一个变化。
+  //
+  // gate 顺序：
+  //   1) 队列空，不做事
+  //   2) 当前已有 send 在飞，等
+  //   3) AI 还在生成（transcriptState=running），等下一个空闲窗口
+  //   4) pending_confirm 状态等用户先点 y/n（这时用户即便发文字也是补说明，不属于队列语义）
+  //   5) 上次 flush 后还没看到 server 翻成 running——说明 PTY 还没真正吃进去。
+  //      正常情况下 server 在几百毫秒内会翻；最多等 3s 作 fallback，避免极端 case 卡住队列。
+  useEffect(() => {
+    if (flushFallbackTimerRef.current) {
+      clearTimeout(flushFallbackTimerRef.current)
+      flushFallbackTimerRef.current = null
+    }
+    if (queuedMessages.length === 0) return
+    if (sending) return
+    if (transcriptState === 'running') return
+    if (data?.session.status === 'pending_confirm') return
+    if (!sawRunningSinceLastFlushRef.current) {
+      const elapsed = Date.now() - lastFlushAtRef.current
+      if (elapsed < 3000) {
+        flushFallbackTimerRef.current = setTimeout(() => {
+          flushFallbackTimerRef.current = null
+          setFlushTick((n) => n + 1)
+        }, 3000 - elapsed)
+        return
+      }
+      // 3s 仍没见到 running：当作 server 没吃进去 / 已经走完，硬发下一条避免队列卡死
+    }
+    const next = queuedMessages[0]
+    sawRunningSinceLastFlushRef.current = false
+    lastFlushAtRef.current = Date.now()
+    setSending(true)
+    void (async () => {
+      try {
+        await sendSessionInput(`${next.payloadText}\r`, next.text)
+        setQueuedMessages((prev) => prev.filter((q) => q.id !== next.id))
+      } catch (e: any) {
+        // 发失败：从队列里拿掉，给用户看 toast。不自动回填 composer——
+        // 用户当前可能正在敲新内容，不能覆盖。需要重发让用户自己再写一遍。
+        setQueuedMessages((prev) => prev.filter((q) => q.id !== next.id))
+        message.error(e?.message || t('transcript:error.sendFailed'))
+      } finally {
+        setSending(false)
+      }
+    })()
+    return () => {
+      if (flushFallbackTimerRef.current) {
+        clearTimeout(flushFallbackTimerRef.current)
+        flushFallbackTimerRef.current = null
+      }
+    }
+  }, [queuedMessages, sending, transcriptState, data?.session.status, sendSessionInput, message, t, flushTick])
+
+  // 每次见到 'running' 都把标志位拉起来，flush gate 用它判定"server 已接住上一条"。
+  useEffect(() => {
+    if (transcriptState === 'running') sawRunningSinceLastFlushRef.current = true
+  }, [transcriptState])
 
   const wrapperClassName = [
     'tv-wrapper',
@@ -1520,6 +1645,29 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
           </div>
         )
       })()}
+      {queuedMessages.length > 0 && (
+        <div className="tv-queue" aria-live="polite">
+          <div className="tv-queue-header">
+            <span className="tv-queue-title">{t('transcript:queue.title', { count: queuedMessages.length })}</span>
+            <span className="tv-queue-hint">{t('transcript:queue.hint')}</span>
+          </div>
+          <ul className="tv-queue-list">
+            {queuedMessages.map((q) => (
+              <li className="tv-queue-item" key={q.id}>
+                <span className="tv-queue-badge">{t('transcript:queue.badge')}</span>
+                <span className="tv-queue-text" title={q.text}>{q.text}</span>
+                <button
+                  type="button"
+                  className="tv-queue-remove"
+                  onClick={() => removeQueuedMessage(q.id)}
+                  aria-label={t('transcript:queue.remove')}
+                  title={t('transcript:queue.remove')}
+                >×</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {(() => {
         const sessionClosed = isClosedAiStatus(data?.session.status)
         const canResume = sessionClosed && !!resumeTarget?.nativeSessionId
@@ -1567,14 +1715,14 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
                 // 被提前 reset；给 80ms 保护窗口吃掉这种"选完候选词后紧跟的 Enter"
                 if (performance.now() - composingEndAtRef.current < 80) return
                 e.preventDefault()
-                void handleSendMessage()
+                handleSendMessage()
               }}
               onPaste={handleComposerPaste}
             />
             <button
               className="tv-composer-send"
-              disabled={!composer.trim() || sending || sessionClosed}
-              onClick={() => { void handleSendMessage() }}
+              disabled={!composer.trim() || sessionClosed}
+              onClick={() => { handleSendMessage() }}
               title={sessionClosed ? t('transcript:composer.sendDisabledClosed') : t('transcript:composer.sendTooltip')}
             >
               {t('transcript:composer.sendLabel')}
