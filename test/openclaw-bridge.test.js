@@ -884,9 +884,10 @@ describe('openclaw-bridge.broadcastEcho', () => {
       telegramRoute: { threadId: 7, targetUserId: 'tg-user' },
       larkRoute: { rootMessageId: 'om_abc', targetUserId: 'lk-user' },
     })
-    await bridge.broadcastEcho({ sessionId: 'sid', message: '👤 hi', excludeChannel: 'telegram' })
+    const r = await bridge.broadcastEcho({ sessionId: 'sid', message: '👤 hi', excludeChannel: 'telegram' })
     expect(telegramSender).not.toHaveBeenCalled()
     expect(larkBot.replyInThread).toHaveBeenCalledOnce()
+    expect(r.telegram).toEqual({ skipped: true, reason: 'excluded' })
   })
 
   it('excludeChannel=lark → 只发 telegram', async () => {
@@ -894,9 +895,10 @@ describe('openclaw-bridge.broadcastEcho', () => {
       telegramRoute: { threadId: 7, targetUserId: 'tg-user' },
       larkRoute: { rootMessageId: 'om_abc', targetUserId: 'lk-user' },
     })
-    await bridge.broadcastEcho({ sessionId: 'sid', message: '👤 hi', excludeChannel: 'lark' })
+    const r = await bridge.broadcastEcho({ sessionId: 'sid', message: '👤 hi', excludeChannel: 'lark' })
     expect(telegramSender).toHaveBeenCalledOnce()
     expect(larkBot.replyInThread).not.toHaveBeenCalled()
+    expect(r.lark).toEqual({ skipped: true, reason: 'excluded' })
   })
 
   it('只绑 telegram，没绑 lark → 只发 telegram', async () => {
@@ -904,9 +906,10 @@ describe('openclaw-bridge.broadcastEcho', () => {
       telegramRoute: { threadId: 7, targetUserId: 'tg-user' },
       larkRoute: null,
     })
-    await bridge.broadcastEcho({ sessionId: 'sid', message: '👤 hi' })
+    const r = await bridge.broadcastEcho({ sessionId: 'sid', message: '👤 hi' })
     expect(telegramSender).toHaveBeenCalledOnce()
     expect(larkBot.replyInThread).not.toHaveBeenCalled()
+    expect(r.lark).toEqual({ skipped: true, reason: 'no_route' })
   })
 
   it('getRoutesForSession 未注入 → 返回 skipped', async () => {

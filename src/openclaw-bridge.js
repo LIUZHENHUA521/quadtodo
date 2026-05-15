@@ -558,9 +558,15 @@ export function createOpenClawBridge({
     const { telegram: tg, lark: lk } = routes
     const results = { telegram: null, lark: null }
 
-    if (tg?.threadId && tg?.targetUserId && excludeChannel !== 'telegram') {
+    if (excludeChannel === 'telegram') {
+      results.telegram = { skipped: true, reason: 'excluded' }
+    } else if (!tg?.threadId || !tg?.targetUserId) {
+      results.telegram = { skipped: true, reason: 'no_route' }
+    } else {
       const token = getTelegramTokenFromConfig(getConfig())
-      if (token) {
+      if (!token) {
+        results.telegram = { ok: false, reason: 'no_token' }
+      } else {
         try {
           results.telegram = await telegramSender({
             token,
@@ -574,12 +580,14 @@ export function createOpenClawBridge({
           logger?.warn?.(`[openclaw-bridge] broadcastEcho telegram threw: ${e.message}`)
           results.telegram = { ok: false, reason: 'threw', detail: e.message }
         }
-      } else {
-        results.telegram = { ok: false, reason: 'no_token' }
       }
     }
 
-    if (lk?.rootMessageId && excludeChannel !== 'lark' && larkBot?.replyInThread) {
+    if (excludeChannel === 'lark') {
+      results.lark = { skipped: true, reason: 'excluded' }
+    } else if (!lk?.rootMessageId || !larkBot?.replyInThread) {
+      results.lark = { skipped: true, reason: 'no_route' }
+    } else {
       try {
         results.lark = await larkBot.replyInThread({
           rootMessageId: String(lk.rootMessageId),
