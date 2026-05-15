@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// quadtodo-hook-version: 2
+// quadtodo-hook-version: 3
 /**
  * AgentQuad Claude Code hook —— 把 PTY 内 Claude Code 的状态事件转推到微信。
  *
