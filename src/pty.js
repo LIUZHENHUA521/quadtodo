@@ -424,6 +424,13 @@ export class PtyManager extends EventEmitter {
   }
 
   /** 返回当前所有活跃 PTY 的 { sessionId, pid, tool }，供 pidusage 采样用 */
+  /** Watcher 写在 PtyManager 自己的 session 上的 usage 副本。route 的 sessions Map
+   *  和这里不是同一份对象，必须显式 cross-read。返回 null 表示还没解析到。 */
+  getUsage(sessionId) {
+    const s = this.sessions.get(sessionId)
+    return s?.usage || null
+  }
+
   getPids() {
     const out = []
     for (const [sessionId, s] of this.sessions) {
@@ -804,7 +811,6 @@ export class PtyManager extends EventEmitter {
           const lines = content.split('\n')
           // 每次 mtime 推进都刷新 usage（不能等下面的 kind-变化早 return —— 同一轮
           // 内追加 assistant 消息时 kind 不变，会 return 跳过 usage 解析）。
-          let foundUsage = false
           for (let i = lines.length - 1; i >= 0; i--) {
             const ln = (lines[i] || '').trim()
             if (!ln.startsWith('{')) continue
@@ -813,7 +819,6 @@ export class PtyManager extends EventEmitter {
             if (obj.type !== 'assistant') continue
             const u = obj.message?.usage
             if (!u) continue
-            foundUsage = true
             session.usage = {
               input: Number(u.input_tokens) || 0,
               output: Number(u.output_tokens) || 0,
@@ -824,7 +829,6 @@ export class PtyManager extends EventEmitter {
             }
             break
           }
-          console.log(`[claude-usage-debug] sid=${sessionId} foundUsage=${foundUsage} usage=${JSON.stringify(session.usage)} path=${jsonlPath}`)
           let kind = null  // 'turn-started' | 'turn-done' | null
           for (let i = lines.length - 1; i >= 0; i--) {
             const line = lines[i].trim()

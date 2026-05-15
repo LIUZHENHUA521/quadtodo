@@ -764,7 +764,9 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
           outputBytesTotal: s.outputBytesTotal || 0,
           awaitingReply: !!s.awaitingReply,
           permissionPrompt: s.permissionPrompt || null,
-          usage: s.usage || null,
+          // s 是 route 自己的 sessions Map 里的对象；usage 是 PtyManager 的 watcher
+          // 写在它自己 sessions Map 的对象上，必须显式跨读，不能直接 s.usage。
+          usage: pty.getUsage(sessionId),
         })
       }
       res.json({ ok: true, sessions: out })
