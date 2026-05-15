@@ -231,6 +231,35 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   const pendingProposedInitRef = useRef<{ cols: number; rows: number } | null>(null)
   // 让 Task 9 的 IO 回调能复用主 effect 里"真正 open term"的本地函数
   const openTermFnRef = useRef<(() => void) | null>(null)
+
+  const bufferPendingChunk = useCallback((chunk: string) => {
+    const buf = pendingChunksRef.current
+    buf.chunks.push(chunk)
+    buf.totalBytes += chunk.length
+    if (buf.totalBytes > PENDING_CHUNKS_CAP) {
+      // 溢出丢头部：把数组合并成单个字符串，截掉前面 totalBytes - CAP 字符
+      const joined = buf.chunks.join('')
+      const overflow = joined.length - PENDING_CHUNKS_CAP
+      const trimmed = joined.slice(overflow)
+      buf.chunks = [trimmed]
+      buf.totalBytes = trimmed.length
+      console.warn('[AiTerminalMini] pending chunks > 5MB, dropped head')
+    }
+  }, [])
+
+  const flushPendingChunks = useCallback(() => {
+    const term = termRef.current
+    if (!term) return
+    const buf = pendingChunksRef.current
+    for (const chunk of buf.chunks) {
+      try { term.write(chunk) } catch (e) {
+        console.warn('[AiTerminalMini] flush write error:', e)
+        break
+      }
+    }
+    pendingChunksRef.current = { chunks: [], totalBytes: 0 }
+  }, [])
+
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const refitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const refitAttemptsRef = useRef(0)
@@ -751,15 +780,26 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             }
             switch (msg.type) {
               case 'output':
-                if (typeof msg.data === 'string' && msg.data.length > 0) cancelInjectingHint()
-                term.write(stripCursorVisibility(msg.data))
+                if (typeof msg.data === 'string' && msg.data.length > 0) {
+                  cancelInjectingHint()
+                  if (termOpenedRef.current) {
+                    term.write(stripCursorVisibility(msg.data))
+                  } else {
+                    bufferPendingChunk(stripCursorVisibility(msg.data))
+                  }
+                }
                 break
               case 'replay':
                 if (Array.isArray(msg.chunks)) {
                   if (msg.chunks.length > 0) cancelInjectingHint()
-                  for (const chunk of msg.chunks) term.write(stripCursorVisibility(chunk))
+                  for (const chunk of msg.chunks) {
+                    const stripped = stripCursorVisibility(chunk)
+                    if (termOpenedRef.current) term.write(stripped)
+                    else bufferPendingChunk(stripped)
+                  }
                   // 回放结束后强制 SGR reset，避免 TUI 在切片边界遗留 underline/颜色
-                  term.write('\x1b[0m')
+                  if (termOpenedRef.current) term.write('\x1b[0m')
+                  else bufferPendingChunk('\x1b[0m')
                 }
                 break
               case 'pending_confirm':
