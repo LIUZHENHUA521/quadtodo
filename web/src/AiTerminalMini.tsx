@@ -21,6 +21,7 @@ import { useDispatchStore } from './store/dispatchStore'
 import { useAppConfigStore } from './store/appConfigStore'
 import { migrateDraft } from './composerDraft'
 import { runWithBackoff } from './aiTerminalRecovery'
+import { measureCharWidth } from './utils/measureCharWidth'
 
 // 匹配 xterm 一行中的文件路径（相对或绝对，可带 :line 或 :line:col）
 // 规避回溯：只匹配不含空格/冒号/斜杠的 path segment + 已知扩展名
@@ -228,6 +229,8 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
   const pendingChunksRef = useRef<{ chunks: string[]; totalBytes: number }>({ chunks: [], totalBytes: 0 })
   // 走 proposed init 时记下当时报的 cols/rows，IO 触发 fit 后若实测不同就发一次 resize 校准
   const pendingProposedInitRef = useRef<{ cols: number; rows: number } | null>(null)
+  // 让 Task 9 的 IO 回调能复用主 effect 里"真正 open term"的本地函数
+  const openTermFnRef = useRef<(() => void) | null>(null)
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const refitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const refitAttemptsRef = useRef(0)
@@ -477,9 +480,12 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       const container = containerRef.current
       if (!container) return
       const { visibleAndReady } = await waitTerminalReady(container)
-      // 标志位先存到一个 const，Task 6 才会真正用到走分支
-      void visibleAndReady  // 暂时不分支，下一个任务会用
       if (disposedRef.current || myGen !== effectGenRef.current) return
+
+      // 重置每次 effect 启动时的 hidden-mount 相关状态
+      termOpenedRef.current = false
+      pendingChunksRef.current = { chunks: [], totalBytes: 0 }
+      pendingProposedInitRef.current = null
 
       const term = new Terminal({
         fontSize: 13,
@@ -495,106 +501,134 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       })
       const fit = new FitAddon()
       term.loadAddon(fit)
-      term.open(container)
-      // Upgrade xterm width tables to Unicode 11 so East-Asian-Ambiguous chars
-      // (em-dash, ellipsis, box-drawing) align with the PTY's wcwidth (paired with
-      // src/pty.js LANG=en_US.UTF-8 injection — both must be set for layout to match).
-      try {
-        term.loadAddon(new Unicode11Addon())
-        term.unicode.activeVersion = '11'
-      } catch { /* old browsers can fall back to default */ }
-      // Canvas 渲染器：移动端长 scrollback 滚动比默认 DOM 渲染器流畅得多。
-      // 装载失败也不影响核心功能，DOM 渲染会自动兜底。
-      try { term.loadAddon(new CanvasAddon()) } catch { /* 老浏览器回退 DOM */ }
-      // 永久隐藏 xterm cursor：AI TUI 在 task list 重绘时会快速跨 cell 移动 cursor，
-      // xterm 每个位置都画一次 block，肉眼看到"光标在 3 个位置闪跳"。Claude 自己会画
-      // `>` 输入提示符，不需要 xterm 再叠一个 cursor block。配合上面 stripCursorVisibility
-      // 过滤掉 incoming `\x1b[?25h`，TUI 无法再翻回 show。
-      term.write('\x1b[?25l')
       termRef.current = term
       fitRef.current = fit
 
-      // IME 输入法兼容：组合期间屏蔽键盘事件，防止回车选词被当作 \r 发送
+      // IME 组合状态：声明在 IIFE 作用域，openTermInVisibleContainer 和
+      // attachCustomKeyEventHandler 的闭包均可读写。
       let imeComposing = false
-      const textarea = term.textarea
-      if (textarea) {
-        textarea.addEventListener('compositionstart', () => { imeComposing = true })
-        textarea.addEventListener('compositionend', () => {
-          // 延迟重置：部分浏览器 compositionend 先于 keydown(Enter) 触发
-          setTimeout(() => { imeComposing = false }, 80)
-        })
-      }
-      term.attachCustomKeyEventHandler((ev: KeyboardEvent) => {
-        if (imeComposing || ev.isComposing || ev.keyCode === 229) return false
-        if (ev.type === 'keydown' && ev.ctrlKey && ev.key === 'End') {
-          term.scrollToBottom()
-          return false
+
+      // 当容器真正可见时执行：term.open + addons + IME + Link + initial fit。
+      // visible 路径里立即调用；hidden-mount 路径里 Task 9 的 IO 触发时调用。
+      const openTermInVisibleContainer = () => {
+        term.open(container)
+        termOpenedRef.current = true
+        // Upgrade xterm width tables to Unicode 11 so East-Asian-Ambiguous chars
+        // (em-dash, ellipsis, box-drawing) align with the PTY's wcwidth (paired with
+        // src/pty.js LANG=en_US.UTF-8 injection — both must be set for layout to match).
+        try {
+          term.loadAddon(new Unicode11Addon())
+          term.unicode.activeVersion = '11'
+        } catch { /* old browsers can fall back to default */ }
+        // Canvas 渲染器：移动端长 scrollback 滚动比默认 DOM 渲染器流畅得多。
+        // 装载失败也不影响核心功能，DOM 渲染会自动兜底。
+        try { term.loadAddon(new CanvasAddon()) } catch { /* 老浏览器回退 DOM */ }
+        // 永久隐藏 xterm cursor：AI TUI 在 task list 重绘时会快速跨 cell 移动 cursor，
+        // xterm 每个位置都画一次 block，肉眼看到"光标在 3 个位置闪跳"。Claude 自己会画
+        // `>` 输入提示符，不需要 xterm 再叠一个 cursor block。配合上面 stripCursorVisibility
+        // 过滤掉 incoming `\x1b[?25h`，TUI 无法再翻回 show。
+        term.write('\x1b[?25l')
+
+        // IME 输入法兼容：组合期间屏蔽键盘事件，防止回车选词被当作 \r 发送
+        const textarea = term.textarea
+        if (textarea) {
+          textarea.addEventListener('compositionstart', () => { imeComposing = true })
+          textarea.addEventListener('compositionend', () => {
+            // 延迟重置：部分浏览器 compositionend 先于 keydown(Enter) 触发
+            setTimeout(() => { imeComposing = false }, 80)
+          })
         }
-        return true
-      })
-
-      // 注册文件路径链接：hover 显示下划线，点击用用户选择的编辑器打开
-      // 仅在有 cwd 时启用，避免相对路径无处解析
-      if (cwdRef.current) {
-        const linkProvider = term.registerLinkProvider({
-          provideLinks(bufferLineNumber, callback) {
-            try {
-              const line = term.buffer.active.getLine(bufferLineNumber - 1)
-              if (!line) { callback(undefined); return }
-              const text = line.translateToString(true)
-              // 预过滤：没有 '/' 一定不是路径
-              if (!text || text.indexOf('/') < 0) { callback(undefined); return }
-              const links: Array<{ range: { start: { x: number; y: number }; end: { x: number; y: number } }; text: string; activate: (_e: MouseEvent, t: string) => void }> = []
-              FILE_LINK_RE.lastIndex = 0
-              let m: RegExpExecArray | null
-              let count = 0
-              while ((m = FILE_LINK_RE.exec(text)) && count < MAX_LINKS_PER_LINE) {
-                count++
-                const start = m.index
-                const end = start + m[0].length
-                links.push({
-                  text: m[0],
-                  range: {
-                    start: { x: start + 1, y: bufferLineNumber },
-                    end: { x: end, y: bufferLineNumber },
-                  },
-                  activate: (_ev, hit) => {
-                    const base = cwdRef.current || ''
-                    if (!base) return
-                    let editor: EditorKind = 'trae-cn'
-                    try {
-                      const saved = localStorage.getItem('quadtodo.editor') as EditorKind | null
-                      if (saved === 'trae' || saved === 'trae-cn' || saved === 'cursor') editor = saved
-                    } catch {}
-                    openTraeCN(base, editor, hit, sessionId).catch((err) => {
-                      console.warn('[AiTerminalMini] open link failed:', err)
-                    })
-                  },
-                })
-              }
-              callback(links.length ? links : undefined)
-            } catch (e) {
-              console.warn('[AiTerminalMini] link provider error:', e)
-              callback(undefined)
-            }
-          },
+        term.attachCustomKeyEventHandler((ev: KeyboardEvent) => {
+          if (imeComposing || ev.isComposing || ev.keyCode === 229) return false
+          if (ev.type === 'keydown' && ev.ctrlKey && ev.key === 'End') {
+            term.scrollToBottom()
+            return false
+          }
+          return true
         })
-        linkProviderRef.current = linkProvider
+
+        // 注册文件路径链接：hover 显示下划线，点击用用户选择的编辑器打开
+        // 仅在有 cwd 时启用，避免相对路径无处解析
+        if (cwdRef.current) {
+          const linkProvider = term.registerLinkProvider({
+            provideLinks(bufferLineNumber, callback) {
+              try {
+                const line = term.buffer.active.getLine(bufferLineNumber - 1)
+                if (!line) { callback(undefined); return }
+                const text = line.translateToString(true)
+                // 预过滤：没有 '/' 一定不是路径
+                if (!text || text.indexOf('/') < 0) { callback(undefined); return }
+                const links: Array<{ range: { start: { x: number; y: number }; end: { x: number; y: number } }; text: string; activate: (_e: MouseEvent, t: string) => void }> = []
+                FILE_LINK_RE.lastIndex = 0
+                let m: RegExpExecArray | null
+                let count = 0
+                while ((m = FILE_LINK_RE.exec(text)) && count < MAX_LINKS_PER_LINE) {
+                  count++
+                  const start = m.index
+                  const end = start + m[0].length
+                  links.push({
+                    text: m[0],
+                    range: {
+                      start: { x: start + 1, y: bufferLineNumber },
+                      end: { x: end, y: bufferLineNumber },
+                    },
+                    activate: (_ev, hit) => {
+                      const base = cwdRef.current || ''
+                      if (!base) return
+                      let editor: EditorKind = 'trae-cn'
+                      try {
+                        const saved = localStorage.getItem('quadtodo.editor') as EditorKind | null
+                        if (saved === 'trae' || saved === 'trae-cn' || saved === 'cursor') editor = saved
+                      } catch {}
+                      openTraeCN(base, editor, hit, sessionId).catch((err) => {
+                        console.warn('[AiTerminalMini] open link failed:', err)
+                      })
+                    },
+                  })
+                }
+                callback(links.length ? links : undefined)
+              } catch (e) {
+                console.warn('[AiTerminalMini] link provider error:', e)
+                callback(undefined)
+              }
+            },
+          })
+          linkProviderRef.current = linkProvider
+        }
+
+        // Synchronous fit — Task 5's waitTerminalReady already ensured the container
+        // has measurable width, so we don't need rAF defensiveness anymore. Doing this
+        // sync (instead of waiting for the next frame) makes `term.cols / term.rows`
+        // valid before connectWs() runs — important for hidden tabs where rAF is
+        // throttled and would otherwise leave term at xterm's constructor default 80×24.
+        try { fit.fit() } catch (e) { console.warn('[AiTerminalMini] initial fit failed:', e) }
+      }
+      // 暴露给外部作用域，Task 9 的 IO 回调可通过此 ref 调用
+      openTermFnRef.current = openTermInVisibleContainer
+
+      if (visibleAndReady) {
+        openTermInVisibleContainer()
+      } else {
+        // hidden-mount 路径：构造 Terminal 实例并用 proposeColsFromAncestor 预估尺寸，
+        // 调 term.resize 把默认 80×24 替换成接近真实值的预估，让 WS init 消息携带合理列数。
+        // term.open / addons / IME / Link / fit 全部推迟到 Task 9 (IO 触发时)。
+        const charWidth = await measureCharWidth().catch(() => 7.8)
+        if (disposedRef.current || myGen !== effectGenRef.current) return
+        const proposed = proposeColsFromAncestor(container, charWidth)
+        if (proposed) {
+          pendingProposedInitRef.current = proposed
+          try { term.resize(proposed.cols, proposed.rows) } catch {}
+        }
       }
 
-      // Synchronous fit — Task 5's waitTerminalReady already ensured the container
-      // has measurable width, so we don't need rAF defensiveness anymore. Doing this
-      // sync (instead of waiting for the next frame) makes `term.cols / term.rows`
-      // valid before connectWs() runs — important for hidden tabs where rAF is
-      // throttled and would otherwise leave term at xterm's constructor default 80×24.
-      try { fit.fit() } catch (e) { console.warn('[AiTerminalMini] initial fit failed:', e) }
-      // 只在"容器真的可见 + fit 算出有效 cols"时标记 ready；
+      // 只在"容器真的可见 + term 已经 open + fit 算出有效 cols"时标记 ready；
       // 否则留给后续 IO/RO 触发的 doFit 来标记，避免在 display:none 容器里就揭开
       // 导致后面切到可见时 xterm 用旧 80×24 画一帧再扩大（"小→大"闪动的根因）。
       // 揭开方式同 doFit 的 reveal 分支：等 WriteBuffer 全部消费 + scrollToBottom 后再揭，
       // 保证用户看到的第一帧就是最底部，不会出现"滚动下去"的动画。
       if (
         !viewportReadyRef.current
+        && termOpenedRef.current  // hidden-mount 路径还没 open，等 Task 9 的 doFit reveal
         && container.offsetParent !== null
         && container.clientWidth >= MIN_CONTAINER_WIDTH
         && term.cols >= MIN_VALID_COLS
