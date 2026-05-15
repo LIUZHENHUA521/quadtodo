@@ -336,6 +336,12 @@ function defaultConfig() {
 			timeoutMs: 600_000,
 			redact: true,
 		},
+		agents: {
+			autoBootstrap: 'prompt',         // 'prompt' | 'never' | 'silent'
+			bootstrapDismissed: false,        // CLI 弹问时用户回 N 后置 true
+			enabled: { claude: true, codex: true, cursor: true },
+			warnPtyCount: 8,                  // doctor 软 warning 阈值
+		},
 };
 }
 

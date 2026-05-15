@@ -364,6 +364,59 @@ export async function doctorReport({ rootDir = DEFAULT_ROOT_DIR } = {}) {
   return { ok: checks.every(c => c.ok), checks }
 }
 
+async function promptYesNo(question) {
+  const readline = await import('node:readline')
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+  return new Promise((resolve) => {
+    rl.question(question, (a) => {
+      rl.close()
+      const text = (a || '').trim().toLowerCase()
+      // empty input → default Yes
+      resolve(text === '' || text === 'y' || text === 'yes')
+    })
+  })
+}
+
+async function bootstrapAgentsIfNeeded({ cfg, version, port, isTTY }) {
+  const mode = cfg?.agents?.autoBootstrap || 'prompt'
+  if (mode === 'never') return
+  if (cfg?.agents?.bootstrapDismissed) return
+
+  const { previewAllAgents, installAllAgents } = await import('./agent-installer-dispatcher.js')
+  const p = previewAllAgents({ port, version })
+  const needed = Object.entries(p.results)
+    .filter(([, v]) => (v.changes || []).length > 0)
+    .map(([k]) => k)
+  if (needed.length === 0) return
+
+  if (mode === 'silent') {
+    const r = installAllAgents({ port, version, only: needed })
+    console.log(`[agents] auto bootstrap: ${Object.keys(r.results).join(', ')}`)
+    return
+  }
+
+  if (!isTTY) {
+    console.warn(`[agents] 检测到未配置的 agent 工具: ${needed.join(', ')}（运行 \`agentquad agents install\` 启用）`)
+    return
+  }
+
+  // prompt mode (interactive TTY)
+  const ok = await promptYesNo(`[agents] 检测到 ${needed.join(', ')} 未配置 AgentQuad MCP / skill，现在安装吗？[Y/n] `)
+  if (ok) {
+    const r = installAllAgents({ port, version, only: needed })
+    for (const [t, res] of Object.entries(r.results)) {
+      console.log(`  ${t}: ${res.ok ? (res.changes?.join(', ') || 'ok') : `error: ${res.error}`}`)
+    }
+  } else {
+    try {
+      setConfigValue('agents.bootstrapDismissed', 'true')
+    } catch (e) {
+      console.warn(`[agents] 持久化 dismissed 失败: ${e.message}`)
+    }
+    console.log('[agents] 已记住你的选择；运行 `agentquad agents install` 可手动启用')
+  }
+}
+
 // runStart：start 子命令的核心实现，导出给默认 action / 首跑向导复用
 export async function runStart(cmdOpts = {}) {
   // dry-run 短路（仅用于测试，让默认 action 测试不真起服务 / 不跑向导）
@@ -503,6 +556,19 @@ export async function runStart(cmdOpts = {}) {
     } catch (e) {
       console.warn(`⚠ ${tool} hook bootstrap failed: ${e?.message || e}`)
     }
+  }
+
+  // ─── 自动 bootstrap 三家 AI CLI 的 AgentQuad MCP + skill（agents）───
+  try {
+    const pkg = JSON.parse(readFileSync(resolvePath(__dirname, '../package.json'), 'utf8'))
+    await bootstrapAgentsIfNeeded({
+      cfg,
+      version: pkg.version,
+      port: actualPort,
+      isTTY: !!process.stdin.isTTY && !!process.stdout.isTTY,
+    })
+  } catch (e) {
+    console.warn(`[agents] bootstrap failed: ${e?.message || e}`)
   }
 
   // listen 完成后异步发"重启完成 + Resume N 个会话"通知到 telegram。
