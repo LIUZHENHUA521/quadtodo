@@ -428,13 +428,13 @@ function LiveInfoBadge({
 }) {
   const { t } = useTranslation(['todo'])
   if (state === 'running') {
-    const lastOutputAt = liveSession.lastOutputAt
+    const startedAt = liveSession.startedAt
     return (
       <span className="todo-history-live todo-history-live--running">
         <span className="todo-history-pulse-dot" aria-hidden />
-        {lastOutputAt ? (
+        {startedAt ? (
           <span className="todo-history-live-text">
-            {t('todo:card.liveActive', { ago: formatRelativeShort(Date.now() - lastOutputAt) })}
+            {t('todo:card.liveRunningElapsed', { ago: formatRelativeShort(Date.now() - startedAt) })}
           </span>
         ) : null}
       </span>

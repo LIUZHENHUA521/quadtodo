@@ -9,7 +9,7 @@ import { useDispatchStore } from '../../store/dispatchStore'
 import { useAppConfigStore } from '../../store/appConfigStore'
 import type { AiStatus, AiTool, EditorKind } from '../../api'
 import { startAiExec, openTraeCN, ApiError } from '../../api'
-import { deriveAiState, AI_STATE_PILL_LABEL_KEY } from '../../design/aiPresentationState'
+import { deriveAiState, AI_STATE_PILL_LABEL_KEY, isClosedAiStatus } from '../../design/aiPresentationState'
 import { useUnreadStore, isSessionUnread } from '../../store/unreadStore'
 import type { AutoModeController } from '../../AiTerminalMini'
 
@@ -58,8 +58,13 @@ export function FocusSubbar({
   )
   const markSeen = useUnreadStore((s) => s.markSeen)
   const unread = isSessionUnread(session?.lastTurnDoneAt, lastSeen)
-  const state = deriveAiState(session?.effectiveStatus ?? session?.status ?? fallbackStatus, unread, session?.awaitingReply ?? false)
-  const statusLabel = t(AI_STATE_PILL_LABEL_KEY[state])
+  // PTY 已死的会话（done/failed/stopped）在 deriveAiState 里会被吃成 'idle'——这里独立检测，
+  // 让 pill 文案显示"进程已结束"而不是误导的"空闲"。触发场景包括：用户点完成自动 stop、
+  // /stop 命令、AgentQuad 重启批量 stop 等。
+  const effectiveStatus = session?.effectiveStatus ?? session?.status ?? fallbackStatus
+  const sessionClosed = isClosedAiStatus(effectiveStatus)
+  const state = deriveAiState(effectiveStatus, unread, session?.awaitingReply ?? false)
+  const statusLabel = sessionClosed ? t('session:focusSubbar.processEnded') : t(AI_STATE_PILL_LABEL_KEY[state])
 
   const quadColor =
     quadrant >= 1 && quadrant <= 4 ? `var(--q${quadrant})` : 'var(--text-tertiary)'
@@ -82,17 +87,23 @@ export function FocusSubbar({
   }
 
   const [resuming, setResuming] = useState(false)
-  const canShowResume = Boolean(liveMissing)
+  // live session 缺失（已被回收）或 PTY 已死（done/failed/stopped 但 30 分钟 cleanup 未到）
+  // 都应该让用户能 Resume。后者覆盖"点完成→自动 stop→恢复待办"这种触发路径。
+  const canShowResume = Boolean(liveMissing) || sessionClosed
+  // resume native id 优先用持久化快照里的 fallback（liveMissing 时唯一来源），其次取 live session
+  // 自身的 nativeSessionId（stopped 但 live 还在的场景）。
+  const resumeNativeId = fallbackNativeSessionId ?? session?.nativeSessionId ?? null
+  const resumeCwd = session?.cwd ?? fallbackCwd ?? null
   // pty.js 对 claude / codex / cursor 三家都已实现 resume CLI 调用；前端只看是否有 nativeSessionId。
   // tool === 'ai' 是 fallback 缺省（live session 不应出现），也走"无原生 id"分支保底。
   const resumeDisabledReason: string | null = !canShowResume
     ? null
-    : tool === 'ai' || !fallbackNativeSessionId
+    : tool === 'ai' || !resumeNativeId
       ? t('session:focusSubbar.resumeDisabledNoNative')
       : null
   const resumeEnabled = canShowResume && !resumeDisabledReason && !resuming
   const handleResume = async () => {
-    if (!resumeEnabled || !fallbackNativeSessionId || tool === 'ai') return
+    if (!resumeEnabled || !resumeNativeId || tool === 'ai') return
     setResuming(true)
     try {
       // 与 TodoManage.handleAiExec 对齐：localStorage 浏览器覆盖 > 设置全局默认。
@@ -104,8 +115,8 @@ export function FocusSubbar({
         todoId,
         prompt: '',
         tool,
-        cwd: fallbackCwd || undefined,
-        resumeNativeId: fallbackNativeSessionId,
+        cwd: resumeCwd || undefined,
+        resumeNativeId,
         permissionMode: permissionMode || undefined,
       })
       // Optimistic upsert：后端 poll（每 3s）追上之前，先在 aiSessionStore 占位，
@@ -118,8 +129,8 @@ export function FocusSubbar({
         tool,
         status: 'running',
         autoMode: null,
-        nativeSessionId: fallbackNativeSessionId,
-        cwd: fallbackCwd ?? null,
+        nativeSessionId: resumeNativeId,
+        cwd: resumeCwd,
         startedAt: Date.now(),
         completedAt: null,
         lastOutputAt: null,
@@ -152,7 +163,9 @@ export function FocusSubbar({
           className="quad-dot"
           style={{ background: quadColor, boxShadow: `0 0 8px ${quadColor}` }}
         />
-        <span>{title}</span>
+        <Tooltip title={title} placement="bottomLeft" mouseEnterDelay={0.4}>
+          <span className="focus-task-title__text">{title}</span>
+        </Tooltip>
         <span className="focus-task-id">#{sessionShortId}</span>
       </div>
       <div className="focus-actions">
@@ -221,7 +234,7 @@ export function FocusSubbar({
             </Tag>
           </Dropdown>
         )}
-        <span className={`pill-select ${state === 'pending' ? 'pending' : state === 'running' ? 'green' : 'idle'}`}>
+        <span className={`pill-select ${sessionClosed ? 'idle' : state === 'pending' ? 'pending' : state === 'running' ? 'green' : 'idle'}`}>
           {tool} · {statusLabel}
         </span>
         {canConfirm && (

@@ -184,7 +184,7 @@ const en = {
       editLabelTooltip: 'Edit title',
       localResumedTooltip: 'Resumed in local terminal at: {{time}}',
       localResumedShort: 'Local resumed · {{time}}',
-      liveActive: 'Active {{ago}} ago',
+      liveRunningElapsed: 'Running {{ago}}',
       liveWaiting: 'Waiting {{ago}}',
       liveLastActive: 'Last active {{ago}} ago',
       sessionNotFinished: 'Not finished',

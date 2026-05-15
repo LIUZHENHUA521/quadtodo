@@ -66,6 +66,8 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  overflow: hidden;
   font-family: var(--font-sans);
   font-size: var(--text-base);
   font-weight: 500;
@@ -73,12 +75,20 @@
 }
 .focus-task-title .quad-dot {
   width: 9px; height: 9px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.focus-task-title__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .focus-task-id {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   margin-left: 6px;
+  flex-shrink: 0;
 }
 
 .focus-actions {

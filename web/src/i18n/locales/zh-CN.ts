@@ -181,7 +181,7 @@ const zh = {
       editLabelTooltip: '编辑标题',
       localResumedTooltip: '已在本地 Terminal 继续：{{time}}',
       localResumedShort: '已本地继续 · {{time}}',
-      liveActive: '活跃 {{ago}} 前',
+      liveRunningElapsed: '已运行 {{ago}}',
       liveWaiting: '等待 {{ago}}',
       liveLastActive: '上次活跃 {{ago}} 前',
       sessionNotFinished: '未正常结束',
