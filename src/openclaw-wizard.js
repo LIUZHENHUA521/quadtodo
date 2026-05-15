@@ -917,7 +917,7 @@ export function createOpenClawWizard({
 
     const shortCode = String(todoId).replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase() || 'auto'
     const title = (todo.title || `todo-${shortCode}`).slice(0, 96)
-    const topicName = `#t${shortCode} ${title}`.slice(0, 128)
+    const topicName = title.slice(0, 128)
     const intro = [
       `${topicName}`,
       `AI 已启动（自动镜像 from web/CLI），后续输出会回复在这条消息的 thread 里。`,
