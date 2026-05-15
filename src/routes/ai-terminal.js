@@ -200,7 +200,14 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
     if (!wasPending && session.status !== 'running') return false
 
     const extractSource = promptText || session.recentOutput || ''
-    const { text, options } = extractPermissionPrompt(extractSource)
+    // 主源 recentOutput 是 4KB 滑窗，TUI redraw 抖动会冲掉真实 prompt 文本；
+    // 兜底用 outputHistory（最大 5MB）的尾部 ~64KB，让 extractor 能找到锚点。
+    let historicalRaw = null
+    if (!promptText && Array.isArray(session.outputHistory) && session.outputHistory.length > 0) {
+      const joined = session.outputHistory.join('')
+      historicalRaw = joined.length > 65536 ? joined.slice(-65536) : joined
+    }
+    const { text, options } = extractPermissionPrompt(extractSource, { historicalRaw })
     const hasContent = !!(text || options.length)
     const prevPrompt = session.permissionPrompt || null
 
@@ -845,7 +852,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
 
   // ─── WebSocket hooks (called from server.js on upgrade) ───
 
-  function addBrowser(sessionId, ws) {
+  function addBrowser(sessionId, ws, { role = 'secondary' } = {}) {
     const session = sessions.get(sessionId)
     if (!session) {
       try {
@@ -854,8 +861,17 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       } catch { /* ignore */ }
       return
     }
+    const effectiveRole = role === 'primary' ? 'primary' : 'secondary'
+    if (ws) ws.__quadtodoRole = effectiveRole
     session.browsers.add(ws)
-    if (session.outputHistory.length > 0) {
+    // primary viewer 进入时：清掉历史 scrollback 并跳过 replay。
+    // 旧 scrollback 多半是窄 cols（如默认 80、Dock 卡片宽度）状态下 PTY 写下的硬换行，
+    // replay 到全屏视图就是"行间短文字 + 右侧大片空白"的乱码观感。
+    // 真正的对话历史在 Conversation tab 由 jsonl 还原，不依赖这里的 PTY scrollback。
+    if (effectiveRole === 'primary') {
+      session.outputHistory = []
+      session.outputSize = 0
+    } else if (session.outputHistory.length > 0) {
       ws.send(JSON.stringify({ type: 'replay', chunks: session.outputHistory }))
     }
     ws.send(JSON.stringify({ type: 'auto_mode', autoMode: session.autoMode || null }))
@@ -922,10 +938,17 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
     pty.resize(session.sessionId, cols, rows)
   }
 
-  // \r=Enter \n=LF \x03=Ctrl+C \x04=Ctrl+D —— 这些才会真正让 Claude/Codex 的 confirm 提示推进
+  // \r=Enter \n=LF \x03=Ctrl+C \x04=Ctrl+D 以及裸 ESC（\x1b 或 \x1b\x1b）——
+  // 这些才会真正让 Claude/Codex 的 confirm 提示推进。前端"拒绝"按钮发的就是裸 ESC，
+  // 不在这里命中的话 markSessionRunningAfterInput 不跑、permissionPrompt 永远不清，
+  // 卡片就一直显示，按钮 disabled，看起来像 UI 卡住。
+  // 注意：箭头键 '\x1b[A' / 焦点序列 '\x1b[I' 等 ANSI 序列不能命中——所以只匹配
+  // "正好等于裸 ESC"，与 isInterruptInput 同样的判定。
   function isPendingClearingInput(data) {
     if (typeof data !== 'string' || !data) return false
-    return /[\r\n\x03\x04]/.test(data)
+    if (/[\r\n\x03\x04]/.test(data)) return true
+    if (data === '\x1b' || data === '\x1b\x1b') return true
+    return false
   }
 
   // 用户希望"打断当前轮"的按键：Ctrl+C（\x03）或 Esc（裸 \x1b / \x1b\x1b）。
@@ -1089,11 +1112,14 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
     } else if (msg.type === 'init') {
       const cols = Number(msg.cols)
       const rows = Number(msg.rows)
-      const role = msg.role === 'primary' ? 'primary' : 'secondary'
       const session = sessions.get(sessionId)
       if (!session) return
       if (!isValidResizeSize(cols, rows)) return
-      if (ws) ws.__quadtodoRole = role
+      // role 字段可选：addBrowser 时已经按 WS URL ?role= 设过 ws.__quadtodoRole；
+      // 这里只在 init 显式带 role 时才覆盖（保留首次"primary"声明不被无 role 的 init 静默打回）
+      if (ws && (msg.role === 'primary' || msg.role === 'secondary')) {
+        ws.__quadtodoRole = msg.role
+      }
       if (!session.spawned) {
         if (session.spawnFallbackTimer) {
           clearTimeout(session.spawnFallbackTimer)

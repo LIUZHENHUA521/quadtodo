@@ -6,6 +6,7 @@ import {
   ReloadOutlined, BranchesOutlined, SearchOutlined,
   StopOutlined, PoweroffOutlined,
 } from '@ant-design/icons'
+import { AlertTriangle, Check, X as XIcon, MessageSquare } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { diffLines } from 'diff'
@@ -17,6 +18,7 @@ import { deriveAiState, type AiPresentationState } from './design/aiPresentation
 import { useUnreadStore, isSessionUnread } from './store/unreadStore'
 import { useAiSessionStore } from './store/aiSessionStore'
 import { useDispatchStore } from './store/dispatchStore'
+import { useAppConfigStore } from './store/appConfigStore'
 
 interface Props {
   todoId: string
@@ -549,7 +551,8 @@ function PermissionCard({
   return (
     <div className="tv-permission-card" role="alertdialog" aria-live="polite">
       <div className="tv-permission-header">
-        <span>⚠️ {t('transcript:permission.title')}</span>
+        <AlertTriangle size={14} aria-hidden />
+        <span>{t('transcript:permission.title')}</span>
         {prompt.source ? <span className="tv-permission-header-source">[{prompt.source}]</span> : null}
       </div>
       {prompt.text
@@ -578,14 +581,16 @@ function PermissionCard({
                 disabled={sending}
                 onClick={() => void send('\r', t('transcript:permission.allow'))}
               >
-                ✅ {t('transcript:permission.allow')}
+                <Check size={14} aria-hidden />
+                {t('transcript:permission.allow')}
               </button>
               <button
                 className="tv-permission-btn tv-permission-btn--deny"
                 disabled={sending}
                 onClick={() => void send('\x1b', t('transcript:permission.deny'))}
               >
-                🛑 {t('transcript:permission.deny')}
+                <XIcon size={14} aria-hidden />
+                {t('transcript:permission.deny')}
               </button>
             </>
           )}
@@ -595,7 +600,8 @@ function PermissionCard({
           onClick={onCustomize}
           title={t('transcript:permission.customHint')}
         >
-          💬 {t('transcript:permission.custom')}
+          <MessageSquare size={14} aria-hidden />
+          {t('transcript:permission.custom')}
         </button>
         {sentLabel
           ? <span className={'tv-permission-hint' + (warn ? ' tv-permission-hint--warn' : '')}>
@@ -1034,12 +1040,18 @@ export default function TranscriptView({ todoId, sessionId, onFork, autoRefreshM
     if (!resumeTarget?.nativeSessionId) {
       throw new Error(t('transcript:error.noResumeId'))
     }
+    // 与 TodoManage.handleAiExec 对齐：localStorage 浏览器覆盖 > 设置全局默认。
+    // 不传的话恢复出来的 PTY 会用后端默认 'default'，让"完全托管"失效。
+    let permissionMode: string | null = null
+    try { permissionMode = localStorage.getItem('quadtodo.autoMode') } catch { /* ignore */ }
+    if (!permissionMode) permissionMode = useAppConfigStore.getState().defaultPermissionMode
     const { sessionId: nextSessionId } = await startAiExec({
       todoId: resumeTarget.todoId,
       tool: resumeTarget.tool,
       prompt: resumeTarget.prompt,
       cwd: resumeTarget.cwd,
       resumeNativeId: resumeTarget.nativeSessionId,
+      permissionMode: permissionMode || undefined,
     })
     onSessionRecovered?.(nextSessionId)
     // 刷新 todo 列表，新 recover 出来的 session 才会同步进 todo.aiSessions / todo.aiSession，

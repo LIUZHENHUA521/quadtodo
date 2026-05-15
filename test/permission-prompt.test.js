@@ -94,5 +94,70 @@ describe('permission-prompt', () => {
       expect(text).toContain('[Y/n]')
       expect(options).toEqual([])
     })
+
+    it('用 historicalRaw 兜底：recentOutput 全是 spinner，历史里有真 prompt', () => {
+      // recentOutput 模拟：被 spinner 反复刷屏覆盖到只剩噪声
+      const noisy = Array.from({ length: 30 }, () => '✶ Skedaddling for 12s ✶').join('\n')
+      // 5MB outputHistory 的尾部模拟：完整的 Claude 授权弹窗
+      const real = [
+        '\x1b[36m╭────────────────────────────╮\x1b[0m',
+        '│ Bash command               │',
+        '│   curl -s -X POST https://api/x.com -d \'{"a":1}\' │',
+        '│   Contains shell syntax    │',
+        '│                            │',
+        '│ Do you want to proceed?    │',
+        '│ ❯ 1. Yes                   │',
+        '│   2. No, suggest changes   │',
+        '╰────────────────────────────╯',
+      ].join('\n')
+      const { text, options } = extractPermissionPrompt(noisy, { historicalRaw: real })
+      expect(text).toContain('curl -s -X POST')
+      expect(text).toContain('Do you want to proceed?')
+      expect(options).toEqual([
+        { index: 1, label: 'Yes' },
+        { index: 2, label: 'No, suggest changes' },
+      ])
+    })
+
+    it('锚点定位：prompt 在中间时窗口包含上下文（Bash 命令文本）', () => {
+      // 真实 PTY 场景：上方是 prompt + 选项，下方是 spinner 噪声继续刷
+      const raw = [
+        'Bash command',
+        '  curl https://example.com/foo',
+        '  Contains shell syntax',
+        '',
+        'Do you want to proceed?',
+        '1. Yes',
+        '2. No',
+        '✶ Cooking for 3s ✶',
+        '✶ Cooking for 5s ✶',
+        '✶ Cooking for 8s ✶',
+      ].join('\n')
+      const { text, options } = extractPermissionPrompt(raw)
+      expect(text).toContain('Bash command')
+      expect(text).toContain('curl https://example.com/foo')
+      expect(text).toContain('Do you want to proceed?')
+      expect(options.map(o => o.label)).toEqual(['Yes', 'No'])
+    })
+
+    it('过滤 spinner / status verb / auto mode / TUI 前缀单独行', () => {
+      const raw = [
+        '✶ ✶ ✶',
+        'Brewing for 30s',
+        'Reading…',
+        '❯',
+        'auto mode on',
+        'shift+tab to cycle',
+        'Real content here',
+        'Do you want to proceed?',
+        '1. Yes',
+      ].join('\n')
+      const { text } = extractPermissionPrompt(raw)
+      expect(text).toContain('Real content here')
+      expect(text).toContain('Do you want to proceed?')
+      expect(text).not.toMatch(/Brewing for/)
+      expect(text).not.toMatch(/Reading…/)
+      expect(text).not.toMatch(/auto mode/i)
+    })
   })
 })

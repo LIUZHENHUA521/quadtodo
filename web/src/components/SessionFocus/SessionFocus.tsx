@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useFocusStore } from '../../store/focusStore'
 import { useAiSessionStore } from '../../store/aiSessionStore'
@@ -7,6 +7,7 @@ import { useUnreadStore } from '../../store/unreadStore'
 import { FocusSubbar } from './FocusSubbar'
 import { FocusTabs } from './FocusTabs'
 import SessionViewer from '../../SessionViewer'
+import type { AutoModeController } from '../../AiTerminalMini'
 import type { AiSession, Todo } from '../../api'
 import './SessionFocus.css'
 
@@ -28,6 +29,9 @@ export function SessionFocus() {
   const sessions = useAiSessionStore((s) => s.sessions)
   const replaceSessionId = useAiSessionStore((s) => s.replaceSessionId)
   const markSeen = useUnreadStore((s) => s.markSeen)
+
+  // 由 AiTerminalMini 在 mount 后回填；切换 focus session 时 AiTerminalMini 卸载会先推 null。
+  const [autoModeController, setAutoModeController] = useState<AutoModeController | null>(null)
 
   // 进入聚焦视图时自动标记已读，让 pending → idle
   useEffect(() => {
@@ -101,6 +105,7 @@ export function SessionFocus() {
         fallbackNativeSessionId={fallbackAiSession?.nativeSessionId ?? null}
         fallbackCwd={fallbackAiSession?.cwd ?? null}
         liveMissing={!session && Boolean(fallbackAiSession)}
+        autoModeController={autoModeController}
         onResumed={handleSessionSwitch}
         onClose={clearFocus}
       />
@@ -118,6 +123,7 @@ export function SessionFocus() {
             mode={sessionViewerMode}
             fillHeight
             viewerRole="primary"
+            onAutoModeReady={setAutoModeController}
           />
         ) : (
           <div className="session-focus-empty">{t('session:focus.noActiveSession')}</div>

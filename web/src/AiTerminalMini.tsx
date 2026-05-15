@@ -3,7 +3,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useCallback, useState } from 'react'
-import { Button, Tooltip, Tag, Dropdown, Modal, ColorPicker, Input, Divider, Spin } from 'antd'
+import { Button, Tooltip, Tag, Dropdown, Modal, ColorPicker, Input, Divider } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { useAppMessages } from './design/useAppMessages'
 import { FullscreenOutlined, FullscreenExitOutlined, StopOutlined, DownOutlined, VerticalAlignBottomOutlined, LockOutlined, UnlockOutlined, BgColorsOutlined, DeleteOutlined, UpOutlined, LeftOutlined, RightOutlined, DragOutlined } from '@ant-design/icons'
@@ -25,6 +25,17 @@ import { useAppConfigStore } from './store/appConfigStore'
 const FILE_LINK_RE = /(?:[./]|\b)[\w.@-]+(?:\/[\w.@-]+)+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|css|scss|less|html|vue|py|go|rs|java|kt|swift|sh|yml|yaml|toml|lock|env|txt|sql|prisma|xml|c|cc|cpp|h|hpp|rb|php|proto)(?::\d+(?::\d+)?)?/g
 const MAX_LINKS_PER_LINE = 8
 
+/**
+ * 暴露给外部（如 SessionFocus）的 autoMode 控制接口：
+ * 让顶部 FocusSubbar 也能渲染 / 切换 permission mode，跨 Live & Conversation tab 可见。
+ */
+export interface AutoModeController {
+  autoMode: string | null
+  setAutoMode: (mode: string | null) => void
+  switching: boolean
+  available: boolean
+}
+
 interface Props {
   sessionId: string
   todoId: string
@@ -44,6 +55,11 @@ interface Props {
    * 不传默认 secondary（沿用历史 min 聚合行为）。
    */
   viewerRole?: 'primary' | 'secondary'
+  /**
+   * autoMode 控制器外发回调：mount 后把当前 controller 推给父组件，
+   * 让 FocusSubbar 顶栏可以渲染同一个 permission mode 下拉。unmount 时推 null。
+   */
+  onAutoModeReady?: (controller: AutoModeController | null) => void
 }
 
 const MAX_RECONNECT_DELAY = 10_000
@@ -107,7 +123,7 @@ async function waitTerminalReady(container: HTMLDivElement): Promise<void> {
   await new Promise<void>(r => requestAnimationFrame(() => r()))
 }
 
-export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeTarget, onSessionRecovered, onSessionSwitch, onClose, onDone, onStatusChange, fillHeight, viewerRole = 'secondary' }: Props) {
+export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeTarget, onSessionRecovered, onSessionSwitch, onClose, onDone, onStatusChange, fillHeight, viewerRole = 'secondary', onAutoModeReady }: Props) {
   void onClose
   const { t } = useTranslation(['session'])
   const { message } = useAppMessages()
@@ -527,7 +543,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
           wsRef.current = null
         }
 
-        const wsUrl = getTerminalWsUrl(sessionId)
+        const wsUrl = getTerminalWsUrl(sessionId, viewerRoleRef.current)
         const ws = new WebSocket(wsUrl)
         wsRef.current = ws
 
@@ -1026,6 +1042,21 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
     }
   }, [])
 
+  // FocusSubbar 顶栏需要这套 controller 才能跨 Live/Conversation tab 渲染同一个 permission mode 下拉。
+  // 用 ref 持有外发回调，避免 inline prop 触发 effect 抖动。
+  const onAutoModeReadyRef = useRef(onAutoModeReady)
+  useEffect(() => { onAutoModeReadyRef.current = onAutoModeReady }, [onAutoModeReady])
+  const autoModeController = useMemo<AutoModeController>(() => ({
+    autoMode,
+    setAutoMode: handleSetAutoMode,
+    switching: switchingMode,
+    available: (sessionStatus === 'ai_running' || sessionStatus === 'ai_pending') && !sessionExpired,
+  }), [autoMode, handleSetAutoMode, switchingMode, sessionStatus, sessionExpired])
+  useEffect(() => {
+    onAutoModeReadyRef.current?.(autoModeController)
+  }, [autoModeController])
+  useEffect(() => () => { onAutoModeReadyRef.current?.(null) }, [])
+
   const toggleFullscreen = useCallback(() => {
     setFullscreen(prev => !prev)
   }, [])
@@ -1181,47 +1212,7 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
             {t('session:terminal.toolbar.close')}
           </Button>
         )}
-        {isActive && !sessionExpired && (
-          <Dropdown
-            menu={{
-              items: [
-                { key: 'default', label: t('session:terminal.toolbar.autoMode.default') },
-                { key: 'acceptEdits', label: t('session:terminal.toolbar.autoMode.acceptEdits') },
-                { key: 'bypass', label: t('session:terminal.toolbar.autoMode.bypass') },
-              ],
-              selectedKeys: [autoMode || 'default'],
-              onClick: ({ key }) => handleSetAutoMode(key === 'default' ? null : key),
-            }}
-            trigger={['click']}
-            disabled={switchingMode}
-          >
-            <Tag
-              color={autoMode === 'bypass' ? 'orange' : autoMode === 'acceptEdits' ? 'blue' : 'default'}
-              style={{
-                fontSize: 10, lineHeight: '16px', margin: 0,
-                cursor: switchingMode ? 'wait' : 'pointer',
-                userSelect: 'none',
-                opacity: switchingMode ? 0.6 : 1,
-              }}
-            >
-              {switchingMode ? (
-                <>
-                  <Spin size="small" style={{ marginRight: 4 }} />
-                  {t('session:terminal.toolbar.switching')}
-                </>
-              ) : (
-                <>
-                  {autoMode === 'bypass'
-                    ? t('session:terminal.toolbar.autoMode.tagBypass')
-                    : autoMode === 'acceptEdits'
-                      ? t('session:terminal.toolbar.autoMode.tagAcceptEdits')
-                      : t('session:terminal.toolbar.autoMode.tagDefault')}
-                  {' '}<DownOutlined style={{ fontSize: 7 }} />
-                </>
-              )}
-            </Tag>
-          </Dropdown>
-        )}
+        {/* autoMode 下拉已搬至 SessionFocus 顶栏 (FocusSubbar)，让 Conversation tab 也能切换 permission mode */}
         <Dropdown
           menu={{
             items: [

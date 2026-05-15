@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Segmented } from 'antd'
-import AiTerminalMini from './AiTerminalMini'
+import AiTerminalMini, { type AutoModeController } from './AiTerminalMini'
 import TranscriptView from './TranscriptView'
 import type { TodoStatus, ResumeSessionInput, TranscriptTurn } from './api'
 
@@ -25,6 +25,8 @@ interface Props {
   onModeChange?: (mode: ViewMode) => void
   /** AiTerminalMini.viewerRole 透传：primary 独占 PTY 尺寸聚合（默认 secondary）。 */
   viewerRole?: 'primary' | 'secondary'
+  /** AiTerminalMini.onAutoModeReady 透传：让 FocusSubbar 顶栏拿到 permission mode 控制器。 */
+  onAutoModeReady?: (controller: AutoModeController | null) => void
 }
 
 type ViewMode = 'live' | 'transcript'

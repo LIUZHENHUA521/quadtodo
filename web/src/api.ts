@@ -598,10 +598,14 @@ export async function openNativeAiResume(input: {
   return { cwd: body.cwd, command: body.command, warnings: body.warnings || [], todo: body.todo }
 }
 
-/** 浏览器 WS 地址：开发时走 vite proxy，生产同源 */
-export function getTerminalWsUrl(sessionId: string): string {
+/** 浏览器 WS 地址：开发时走 vite proxy，生产同源
+ *  role='primary' 时后端会清掉旧 scrollback 并跳过首次 replay，避免 SessionFocus
+ *  全屏视图收到窄 cols 时代硬刻的历史输出，呈现"宽度错乱"的乱码。
+ */
+export function getTerminalWsUrl(sessionId: string, role?: 'primary' | 'secondary'): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${location.host}/ws/terminal/${sessionId}`
+  const qs = role === 'primary' ? '?role=primary' : ''
+  return `${proto}//${location.host}/ws/terminal/${sessionId}${qs}`
 }
 
 // ─── Dashboard 相关 ───

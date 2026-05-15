@@ -1659,8 +1659,9 @@ export function createServer(opts = {}) {
 		const url = new URL(req.url || "", "http://127.0.0.1");
 		if (url.pathname.startsWith("/ws/terminal/")) {
 			const sessionId = url.pathname.replace("/ws/terminal/", "");
+			const role = url.searchParams.get("role") === "primary" ? "primary" : "secondary";
 			wss.handleUpgrade(req, socket, head, (ws) =>
-				handleBrowserWs(ws, sessionId),
+				handleBrowserWs(ws, sessionId, role),
 			);
 		} else {
 			socket.destroy();
@@ -1669,8 +1670,8 @@ export function createServer(opts = {}) {
 
 	const HEARTBEAT_MS = 15_000;
 
-	function handleBrowserWs(ws, sessionId) {
-		ait.addBrowser(sessionId, ws);
+	function handleBrowserWs(ws, sessionId, role) {
+		ait.addBrowser(sessionId, ws, { role });
 
 		ws.on("message", (raw) => {
 			try {

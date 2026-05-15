@@ -1,14 +1,17 @@
 import { useState } from 'react'
-import { Tooltip, Button, Dropdown, message } from 'antd'
+import { Tooltip, Button, Dropdown, Tag, Spin, message } from 'antd'
 import { Code } from 'lucide-react'
+import { DownOutlined } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
 import type { SessionMeta } from '../../store/aiSessionStore'
 import { useAiSessionStore } from '../../store/aiSessionStore'
 import { useDispatchStore } from '../../store/dispatchStore'
+import { useAppConfigStore } from '../../store/appConfigStore'
 import type { AiStatus, AiTool, EditorKind } from '../../api'
 import { startAiExec, openTraeCN, ApiError } from '../../api'
 import { deriveAiState, AI_STATE_PILL_LABEL_KEY } from '../../design/aiPresentationState'
 import { useUnreadStore, isSessionUnread } from '../../store/unreadStore'
+import type { AutoModeController } from '../../AiTerminalMini'
 
 interface Props {
   todoId: string
@@ -23,6 +26,8 @@ interface Props {
   fallbackCwd?: string | null
   /** True 表示 live SessionMeta 缺失但快照里有 AiSession——这是 Resume 按钮的显示前提 */
   liveMissing?: boolean
+  /** 由 AiTerminalMini 通过 SessionViewer.onAutoModeReady 推上来的 permission mode 控制器。 */
+  autoModeController?: AutoModeController | null
   /** Resume 成功（拿到新 sessionId）后通知父组件做 focus 切换 */
   onResumed?: (nextSessionId: string) => void
   onClose: () => void
@@ -37,6 +42,7 @@ export function FocusSubbar({
   fallbackNativeSessionId,
   fallbackCwd,
   liveMissing,
+  autoModeController,
   onResumed,
   onClose,
 }: Props) {
@@ -90,12 +96,18 @@ export function FocusSubbar({
     if (!resumeEnabled || !fallbackNativeSessionId || tool !== 'claude') return
     setResuming(true)
     try {
+      // 与 TodoManage.handleAiExec 对齐：localStorage 浏览器覆盖 > 设置全局默认。
+      // 不传的话恢复出来的 PTY 会用后端默认 'default'，让"完全托管"失效。
+      let permissionMode: string | null = null
+      try { permissionMode = localStorage.getItem('quadtodo.autoMode') } catch { /* ignore */ }
+      if (!permissionMode) permissionMode = useAppConfigStore.getState().defaultPermissionMode
       const { sessionId: nextSessionId } = await startAiExec({
         todoId,
         prompt: '',
         tool: 'claude',
         cwd: fallbackCwd || undefined,
         resumeNativeId: fallbackNativeSessionId,
+        permissionMode: permissionMode || undefined,
       })
       // Optimistic upsert：后端 poll（每 3s）追上之前，先在 aiSessionStore 占位，
       // 避免 SessionFocus 出现"focusedSessionId 变了但 live session 还没到"的空窗 flash。
@@ -160,6 +172,51 @@ export function FocusSubbar({
             <Button size="small" icon={<Code size={13} />} style={{ height: 28 }} />
           </Tooltip>
         </Dropdown>
+        {autoModeController?.available && (
+          <Dropdown
+            menu={{
+              items: [
+                { key: 'default', label: t('session:terminal.toolbar.autoMode.default') },
+                { key: 'acceptEdits', label: t('session:terminal.toolbar.autoMode.acceptEdits') },
+                { key: 'bypass', label: t('session:terminal.toolbar.autoMode.bypass') },
+              ],
+              selectedKeys: [autoModeController.autoMode || 'default'],
+              onClick: ({ key }) => autoModeController.setAutoMode(key === 'default' ? null : key),
+            }}
+            trigger={['click']}
+            disabled={autoModeController.switching}
+          >
+            <Tag
+              color={
+                autoModeController.autoMode === 'bypass' ? 'orange'
+                : autoModeController.autoMode === 'acceptEdits' ? 'blue'
+                : 'default'
+              }
+              style={{
+                fontSize: 11, lineHeight: '18px', margin: 0, padding: '0 8px',
+                cursor: autoModeController.switching ? 'wait' : 'pointer',
+                userSelect: 'none',
+                opacity: autoModeController.switching ? 0.6 : 1,
+              }}
+            >
+              {autoModeController.switching ? (
+                <>
+                  <Spin size="small" style={{ marginRight: 4 }} />
+                  {t('session:terminal.toolbar.switching')}
+                </>
+              ) : (
+                <>
+                  {autoModeController.autoMode === 'bypass'
+                    ? t('session:terminal.toolbar.autoMode.tagBypass')
+                    : autoModeController.autoMode === 'acceptEdits'
+                      ? t('session:terminal.toolbar.autoMode.tagAcceptEdits')
+                      : t('session:terminal.toolbar.autoMode.tagDefault')}
+                  {' '}<DownOutlined style={{ fontSize: 8 }} />
+                </>
+              )}
+            </Tag>
+          </Dropdown>
+        )}
         <span className={`pill-select ${state === 'pending' ? 'pending' : state === 'running' ? 'green' : 'idle'}`}>
           {tool} · {statusLabel}
         </span>
