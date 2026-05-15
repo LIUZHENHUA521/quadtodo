@@ -850,3 +850,79 @@ describe('sendViaTelegramAPI parse-fail fallback', () => {
     expect(head).toMatch(/v2Len=\d+/)
   })
 })
+
+describe('openclaw-bridge.broadcastEcho', () => {
+  function makeBridgeWithRoutes({ telegramRoute, larkRoute, larkReply = { ok: true, payload: {} }, telegramToken = 'tok' } = {}) {
+    const larkBot = { replyInThread: vi.fn().mockResolvedValue(larkReply) }
+    const telegramSender = vi.fn().mockResolvedValue({ ok: true, payload: { message_id: 9 } })
+    const bridge = createOpenClawBridge({
+      getConfig: () => ({ telegram: { botToken: telegramToken } }),
+      spawnFn: vi.fn(),
+      logger: { warn() {}, info() {} },
+      telegramSender,
+      getRoutesForSession: () => ({ telegram: telegramRoute, lark: larkRoute }),
+    })
+    bridge.setLarkBot?.(larkBot)
+    return { bridge, larkBot, telegramSender }
+  }
+
+  it('双路由 + 无 excludeChannel → 同时发 telegram + lark', async () => {
+    const { bridge, larkBot, telegramSender } = makeBridgeWithRoutes({
+      telegramRoute: { threadId: 7, targetUserId: 'tg-user' },
+      larkRoute: { rootMessageId: 'om_abc', targetUserId: 'lk-user' },
+    })
+    const r = await bridge.broadcastEcho({ sessionId: 'sid', message: '👤 hi' })
+    expect(telegramSender).toHaveBeenCalledOnce()
+    expect(telegramSender.mock.calls[0][0]).toMatchObject({ chatId: 'tg-user', threadId: 7, text: '👤 hi' })
+    expect(larkBot.replyInThread).toHaveBeenCalledWith({ rootMessageId: 'om_abc', text: '👤 hi' })
+    expect(r.telegram?.ok).toBe(true)
+    expect(r.lark?.ok).toBe(true)
+  })
+
+  it('excludeChannel=telegram → 只发 lark', async () => {
+    const { bridge, larkBot, telegramSender } = makeBridgeWithRoutes({
+      telegramRoute: { threadId: 7, targetUserId: 'tg-user' },
+      larkRoute: { rootMessageId: 'om_abc', targetUserId: 'lk-user' },
+    })
+    await bridge.broadcastEcho({ sessionId: 'sid', message: '👤 hi', excludeChannel: 'telegram' })
+    expect(telegramSender).not.toHaveBeenCalled()
+    expect(larkBot.replyInThread).toHaveBeenCalledOnce()
+  })
+
+  it('excludeChannel=lark → 只发 telegram', async () => {
+    const { bridge, larkBot, telegramSender } = makeBridgeWithRoutes({
+      telegramRoute: { threadId: 7, targetUserId: 'tg-user' },
+      larkRoute: { rootMessageId: 'om_abc', targetUserId: 'lk-user' },
+    })
+    await bridge.broadcastEcho({ sessionId: 'sid', message: '👤 hi', excludeChannel: 'lark' })
+    expect(telegramSender).toHaveBeenCalledOnce()
+    expect(larkBot.replyInThread).not.toHaveBeenCalled()
+  })
+
+  it('只绑 telegram，没绑 lark → 只发 telegram', async () => {
+    const { bridge, larkBot, telegramSender } = makeBridgeWithRoutes({
+      telegramRoute: { threadId: 7, targetUserId: 'tg-user' },
+      larkRoute: null,
+    })
+    await bridge.broadcastEcho({ sessionId: 'sid', message: '👤 hi' })
+    expect(telegramSender).toHaveBeenCalledOnce()
+    expect(larkBot.replyInThread).not.toHaveBeenCalled()
+  })
+
+  it('getRoutesForSession 未注入 → 返回 skipped', async () => {
+    const bridge = createOpenClawBridge({
+      getConfig: () => ({}),
+      spawnFn: vi.fn(),
+      logger: { warn() {}, info() {} },
+    })
+    const r = await bridge.broadcastEcho({ sessionId: 'sid', message: '👤 hi' })
+    expect(r.skipped).toBe(true)
+  })
+
+  it('sessionId / message 缺失 → 返回 skipped 不报错', async () => {
+    const { bridge } = makeBridgeWithRoutes({ telegramRoute: null, larkRoute: null })
+    expect((await bridge.broadcastEcho({})).skipped).toBe(true)
+    expect((await bridge.broadcastEcho({ sessionId: 's' })).skipped).toBe(true)
+    expect((await bridge.broadcastEcho({ message: 'm' })).skipped).toBe(true)
+  })
+})

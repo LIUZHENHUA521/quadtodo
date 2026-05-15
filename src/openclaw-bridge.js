@@ -132,6 +132,7 @@ export function createOpenClawBridge({
   telegramSender = sendViaTelegramAPI,                // 测试用：可 mock fake fetch
   telegramBot: initialTelegramBot = null,              // 可选：用于 sendDocument 附件
   larkBot: initialLarkBot = null,
+  getRoutesForSession = null,                          // 注入：读 db 双路由（telegram + lark），broadcastEcho 用
 } = {}) {
   let telegramBot = initialTelegramBot
   let larkBot = initialLarkBot
@@ -535,6 +536,65 @@ export function createOpenClawBridge({
     }
   }
 
+  /**
+   * 把 user prompt echo 到所有已绑定的 IM thread，排除 origin channel。
+   * 路由从注入的 getRoutesForSession 拿（读 db 双路由），不依赖 in-memory sessionRoutes
+   * （后者每 session 只有一条 route，无法跨 telegram + lark 同时发）。
+   *
+   * 失败一律静默 warn —— echo 是辅助路径，不能影响 agent 的 Stop hook 主流程。
+   */
+  async function broadcastEcho({ sessionId, message, excludeChannel } = {}) {
+    if (!sessionId || !message) return { skipped: true, reason: 'missing_args' }
+    if (typeof getRoutesForSession !== 'function') return { skipped: true, reason: 'no_routes_fn' }
+    if (!rateLimitOk()) return { skipped: true, reason: 'rate_limited' }
+
+    let routes
+    try {
+      routes = getRoutesForSession(sessionId) || {}
+    } catch (e) {
+      logger?.warn?.(`[openclaw-bridge] broadcastEcho getRoutesForSession threw: ${e.message}`)
+      return { skipped: true, reason: 'routes_lookup_failed' }
+    }
+    const { telegram: tg, lark: lk } = routes
+    const results = { telegram: null, lark: null }
+
+    if (tg?.threadId && tg?.targetUserId && excludeChannel !== 'telegram') {
+      const token = getTelegramTokenFromConfig(getConfig())
+      if (token) {
+        try {
+          results.telegram = await telegramSender({
+            token,
+            chatId: String(tg.targetUserId),
+            threadId: Number(tg.threadId),
+            text: message,
+            logger,
+          })
+          if (results.telegram?.ok) recordSend()
+        } catch (e) {
+          logger?.warn?.(`[openclaw-bridge] broadcastEcho telegram threw: ${e.message}`)
+          results.telegram = { ok: false, reason: 'threw', detail: e.message }
+        }
+      } else {
+        results.telegram = { ok: false, reason: 'no_token' }
+      }
+    }
+
+    if (lk?.rootMessageId && excludeChannel !== 'lark' && larkBot?.replyInThread) {
+      try {
+        results.lark = await larkBot.replyInThread({
+          rootMessageId: String(lk.rootMessageId),
+          text: message,
+        })
+        if (results.lark?.ok) recordSend()
+      } catch (e) {
+        logger?.warn?.(`[openclaw-bridge] broadcastEcho lark threw: ${e.message}`)
+        results.lark = { ok: false, reason: 'threw', detail: e.message }
+      }
+    }
+
+    return results
+  }
+
   function setTelegramBot(bot) { telegramBot = bot }
   function setLarkBot(bot) { larkBot = bot || null }
   function setTopicGoneHandler(fn) { topicGoneHandler = typeof fn === 'function' ? fn : null }
@@ -544,6 +604,7 @@ export function createOpenClawBridge({
 
   return {
     postText,
+    broadcastEcho,
     healthCheck,
     isEnabled,
     registerSessionRoute,
