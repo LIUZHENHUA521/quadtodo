@@ -183,18 +183,18 @@ export function createLarkBot({
     return apiClient
   }
 
-  async function sendMessage({ chatId, text } = {}) {
+  async function sendMessage({ chatId, text, format } = {}) {
     if (isBlank(chatId)) return { ok: false, reason: 'chatId_required' }
     if (isBlank(text)) return { ok: false, reason: 'text_required' }
     if (!hasCredentials()) return { ok: false, reason: 'lark_credentials_missing' }
-    return getApiClient().sendMessage({ chatId, text })
+    return getApiClient().sendMessage({ chatId, text, format })
   }
 
-  async function replyInThread({ rootMessageId, text } = {}) {
+  async function replyInThread({ rootMessageId, text, format } = {}) {
     if (isBlank(rootMessageId)) return { ok: false, reason: 'rootMessageId_required' }
     if (isBlank(text)) return { ok: false, reason: 'text_required' }
     if (!hasCredentials()) return { ok: false, reason: 'lark_credentials_missing' }
-    return getApiClient().replyInThread({ rootMessageId, text })
+    return getApiClient().replyInThread({ rootMessageId, text, format })
   }
 
   async function sendCard({ chatId, card } = {}) {
@@ -219,9 +219,9 @@ export function createLarkBot({
 
   // thread root 失效时（用户撤回 / 飞书 5xx）静默 drop。"撤回 root" = 用户明示
   // "不想看这个对话了"，把消息泼到群主消息流是污染。reply 失败就让它失败。
-  async function deliverReply({ chatId, rootMessageId, text } = {}) {
-    if (!rootMessageId) return sendMessage({ chatId, text })
-    return replyInThread({ rootMessageId, text })
+  async function deliverReply({ chatId, rootMessageId, text, format } = {}) {
+    if (!rootMessageId) return sendMessage({ chatId, text, format })
+    return replyInThread({ rootMessageId, text, format })
   }
 
   function clearPendingReplyRetry(replyContext, ev) {

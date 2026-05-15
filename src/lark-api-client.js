@@ -1,5 +1,25 @@
 import * as Lark from '@larksuiteoapi/node-sdk'
 import { toLarkText } from './lark-markdown.js'
+import { isMarkdownLike, toLarkPost } from './lark-post.js'
+
+/**
+ * 决定一段文本走 text 还是 post 路径。
+ *   - 'text' / 'post' 强制选定
+ *   - 'auto'（默认）：含块级 markdown 特征才升级到 post
+ * 任何非法值视为 'auto'。
+ */
+function resolveFormat(format, text) {
+  if (format === 'text' || format === 'post') return format
+  return isMarkdownLike(text) ? 'post' : 'text'
+}
+
+function buildTextContent(text) {
+  return JSON.stringify({ text: toLarkText(String(text)) })
+}
+
+function buildPostContent(text) {
+  return JSON.stringify(toLarkPost(String(text)))
+}
 
 function isBlank(value) {
   return value == null || String(value) === ''
@@ -44,17 +64,35 @@ export function createLarkApiClient({ appId, appSecret, clientFactory = defaultC
     return client
   }
 
-  async function sendMessage({ chatId, text } = {}) {
+  async function sendMessage({ chatId, text, format = 'auto' } = {}) {
     if (!hasCredentials()) return { ok: false, reason: 'lark_credentials_missing' }
     if (isBlank(chatId)) return { ok: false, reason: 'chatId_required' }
     if (isBlank(text)) return { ok: false, reason: 'text_required' }
+    const useFormat = resolveFormat(format, String(text))
+    if (useFormat === 'post') {
+      try {
+        const response = await getClient().im.message.create({
+          params: { receive_id_type: 'chat_id' },
+          data: {
+            receive_id: String(chatId),
+            msg_type: 'post',
+            content: buildPostContent(text),
+          },
+        })
+        return { ok: true, payload: normalizePayload(response) }
+      } catch (e) {
+        // post 路径被飞书拒收（字段超限 / API 异常）→ 静默降级到 text，不丢消息
+        const detail = normalizeError(e)
+        logger.warn?.(`[lark-api] send post failed, falling back to text: ${detail}`)
+      }
+    }
     try {
       const response = await getClient().im.message.create({
         params: { receive_id_type: 'chat_id' },
         data: {
           receive_id: String(chatId),
           msg_type: 'text',
-          content: JSON.stringify({ text: toLarkText(String(text)) }),
+          content: buildTextContent(text),
         },
       })
       return { ok: true, payload: normalizePayload(response) }
@@ -65,16 +103,33 @@ export function createLarkApiClient({ appId, appSecret, clientFactory = defaultC
     }
   }
 
-  async function replyInThread({ rootMessageId, text } = {}) {
+  async function replyInThread({ rootMessageId, text, format = 'auto' } = {}) {
     if (!hasCredentials()) return { ok: false, reason: 'lark_credentials_missing' }
     if (isBlank(rootMessageId)) return { ok: false, reason: 'rootMessageId_required' }
     if (isBlank(text)) return { ok: false, reason: 'text_required' }
+    const useFormat = resolveFormat(format, String(text))
+    if (useFormat === 'post') {
+      try {
+        const response = await getClient().im.message.reply({
+          path: { message_id: String(rootMessageId) },
+          data: {
+            msg_type: 'post',
+            content: buildPostContent(text),
+            reply_in_thread: true,
+          },
+        })
+        return { ok: true, payload: normalizePayload(response) }
+      } catch (e) {
+        const detail = normalizeError(e)
+        logger.warn?.(`[lark-api] reply post failed, falling back to text: ${detail}`)
+      }
+    }
     try {
       const response = await getClient().im.message.reply({
         path: { message_id: String(rootMessageId) },
         data: {
           msg_type: 'text',
-          content: JSON.stringify({ text: toLarkText(String(text)) }),
+          content: buildTextContent(text),
           reply_in_thread: true,
         },
       })

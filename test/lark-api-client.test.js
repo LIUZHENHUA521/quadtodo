@@ -128,11 +128,11 @@ describe('lark-api-client', () => {
     await expect(failing.addReaction({ messageId: 'om_user', emojiType: 'THUMBSUP' })).resolves.toEqual({ ok: false, reason: 'lark_reaction_failed', detail: 'reaction boom' })
   })
 
-  it('strips markdown syntax before sending to Feishu (which does not render text-msg markdown)', async () => {
+  it('still strips markdown when caller forces format=text (legacy path)', async () => {
     const sdkClient = makeSdkClient()
     const client = createLarkApiClient({ appId: 'cli_a123', appSecret: 'secret', clientFactory: () => sdkClient })
 
-    await client.sendMessage({ chatId: 'oc_123', text: '## 报告\n**OK** [link](https://x.com)' })
+    await client.sendMessage({ chatId: 'oc_123', text: '## 报告\n**OK** [link](https://x.com)', format: 'text' })
     expect(sdkClient.im.message.create).toHaveBeenCalledWith({
       params: { receive_id_type: 'chat_id' },
       data: {
@@ -142,7 +142,7 @@ describe('lark-api-client', () => {
       },
     })
 
-    await client.replyInThread({ rootMessageId: 'om_root', text: '**done** ~~old~~' })
+    await client.replyInThread({ rootMessageId: 'om_root', text: '**done** ~~old~~', format: 'text' })
     expect(sdkClient.im.message.reply).toHaveBeenCalledWith({
       path: { message_id: 'om_root' },
       data: {
@@ -151,6 +151,71 @@ describe('lark-api-client', () => {
         reply_in_thread: true,
       },
     })
+  })
+
+  it('auto-upgrades markdown content to msg_type=post', async () => {
+    const sdkClient = makeSdkClient()
+    const client = createLarkApiClient({ appId: 'cli_a123', appSecret: 'secret', clientFactory: () => sdkClient })
+
+    await client.sendMessage({ chatId: 'oc_123', text: '## 报告\n正文' })
+    const call = sdkClient.im.message.create.mock.calls.at(-1)[0]
+    expect(call.data.msg_type).toBe('post')
+    const content = JSON.parse(call.data.content)
+    expect(content.zh_cn.content[0][0]).toEqual({ tag: 'text', text: '▎报告', style: ['bold'] })
+  })
+
+  it('auto-keeps plain text (no markdown) as msg_type=text', async () => {
+    const sdkClient = makeSdkClient()
+    const client = createLarkApiClient({ appId: 'cli_a123', appSecret: 'secret', clientFactory: () => sdkClient })
+
+    await client.sendMessage({ chatId: 'oc_123', text: 'hello plain' })
+    const call = sdkClient.im.message.create.mock.calls.at(-1)[0]
+    expect(call.data.msg_type).toBe('text')
+    expect(call.data.content).toBe(JSON.stringify({ text: 'hello plain' }))
+  })
+
+  it('falls back to text when post path fails (does not lose the message)', async () => {
+    // 第一次 create 调用（post）失败，第二次（text fallback）成功
+    const create = vi.fn()
+      .mockRejectedValueOnce(new Error('post rejected by server'))
+      .mockResolvedValueOnce({ data: { message_id: 'om_after_fallback' } })
+    const sdkClient = makeSdkClient({
+      im: {
+        message: { create, reply: vi.fn() },
+      },
+    })
+    const warn = vi.fn()
+    const client = createLarkApiClient({
+      appId: 'cli_a123',
+      appSecret: 'secret',
+      clientFactory: () => sdkClient,
+      logger: { warn },
+    })
+
+    const r = await client.sendMessage({ chatId: 'oc_123', text: '## 升级失败也别丢' })
+    expect(r).toEqual({ ok: true, payload: { message_id: 'om_after_fallback' } })
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(create.mock.calls[0][0].data.msg_type).toBe('post')
+    expect(create.mock.calls[1][0].data.msg_type).toBe('text')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('falling back to text'))
+  })
+
+  it('reply path also falls back to text on post failure', async () => {
+    const reply = vi.fn()
+      .mockRejectedValueOnce(new Error('post reply rejected'))
+      .mockResolvedValueOnce({ data: { message_id: 'om_reply_fallback' } })
+    const sdkClient = makeSdkClient({
+      im: {
+        message: { create: vi.fn(), reply },
+      },
+    })
+    const client = createLarkApiClient({ appId: 'cli_a123', appSecret: 'secret', clientFactory: () => sdkClient, logger: { warn: vi.fn() } })
+
+    const r = await client.replyInThread({ rootMessageId: 'om_root', text: '- 列表项一\n- 列表项二' })
+    expect(r.ok).toBe(true)
+    expect(reply).toHaveBeenCalledTimes(2)
+    expect(reply.mock.calls[0][0].data.msg_type).toBe('post')
+    expect(reply.mock.calls[1][0].data.msg_type).toBe('text')
   })
 
   it('sendCard posts msg_type=interactive with serialized card content', async () => {
