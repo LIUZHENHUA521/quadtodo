@@ -1383,8 +1383,8 @@ export function createServer(opts = {}) {
 			'回 esc / 退出菜单 → 我帮你按 Esc 退出 modal',
 			'回 中断 / ctrl+c → 我帮你打断当前任务',
 		].join('\n')
-		openclawBridge.postText({ sessionId, message })
-			.catch((e) => console.warn(`[tui-detected] postText failed: ${e.message}`))
+		openclawBridge.broadcastText({ sessionId, message })
+			.catch((e) => console.warn(`[tui-detected] broadcastText failed: ${e.message}`))
 	})
 
 	// holder Proxy: 让 hook / wizard 不用改源码，每次读属性都从 holder.current 拿最新实例
@@ -1445,9 +1445,9 @@ export function createServer(opts = {}) {
 			onStale: async ({ sessionId, queueSize }) => {
 				const text = `⚠️ session 有 ${queueSize} 条排队消息超过 5 分钟未投递，看起来卡住了。可发送 \`!!\` 中断后重新发送。`
 				try {
-					await openclawBridge?.postText?.({ sessionId, message: text })
+					await openclawBridge?.broadcastText?.({ sessionId, message: text })
 				} catch (e) {
-					console.warn(`[server] dispatcher.onStale postText failed: ${e.message}`)
+					console.warn(`[server] dispatcher.onStale broadcastText failed: ${e.message}`)
 				}
 			},
 			onSessionEnd: async ({ sessionId, undeliveredCount, undeliveredTexts }) => {
@@ -1456,9 +1456,9 @@ export function createServer(opts = {}) {
 				const more = undeliveredCount > 3 ? `\n（还有 ${undeliveredCount - 3} 条未列出）` : ''
 				const text = `⚠️ session 已结束，未投递 ${undeliveredCount} 条消息：\n${preview}${more}`
 				try {
-					await openclawBridge?.postText?.({ sessionId, message: text })
+					await openclawBridge?.broadcastText?.({ sessionId, message: text })
 				} catch (e) {
-					console.warn(`[server] dispatcher.onSessionEnd postText failed: ${e.message}`)
+					console.warn(`[server] dispatcher.onSessionEnd broadcastText failed: ${e.message}`)
 				}
 			},
 		},

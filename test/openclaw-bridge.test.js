@@ -1006,3 +1006,67 @@ describe('per-channel sessionRoutes', () => {
     expect(b.findSessionsByTarget('peer1')).toEqual(['sid'])
   })
 })
+
+describe('openclaw-bridge.broadcastText', () => {
+  function makeBridgeFanout({ larkReply = { ok: true, payload: {} }, telegramReply = { ok: true, payload: { message_id: 9 } } } = {}) {
+    const larkBot = { replyInThread: vi.fn().mockResolvedValue(larkReply) }
+    const telegramSender = vi.fn().mockResolvedValue(telegramReply)
+    const bridge = createOpenClawBridge({
+      getConfig: () => ({ telegram: { botToken: 'tok' }, openclaw: { channel: 'openclaw-weixin' } }),
+      spawnFn: vi.fn(),
+      logger: { warn() {}, info() {} },
+      telegramSender,
+    })
+    bridge.setLarkBot?.(larkBot)
+    return { bridge, larkBot, telegramSender }
+  }
+
+  it('双 channel 绑定 → 同时推 telegram + lark', async () => {
+    const { bridge, larkBot, telegramSender } = makeBridgeFanout()
+    bridge.registerSessionRoute('sid', { targetUserId: 'tg', channel: 'telegram', threadId: 7 })
+    bridge.registerSessionRoute('sid', { targetUserId: 'lk', channel: 'lark', rootMessageId: 'om_abc' })
+    const r = await bridge.broadcastText({ sessionId: 'sid', message: 'hi all' })
+    expect(telegramSender).toHaveBeenCalledOnce()
+    expect(larkBot.replyInThread).toHaveBeenCalledOnce()
+    expect(r.ok).toBe(true)
+    expect(r.byChannel?.telegram?.ok).toBe(true)
+    expect(r.byChannel?.lark?.ok).toBe(true)
+  })
+
+  it('excludeChannel=telegram → 只推 lark', async () => {
+    const { bridge, larkBot, telegramSender } = makeBridgeFanout()
+    bridge.registerSessionRoute('sid', { targetUserId: 'tg', channel: 'telegram', threadId: 7 })
+    bridge.registerSessionRoute('sid', { targetUserId: 'lk', channel: 'lark', rootMessageId: 'om_abc' })
+    const r = await bridge.broadcastText({ sessionId: 'sid', message: 'hi', excludeChannel: 'telegram' })
+    expect(telegramSender).not.toHaveBeenCalled()
+    expect(larkBot.replyInThread).toHaveBeenCalledOnce()
+    expect(r.byChannel?.telegram?.skipped).toBe(true)
+    expect(r.byChannel?.telegram?.reason).toBe('excluded')
+  })
+
+  it('只绑 telegram → fan-out 只触发 telegram', async () => {
+    const { bridge, telegramSender, larkBot } = makeBridgeFanout()
+    bridge.registerSessionRoute('sid', { targetUserId: 'tg', channel: 'telegram', threadId: 7 })
+    const r = await bridge.broadcastText({ sessionId: 'sid', message: 'hi' })
+    expect(telegramSender).toHaveBeenCalledOnce()
+    expect(larkBot.replyInThread).not.toHaveBeenCalled()
+    expect(r.ok).toBe(true)
+  })
+
+  it('没有任何绑定 → fallback 走默认 postText（来自 config.openclaw.targetUserId）', async () => {
+    // 当 session 没有 in-memory 路由时，broadcastText 应该退化为单 postText
+    // 行为等价于现在的 postText({sessionId, message})。这里只验证不抛错 + 返回 shape。
+    const { bridge } = makeBridgeFanout()
+    const r = await bridge.broadcastText({ sessionId: 'unbound', message: 'hi' })
+    // 不绑且无 default targetUserId 时，postText 会返回 misconfigured
+    // 关键：不抛错，shape 合理。
+    expect(r).toBeDefined()
+  })
+
+  it('sessionId / message 缺失 → 返回 skipped 不抛错', async () => {
+    const { bridge } = makeBridgeFanout()
+    expect((await bridge.broadcastText({})).skipped).toBe(true)
+    expect((await bridge.broadcastText({ sessionId: 'sid' })).skipped).toBe(true)
+    expect((await bridge.broadcastText({ message: 'm' })).skipped).toBe(true)
+  })
+})

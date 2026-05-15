@@ -638,6 +638,43 @@ export function createOpenClawBridge({
     return results
   }
 
+  /**
+   * Fan-out 文本到 sessionId 当前所有绑定的 channel。Stop hook / ask_user / dispatcher 警告类
+   * 消息走这里，确保 telegram + lark 都能看到（cross-channel mirror 对齐）。
+   *
+   * 实现：对每个绑定的 channel 调用一次 postText（显式带 channel），复用现有的限流、
+   * fast-path、CLI fallback。返回 byChannel 聚合结果。
+   */
+  async function broadcastText({ sessionId, message, replyMarkup = null, attachment = null, excludeChannel = null } = {}) {
+    if (!sessionId || !message) return { skipped: true, reason: 'missing_args' }
+    const routes = allRoutesForSession(sessionId)
+    if (!routes.length) {
+      // session 没有任何 in-memory 路由 → 退回单 postText（用 config 默认 target）。
+      // 行为对齐改造前的 postText({sessionId, message}) 老语义。
+      const r = await postText({ sessionId, message, replyMarkup, attachment })
+      return { ok: !!r?.ok, byChannel: { default: r }, fanout: false }
+    }
+    const byChannel = {}
+    let anyOk = false
+    for (const route of routes) {
+      if (route.channel === excludeChannel) {
+        byChannel[route.channel] = { skipped: true, reason: 'excluded' }
+        continue
+      }
+      const r = await postText({
+        sessionId,
+        message,
+        channel: route.channel,
+        target: route.targetUserId,
+        replyMarkup,
+        attachment,
+      })
+      byChannel[route.channel] = r
+      if (r?.ok) anyOk = true
+    }
+    return { ok: anyOk, byChannel, fanout: true }
+  }
+
   function setTelegramBot(bot) { telegramBot = bot }
   function setLarkBot(bot) { larkBot = bot || null }
   function setTopicGoneHandler(fn) { topicGoneHandler = typeof fn === 'function' ? fn : null }
@@ -653,6 +690,7 @@ export function createOpenClawBridge({
 
   return {
     postText,
+    broadcastText,
     broadcastEcho,
     healthCheck,
     isEnabled,

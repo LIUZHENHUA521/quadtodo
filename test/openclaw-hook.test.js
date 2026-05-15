@@ -25,6 +25,11 @@ function makeFakeBridge({ sendOk = true, sendReason = null, route = null, explic
       if (sendOk) return { ok: true }
       return { ok: false, reason: sendReason || 'cli_failed' }
     }),
+    broadcastText: vi.fn(async ({ sessionId, message, replyMarkup }) => {
+      sent.push({ sessionId, message, replyMarkup, route: routes.get(sessionId) || route })
+      if (sendOk) return { ok: true }
+      return { ok: false, reason: sendReason || 'cli_failed' }
+    }),
   }
 }
 
@@ -429,7 +434,7 @@ describe('openclaw-hook handler', () => {
     expect(r.action).toBe('skipped')
     expect(r.reason).toBe('notification_suppressed')
     // 关键：早期短路，没浪费 IO，bridge 完全没被调用
-    expect(bridge.postText).not.toHaveBeenCalled()
+    expect(bridge.broadcastText).not.toHaveBeenCalled()
   })
 
   it('Notification: native Claude TUI select stays suppressed by default', async () => {
@@ -464,7 +469,7 @@ describe('openclaw-hook handler', () => {
     expect(r.ok).toBe(true)
     expect(r.action).toBe('skipped')
     expect(r.reason).toBe('notification_suppressed')
-    expect(bridge.postText).not.toHaveBeenCalled()
+    expect(bridge.broadcastText).not.toHaveBeenCalled()
   })
 
   it('Notification: bypass Telegram session stays suppressed by default', async () => {
@@ -485,7 +490,7 @@ describe('openclaw-hook handler', () => {
     expect(r.ok).toBe(true)
     expect(r.action).toBe('skipped')
     expect(r.reason).toBe('notification_suppressed')
-    expect(bridge.postText).not.toHaveBeenCalled()
+    expect(bridge.broadcastText).not.toHaveBeenCalled()
   })
 
   it('Notification: 任何 Notification fire 都触发 markPendingConfirm（不再做文本判别）', async () => {
@@ -637,7 +642,7 @@ describe('openclaw-hook handler', () => {
     expect(r.ok).toBe(true)
     expect(r.action).toBe('skipped')
     expect(r.reason).toBe('notification_suppressed')
-    expect(bridge.postText).not.toHaveBeenCalled()
+    expect(bridge.broadcastText).not.toHaveBeenCalled()
   })
 
   it('Notification: Lark session without rootMessageId stays suppressed', async () => {
@@ -662,7 +667,7 @@ describe('openclaw-hook handler', () => {
     expect(r.ok).toBe(true)
     expect(r.action).toBe('skipped')
     expect(r.reason).toBe('notification_suppressed')
-    expect(bridge.postText).not.toHaveBeenCalled()
+    expect(bridge.broadcastText).not.toHaveBeenCalled()
   })
 
   // 历史用例「依据 message 文本判别 permissionish」已随正则一起删除——hook fire 本身是
@@ -689,7 +694,7 @@ describe('openclaw-hook handler', () => {
     expect(r.ok).toBe(true)
     expect(r.action).toBe('skipped')
     expect(r.reason).toBe('notification_suppressed')
-    expect(bridge.postText).not.toHaveBeenCalled()
+    expect(bridge.broadcastText).not.toHaveBeenCalled()
   })
 
   it('Notification: non-bypass Telegram permission reminder still uses notification cooldown', async () => {
@@ -735,7 +740,7 @@ describe('openclaw-hook handler', () => {
     expect(r.ok).toBe(true)
     expect(r.action).toBe('skipped')
     expect(r.reason).toBe('notification_suppressed')
-    expect(bridge.postText).not.toHaveBeenCalled()
+    expect(bridge.broadcastText).not.toHaveBeenCalled()
   })
 
   it('Notification: non-Telegram non-bypass session stays suppressed by default', async () => {
@@ -757,7 +762,7 @@ describe('openclaw-hook handler', () => {
     expect(r.ok).toBe(true)
     expect(r.action).toBe('skipped')
     expect(r.reason).toBe('notification_suppressed')
-    expect(bridge.postText).not.toHaveBeenCalled()
+    expect(bridge.broadcastText).not.toHaveBeenCalled()
   })
 
   it('SessionEnd ignores cooldown (final state)', async () => {

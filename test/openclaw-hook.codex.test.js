@@ -4,6 +4,7 @@ import { createOpenClawHookHandler } from '../src/openclaw-hook.js'
 function fakeBridge() {
   return {
     postText: vi.fn(async () => ({ ok: true })),
+    broadcastText: vi.fn(async () => ({ ok: true })),
     postCard: vi.fn(async () => ({ ok: true })),
     sendDocument: vi.fn(async () => ({ ok: true })),
   }
@@ -32,10 +33,10 @@ describe('openclaw-hook codex branch', () => {
       source: 'codex', path: 'jsonl', event: 'Stop', nativeId: 'n1', transcript_path: 'fake.jsonl',
     })
     expect(result.ok).toBe(true)
-    expect(bridge.postText).toHaveBeenCalled()
-    const sentArg = bridge.postText.mock.calls[0][0]
-    // 必须用 `message`，不是 `text`——bridge.postText 形参名是 message，传错了 bridge
-    // 直接走 message_required 短路。这是 IM 推送实测不发的回归点。
+    expect(bridge.broadcastText).toHaveBeenCalled()
+    const sentArg = bridge.broadcastText.mock.calls[0][0]
+    // 必须用 `message`，不是 `text`——bridge.broadcastText 形参名是 message，传错了 bridge
+    // 直接走 missing_args 短路。这是 IM 推送实测不发的回归点。
     expect(sentArg.message).toContain('codex says hi')
     expect(sentArg.text).toBeUndefined()
   })
@@ -63,8 +64,8 @@ describe('openclaw-hook codex branch', () => {
       source: 'codex', path: 'jsonl', event: 'Stop', nativeId: 'n42', transcript_path: 'f.jsonl',
     })
     expect(result.ok).toBe(true)
-    expect(bridge.postText).toHaveBeenCalled()
-    const sent = bridge.postText.mock.calls[0][0]
+    expect(bridge.broadcastText).toHaveBeenCalled()
+    const sent = bridge.broadcastText.mock.calls[0][0]
     expect(sent.sessionId).toBe('qs-from-scan')
     expect(sent.message).toContain('fallback hi')
   })
@@ -125,7 +126,7 @@ describe('openclaw-hook codex branch', () => {
     })
     const result = await handler.handle({ source: 'codex', path: 'jsonl', event: 'Stop', nativeId: 'unknown' })
     expect(result.ok).toBe(false)
-    expect(bridge.postText).not.toHaveBeenCalled()
+    expect(bridge.broadcastText).not.toHaveBeenCalled()
   })
 
   it('routes source=codex,path=detector Notification to bridge.postCard with Codex header', async () => {

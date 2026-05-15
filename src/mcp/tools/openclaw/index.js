@@ -315,7 +315,7 @@ export function registerOpenClawTools(server, deps) {
           // 拼按钮失败不阻塞；纯文本兜底（用户照样能数字回复）
         }
 
-        const sendResult = await openclaw.postText({
+        const sendResult = await openclaw.broadcastText({
           sessionId,
           message: lines.join('\n'),
           replyMarkup: askUserMarkup,
