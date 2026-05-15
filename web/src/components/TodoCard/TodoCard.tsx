@@ -171,7 +171,9 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
             trigger={['click']}
           >
             <Tooltip title={t('todo:card.openEditorTooltip')}>
-              <Button size="small" icon={<Code size={13} />} className="todo-primary-action" />
+              <Button size="small" icon={<Code size={13} />} className="todo-primary-action">
+                {t('todo:card.openEditorLabel')}
+              </Button>
             </Tooltip>
           </Dropdown>
           <Dropdown
