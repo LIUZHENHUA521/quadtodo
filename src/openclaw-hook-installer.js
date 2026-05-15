@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url'
 import { DEFAULT_ROOT_DIR } from './config.js'
 
 const QUADTODO_MANAGED_KEY = '_quadtodoManaged'
-const HOOK_EVENTS = ['Stop', 'Notification', 'SessionEnd']
+const HOOK_EVENTS = ['Stop', 'Notification', 'SessionEnd', 'UserPromptSubmit']
 const HOOK_VERSION_RE = /quadtodo-hook-version:\s*(\d+)/
 
 function defaultHookScriptPath() {
@@ -52,6 +52,7 @@ function buildHookEntry(event, hookScriptPath) {
   // Claude Code hook 格式（参考其文档）：matchers 数组里每项有 type+command
   const eventLower = event === 'SessionEnd' ? 'session-end'
     : event === 'Notification' ? 'notification'
+    : event === 'UserPromptSubmit' ? 'user-prompt-submit'
     : 'stop'
   return {
     matcher: '*',

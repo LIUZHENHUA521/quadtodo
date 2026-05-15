@@ -59,7 +59,7 @@ function parseHookVersion(content) {
 }
 
 function buildHookEntry(event, hookScriptPath) {
-  const eventLower = event === 'UserPromptSubmit' ? 'notification' : 'stop'
+  const eventLower = event === 'UserPromptSubmit' ? 'user-prompt-submit' : 'stop'
   return {
     matcher: '',
     hooks: [

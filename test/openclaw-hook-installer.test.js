@@ -25,14 +25,15 @@ describe('openclaw-hook-installer', () => {
     rmSync(tmp, { recursive: true, force: true })
   })
 
-  it('installs all 3 hooks when settings.json does not exist', () => {
+  it('installs all 4 hooks when settings.json does not exist', () => {
     const r = installHooks({ settingsPath, hookScriptPath })
-    expect(r.added).toEqual(['Stop', 'Notification', 'SessionEnd'])
+    expect(r.added).toEqual(['Stop', 'Notification', 'SessionEnd', 'UserPromptSubmit'])
     expect(existsSync(settingsPath)).toBe(true)
     const data = JSON.parse(readFileSync(settingsPath, 'utf8'))
     expect(data.hooks.Stop).toHaveLength(1)
     expect(data.hooks.Notification).toHaveLength(1)
     expect(data.hooks.SessionEnd).toHaveLength(1)
+    expect(data.hooks.UserPromptSubmit).toHaveLength(1)
     // 验证 _quadtodoManaged 标记
     expect(data.hooks.Stop[0]._quadtodoManaged).toBe(true)
     expect(data.hooks.Stop[0].hooks[0].command).toContain('notify.js')
@@ -61,8 +62,10 @@ describe('openclaw-hook-installer', () => {
     expect(data.hooks.Stop[1]._quadtodoManaged).toBe(true)
     // env 字段没动
     expect(data.env.CUSTOM).toBe('x')
-    // UserPromptSubmit 没动
-    expect(data.hooks.UserPromptSubmit).toHaveLength(1)
+    // UserPromptSubmit: user entry 保留，quadtodo 的也被加进来
+    expect(data.hooks.UserPromptSubmit).toHaveLength(2)
+    expect(data.hooks.UserPromptSubmit[0].hooks[0].command).toBe('echo prompt')
+    expect(data.hooks.UserPromptSubmit[1]._quadtodoManaged).toBe(true)
   })
 
   it('is idempotent — repeated install does not duplicate quadtodo entries', () => {
@@ -73,6 +76,7 @@ describe('openclaw-hook-installer', () => {
     expect(data.hooks.Stop).toHaveLength(1)
     expect(data.hooks.Notification).toHaveLength(1)
     expect(data.hooks.SessionEnd).toHaveLength(1)
+    expect(data.hooks.UserPromptSubmit).toHaveLength(1)
   })
 
   it('creates a backup file before writing', () => {
@@ -127,7 +131,7 @@ describe('openclaw-hook-installer', () => {
     installHooks({ settingsPath, hookScriptPath })
     const r = inspectHooks({ settingsPath, hookScriptPath })
     expect(r.installed).toBe(true)
-    expect(r.eventsInstalled.sort()).toEqual(['Notification', 'SessionEnd', 'Stop'])
+    expect(r.eventsInstalled.sort()).toEqual(['Notification', 'SessionEnd', 'Stop', 'UserPromptSubmit'])
   })
 
   it('inspect catches malformed JSON', () => {
@@ -172,6 +176,20 @@ describe('openclaw-hook-installer', () => {
     const r = uninstallHooks({ settingsPath, uninstallMarkerPath: markerPath })
     expect(r.markerWritten).toBe(true)
     expect(existsSync(markerPath)).toBe(true)
+  })
+
+  it('installs UserPromptSubmit hook mapped to user-prompt-submit argv', () => {
+    installHooks({ settingsPath, hookScriptPath })
+    const data = JSON.parse(readFileSync(settingsPath, 'utf8'))
+    expect(Array.isArray(data.hooks?.UserPromptSubmit)).toBe(true)
+    expect(data.hooks.UserPromptSubmit).toHaveLength(1)
+    const cmd = data.hooks.UserPromptSubmit[0].hooks[0].command
+    expect(cmd).toMatch(/notify\.js user-prompt-submit$/)
+  })
+
+  it('buildHookEntry maps UserPromptSubmit → user-prompt-submit', () => {
+    const entry = internals.buildHookEntry('UserPromptSubmit', '/tmp/x.js')
+    expect(entry.hooks[0].command).toMatch(/x\.js user-prompt-submit$/)
   })
 })
 
@@ -269,7 +287,7 @@ describe('bootstrapHooks', () => {
     expect(r.alreadyInstalled).toBe(false)
     expect(r.scriptResult.action).toBe('installed')
     expect(r.hookResult).toBeTruthy()
-    expect(r.hookResult.added).toEqual(['Stop', 'Notification', 'SessionEnd'])
+    expect(r.hookResult.added).toEqual(['Stop', 'Notification', 'SessionEnd', 'UserPromptSubmit'])
     expect(existsSync(scriptPath)).toBe(true)
     const data = JSON.parse(readFileSync(settingsPath, 'utf8'))
     expect(data.hooks.Stop).toHaveLength(1)

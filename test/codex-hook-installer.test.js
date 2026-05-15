@@ -72,7 +72,7 @@ describe('codex-hook-installer', () => {
       expect(data.hooks.UserPromptSubmit).toHaveLength(1)
       expect(data.hooks.Stop[0]._agentquadManaged).toBe(true)
       expect(data.hooks.Stop[0].hooks[0].command).toMatch(/notify\.js stop$/)
-      expect(data.hooks.UserPromptSubmit[0].hooks[0].command).toMatch(/notify\.js notification$/)
+      expect(data.hooks.UserPromptSubmit[0].hooks[0].command).toMatch(/notify\.js user-prompt-submit$/)
     })
 
     it('preserves user-defined hooks', () => {
@@ -219,5 +219,11 @@ describe('codex-hook-installer', () => {
       expect(r.skipped).toBe(true)
       expect(r.reason).toBe('malformed_hooks_json')
     })
+  })
+
+  it('buildHookEntry maps UserPromptSubmit → user-prompt-submit (not notification)', () => {
+    const entry = __test__.buildHookEntry('UserPromptSubmit', '/tmp/x.js')
+    expect(entry.hooks[0].command).toMatch(/x\.js user-prompt-submit$/)
+    expect(entry.hooks[0].command).not.toMatch(/x\.js notification$/)
   })
 })
