@@ -504,12 +504,11 @@ function TokenChip({ tool, usage }: { tool: AiTool; usage: SessionUsage | null }
   const contextTokens = (usage.input || 0) + (usage.cacheRead || 0) + (usage.cacheCreation || 0)
   if (contextTokens === 0) return null
   const window = contextWindowFor(tool)
-  const pct = Math.min(100, Math.round((contextTokens / window) * 100))
-  const title = `input ${usage.input.toLocaleString()} · cache ${(usage.cacheRead + usage.cacheCreation).toLocaleString()} · output ${usage.output.toLocaleString()}${usage.model ? ` · ${usage.model}` : ''}`
+  const pct = (contextTokens / window) * 100
+  const title = `input ${usage.input.toLocaleString()} · cache ${(usage.cacheRead + usage.cacheCreation).toLocaleString()} · output ${usage.output.toLocaleString()}${usage.model ? ` · ${usage.model}` : ''} · ${Math.round(pct)}% of ${window / 1000}k window`
   return (
-    <span className="todo-history-tokens" title={title}>
-      <span className="todo-history-tokens-count">↓ {formatTokens(contextTokens)}</span>
-      <span className={pct >= 80 ? 'todo-history-tokens-pct is-warn' : 'todo-history-tokens-pct'}>{pct}%</span>
+    <span className={pct >= 80 ? 'todo-history-tokens todo-history-tokens-tag is-warn' : 'todo-history-tokens todo-history-tokens-tag'} title={title}>
+      ↓ {formatTokens(contextTokens)}
     </span>
   )
 }

@@ -739,29 +739,25 @@ body {
   50%      { box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 0%,  transparent); }
 }
 
-/* Token / context% 微标 —— 跟在「已运行 X」/「上次活跃 X 前」后面，
+/* Token 用量 tag —— 跟在「已运行 X」/「上次活跃 X 前」后面。
+   ≥ 80% context 时换橙色背景作为压缩临近的视觉警示；具体 % 在 tooltip 里。
    tool=cursor 时显示 N/A 占位（视觉对齐，不让人误以为漏字段）。 */
 .todo-history-tokens {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
   font-size: 11px;
   color: var(--text-tertiary);
   flex-shrink: 0;
-}
-
-.todo-history-tokens-count {
   font-variant-numeric: tabular-nums;
 }
 
-.todo-history-tokens-pct {
-  font-variant-numeric: tabular-nums;
-  padding: 0 4px;
+.todo-history-tokens-tag {
+  padding: 0 6px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--text-tertiary) 14%, transparent);
 }
 
-.todo-history-tokens-pct.is-warn {
+.todo-history-tokens-tag.is-warn {
   color: var(--ai-pending-confirm);
   background: color-mix(in srgb, var(--ai-pending-confirm) 16%, transparent);
 }
