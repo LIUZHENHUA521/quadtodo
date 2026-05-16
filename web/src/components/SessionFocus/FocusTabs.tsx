@@ -9,8 +9,8 @@ interface Props {
 export function FocusTabs({ value, onChange }: Props) {
   const { t } = useTranslation(['session'])
   const tabs: { key: FocusTab; label: string }[] = [
-    { key: 'conversation', label: t('session:tabs.conversation') },
     { key: 'live', label: t('session:tabs.live') },
+    { key: 'conversation', label: t('session:tabs.conversation') },
   ]
   return (
     <div className="focus-tabs">

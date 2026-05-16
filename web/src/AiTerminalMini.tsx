@@ -1073,11 +1073,11 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
       // "小框→撑满" 的闪动（容器在隐藏期间可能因为窗口缩放等原因尺寸变化，xterm
       // 内部 cols/rows 还停在上次的值）。
       //
-      // 进一步兜底：focusStore 默认 tab 是 'conversation'，所以打开任何 todo 时 Live
-      // 容器都是 display:none 起步。waitTerminalReady 3s 超时后会在隐藏容器里 term.open，
-      // 首帧 fit 拿到的 cols 多半不准；用户首次切到 Live → IO 触发 doFit，但 doFit 内部
-      // 的 50/150/400ms 退避只重试 3 次（refitAttemptsRef ≤ 3），如果 layout settle
-      // 慢、或 xterm 渲染服务还没刷掉旧 metrics，3 次都失败就再无机会。
+      // 进一步兜底：用户切到 'conversation' 再切回 Live 时（或在某些首次渲染时序下
+      // Live 容器仍是 display:none 起步），waitTerminalReady 3s 超时后会在隐藏容器里
+      // term.open，首帧 fit 拿到的 cols 多半不准；首次进入 Live → IO 触发 doFit，但
+      // doFit 内部的 50/150/400ms 退避只重试 3 次（refitAttemptsRef ≤ 3），如果 layout
+      // settle 慢、或 xterm 渲染服务还没刷掉旧 metrics，3 次都失败就再无机会。
       // 因此 justEntered 时除了立即 doFit 外，再追加 100/300/600ms 三次外层 refit，
       // 每次都把 refitAttemptsRef 清零让内层再获得一组完整重试预算。
       let wasIntersecting = false

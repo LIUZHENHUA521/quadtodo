@@ -19,12 +19,12 @@ interface FocusState {
 export const useFocusStore = create<FocusState>((set) => ({
   focusedTodoId: null,
   focusedSessionId: null,
-  focusedTab: 'conversation',  // Default landing tab matches mockup (rendered chat first)
+  focusedTab: 'live',  // Default landing tab: Live terminal (first tab)
 
   setFocus: (todoId, sessionId) => set(() => ({
     focusedTodoId: todoId,
     focusedSessionId: sessionId ?? null,
-    focusedTab: 'conversation',  // Reset tab on new focus
+    focusedTab: 'live',  // Reset tab on new focus → Live terminal
   })),
   clearFocus: () => set(() => ({ focusedTodoId: null, focusedSessionId: null })),
   setTab: (tab) => set(() => ({ focusedTab: tab })),
