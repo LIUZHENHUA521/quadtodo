@@ -67,6 +67,12 @@ import { useAppConfigStore } from './store/appConfigStore'
 import { TopbarDispatch } from './components/TopbarDispatch'
 import { BoardFilterPill } from './components/BoardFilterPill/BoardFilterPill'
 import { QuadrantBoard, QuadrantZone, QUADRANT_CONFIG } from './components/QuadrantBoard'
+import {
+  StatusBoard,
+  backlogTodos as filterBacklogTodos,
+  flattenSessions,
+  sessionsByColumn,
+} from './components/StatusBoard'
 import { SortableTodoCard } from './components/TodoCard'
 import { StageTagChip } from './components/StageTagChip'
 import type { StageTag } from './api'
@@ -1224,39 +1230,60 @@ export default function TodoManage() {
           onDragEnd={handleDragEnd}
         >
           {(() => {
-            const sharedZoneProps = {
-              childrenByParentId,
-              childHitIdsByParentId,
-              onCreateSubtodo: handleCreateSubtodo,
-              onCardClick: openDetail,
-              onToggleDone: handleToggleDone,
-              onAiExec: handleAiExec,
-              onRequestFork: handleRequestFork,
-              onDeleteAiSession: handleDeleteAiSession,
-              onUpdateSessionLabel: handleUpdateSessionLabel,
-              onDelete: handleDelete,
-              onOpenTrae: handleOpenTrae,
-              onOpenTerminal: handleOpenTerminal,
-              onOpenNativeResume: handleOpenNativeResume,
-              onExport: handleExport,
-              isNarrow,
-              onRefresh: fetchTodos,
-              highlightTodoId,
-            }
+            // 新版 StatusBoard：左 Backlog（TodoCard），右 3 列按 session.status 分组（SessionCard）
+            const showDone = filterStatus === 'done' || filterStatus === ''
+            const backlog = filterBacklogTodos(todos, showDone)
+            // Backlog 列内按 sortOrder（'todo' filter）或 completedAt desc（'done' filter）排序
+            const doneRank = (x: Todo) => x.completedAt || x.updatedAt || 0
+            const backlogSorted = [...backlog].sort((a, b) => {
+              if (filterStatus === 'done') return doneRank(b) - doneRank(a)
+              if (filterStatus === 'todo') return (a.sortOrder || 0) - (b.sortOrder || 0)
+              const aDone = a.status === 'done' ? 1 : 0
+              const bDone = b.status === 'done' ? 1 : 0
+              if (aDone !== bDone) return aDone - bDone
+              if (aDone === 1) return doneRank(b) - doneRank(a)
+              return (a.sortOrder || 0) - (b.sortOrder || 0)
+            })
+            const dndIds = backlogSorted.map((x) => todoDndId(x))
+
+            // 右 3 列：拍平所有 sessions
+            const sessionsCol = sessionsByColumn(flattenSessions(todos))
+
+            const renderBacklogTodo = (todo: Todo) => (
+              <SortableTodoCard
+                todo={todo}
+                children={childrenByParentId[todo.id] || []}
+                childHitIds={childHitIdsByParentId[todo.id]}
+                onCreateSubtodo={handleCreateSubtodo}
+                onClick={openDetail}
+                onToggleDone={handleToggleDone}
+                onAiExec={handleAiExec}
+                onRequestFork={handleRequestFork}
+                onDeleteAiSession={handleDeleteAiSession}
+                onUpdateSessionLabel={handleUpdateSessionLabel}
+                onDelete={handleDelete}
+                onOpenTrae={handleOpenTrae}
+                onOpenTerminal={handleOpenTerminal}
+                onOpenNativeResume={handleOpenNativeResume}
+                onExport={handleExport}
+                isNarrow={isNarrow}
+                onRefresh={fetchTodos}
+                highlightTodoId={highlightTodoId}
+              />
+            )
+
             return (
-              <QuadrantBoard
-                topLeft={
-                  <QuadrantZone config={QUADRANT_CONFIG[0]} todos={todosByQuadrant[1] || []} {...sharedZoneProps} />
-                }
-                topRight={
-                  <QuadrantZone config={QUADRANT_CONFIG[1]} todos={todosByQuadrant[2] || []} {...sharedZoneProps} />
-                }
-                bottomLeft={
-                  <QuadrantZone config={QUADRANT_CONFIG[2]} todos={todosByQuadrant[3] || []} {...sharedZoneProps} />
-                }
-                bottomRight={
-                  <QuadrantZone config={QUADRANT_CONFIG[3]} todos={todosByQuadrant[4] || []} {...sharedZoneProps} />
-                }
+              <StatusBoard
+                backlogTodos={backlogSorted}
+                backlogDndIds={dndIds}
+                renderBacklogItem={renderBacklogTodo}
+                sessions={sessionsCol}
+                onOpenSession={(s, parent) => handleOpenTerminalInDock(parent, s.sessionId)}
+                onOpenParent={(parent) => openDetail(parent)}
+                onCancelSession={(s) => { handleStopSession(s.sessionId).catch(() => {}) }}
+                onConfirmSession={(s, parent) => handleOpenTerminalInDock(parent, s.sessionId)}
+                onCloseIdle={(s) => { handleStopSession(s.sessionId).catch(() => {}) }}
+                onReopenIdle={(s, parent) => handleOpenTerminalInDock(parent, s.sessionId)}
               />
             )
           })()}

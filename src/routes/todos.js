@@ -13,8 +13,9 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
   router.get('/', (req, res) => {
     try {
       try { db.sweepRecurring(Date.now()) } catch (e) { console.warn('[sweepRecurring]', e?.message) }
-      const { quadrant, status, keyword } = req.query
-      const list = db.listTodos({ quadrant, status, keyword })
+      // quadrant 入参已退役（仍接受以兼容旧客户端，但不再过滤）
+      const { status, keyword } = req.query
+      const list = db.listTodos({ status, keyword })
       res.json({ ok: true, list })
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message })
@@ -23,7 +24,7 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
 
   router.post('/', (req, res) => {
     try {
-      const { title, description, quadrant, dueDate, workDir, brainstorm, appliedTemplateIds, parentId } = req.body || {}
+      const { title, description, dueDate, workDir, brainstorm, appliedTemplateIds, parentId } = req.body || {}
       if (!title || typeof title !== 'string') {
         res.status(400).json({ ok: false, error: 'missing title' })
         return
@@ -37,15 +38,10 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
         res.status(400).json({ ok: false, error: 'nested_subtodo_not_allowed' })
         return
       }
-      const q = parent ? parent.quadrant : (Number(quadrant) || 4)
-      if (![1, 2, 3, 4].includes(q)) {
-        res.status(400).json({ ok: false, error: 'invalid quadrant' })
-        return
-      }
+      // quadrant 已退役 —— 不再透传，让 db 层用默认值
       const todo = db.createTodo({
         title,
         description: description || '',
-        quadrant: q,
         dueDate: dueDate ?? null,
         workDir: workDir || null,
         brainstorm: !!brainstorm,
@@ -100,11 +96,9 @@ export function createTodosRouter({ db, logDir, getPricing, getTools, getLiveSes
         res.status(400).json({ ok: false, error: 'nested_subtodo_not_allowed' })
         return
       }
-      if (parent && patch.quadrant !== undefined && Number(patch.quadrant) !== parent.quadrant) {
-        res.status(400).json({ ok: false, error: 'parent_quadrant_mismatch' })
-        return
-      }
-      const todo = db.updateTodo(req.params.id, patch)
+      // quadrant 入参已退役：剥掉避免传到 db 层（db 仍接受但 UI 不再使用）
+      const { quadrant: _ignoredQuadrant, ...sanitizedPatch } = patch
+      const todo = db.updateTodo(req.params.id, sanitizedPatch)
 
       // Auto-close PTY when status transitions to 'done':
       // - kill all live AI sessions of this todo and its subtodos

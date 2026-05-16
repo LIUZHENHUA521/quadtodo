@@ -1,0 +1,266 @@
+/**
+ * StatusBoard 横向 4 列布局。
+ * 主题：工业控制台风格 —— 锐角、深底、电柠檬绿主色调。
+ * 颜色变量在 :root 层定义，方便日后接入主题系统。
+ */
+:root {
+  --sb-idle: #5a6171;        /* backlog */
+  --sb-running: #d4ff3a;     /* in progress · 电柠檬绿 */
+  --sb-warn: #ff8a3d;        /* needs input · amber */
+  --sb-calm: #6ce5b6;        /* idle session · jade */
+}
+
+.status-board {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  gap: 0;
+}
+
+.status-board-col {
+  flex: 1 1 0;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--ant-color-border-secondary, #303030);
+  background: var(--ant-color-bg-container, transparent);
+  position: relative;
+  min-height: 0;
+}
+.status-board-col:last-child { border-right: none; }
+
+.status-board-col-head {
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--ant-color-border-secondary, #303030);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  position: relative;
+}
+.status-board-col-head::after {
+  content: "";
+  position: absolute;
+  left: 16px; right: 16px; bottom: -1px;
+  height: 1px;
+  background: var(--col-accent);
+  opacity: 0.45;
+}
+
+.status-board-col-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.status-board-col-tag {
+  font-family: 'JetBrains Mono', SF Mono, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ant-color-text-tertiary, #888);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.status-board-col-tag::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--col-accent);
+}
+.status-board-col-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ant-color-text, #fff);
+  letter-spacing: -0.01em;
+}
+.status-board-col-count {
+  font-family: 'Instrument Serif', 'Times New Roman', serif;
+  font-style: italic;
+  font-size: 32px;
+  line-height: 0.85;
+  color: var(--col-accent);
+  flex-shrink: 0;
+}
+
+.status-board-col-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.status-board-empty {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary, #888);
+  text-align: center;
+  padding: 18px 0;
+  font-style: italic;
+  opacity: 0.6;
+}
+
+/* ====== Session card style ====== */
+.session-card {
+  background: var(--ant-color-bg-elevated, #1a1a1a);
+  border: 1px solid var(--ant-color-border-secondary, #303030);
+  border-radius: 4px;
+  padding: 12px;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.session-card:hover {
+  border-color: var(--ant-color-primary-border, #58a6ff);
+  background: var(--ant-color-bg-container, #1f1f1f);
+  transform: translateY(-1px);
+}
+.session-card.is-needs-input {
+  border-left: 3px solid var(--sb-warn);
+}
+.session-card.is-needs-input::after {
+  content: "→";
+  position: absolute;
+  top: 10px; right: 12px;
+  color: var(--sb-warn);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  animation: sb-blink 1.8s ease-in-out infinite;
+}
+@keyframes sb-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.session-card-parent {
+  font-family: 'JetBrains Mono', SF Mono, monospace;
+  font-size: 11px;
+  color: var(--ant-color-text-tertiary, #888);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ant-color-border-secondary, #303030);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-card-parent::before {
+  content: "↩";
+  flex-shrink: 0;
+}
+.session-card-parent:hover { color: var(--sb-running); }
+.session-card-parent .parent-title {
+  color: var(--ant-color-text-secondary, #ccc);
+  font-family: inherit;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-card-title {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: var(--ant-color-text, #eee);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.session-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  font-family: 'JetBrains Mono', SF Mono, monospace;
+  font-size: 10px;
+  color: var(--ant-color-text-tertiary, #888);
+  letter-spacing: 0.02em;
+}
+.session-card-meta-row .tool {
+  color: var(--ant-color-text, #ddd);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.session-card-meta-row .dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--status-color);
+}
+.session-card-meta-row .status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--status-color);
+  font-weight: 600;
+}
+.session-card-meta-row .status.is-running .dot {
+  animation: sb-pulse 1.4s ease-in-out infinite;
+}
+@keyframes sb-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--status-color); }
+  50% { box-shadow: 0 0 0 4px transparent; }
+}
+
+.session-card-actions {
+  display: flex;
+  gap: 6px;
+}
+.session-card-actions .ant-btn {
+  flex: 1;
+  font-family: 'JetBrains Mono', SF Mono, monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ====== Backlog TodoCard 增强 ====== */
+.todo-card-history-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--ant-color-bg-elevated, #232323);
+  border: 1px solid var(--ant-color-border-secondary, #303030);
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-family: 'JetBrains Mono', SF Mono, monospace;
+  font-size: 10px;
+  color: var(--ant-color-text-tertiary, #888);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.todo-card-history-chip::before {
+  content: "↻";
+  margin-right: 2px;
+}
+.todo-card-history-chip:hover {
+  border-color: var(--sb-running);
+  color: var(--sb-running);
+}
+.todo-card-history-chip .active-count {
+  color: var(--sb-running);
+  font-weight: 700;
+}
+
+/* ====== Mobile fallback：单列 + 横向滑动列切换 ====== */
+@media (max-width: 768px) {
+  .status-board {
+    overflow-x: auto;
+  }
+  .status-board-col {
+    flex: 0 0 90vw;
+    min-width: 90vw;
+  }
+}

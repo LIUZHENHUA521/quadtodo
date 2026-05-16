@@ -128,7 +128,7 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
           <div className="todo-card-main">
             <div className="todo-card-title-row">
               <div className="todo-card-title" title={todo.title}>{todo.title}</div>
-              <StageTagChip value={todo.stageTag} onChange={handleStageTagChange} />
+              {/* StageTagChip 已退役（DB 字段保留以兼容历史，但 UI 不再展示） */}
             </div>
           </div>
         </div>
@@ -190,11 +190,7 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
           >
             <Button size="small" icon={<Play size={13} />} className="todo-primary-action">{t('todo:card.aiTerminal')}</Button>
           </Dropdown>
-          {!isSubtodo && onCreateSubtodo && (
-            <Tooltip title={t('todo:card.addSubtodo')}>
-              <Button size="small" icon={<Plus size={13} />} onClick={() => onCreateSubtodo(todo)} className="todo-primary-action" />
-            </Tooltip>
-          )}
+          {/* 子待办创建入口已退役（DB parent_id 字段保留；存量子待办在 StatusBoard 里平铺显示） */}
           <Popconfirm
             title={t('todo:card.deleteConfirm')}
             okButtonProps={{ danger: true }}
