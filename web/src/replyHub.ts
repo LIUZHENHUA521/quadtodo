@@ -1,5 +1,6 @@
 import type { AiSession, AiStatus, AiTool, Quadrant, Todo } from './api'
 import type { SessionMeta } from './store/aiSessionStore'
+import { isClosedAiStatus } from './design/aiPresentationState'
 
 export interface UnreadSessionItem {
   id: string
@@ -79,6 +80,11 @@ export function buildUnreadSessionItems({ todos, liveSessions, lastSeenMap }: Bu
   const items: UnreadSessionItem[] = []
   for (const [sid, ts] of tsBySid) {
     if (statusBySid.get(sid) === 'running') continue
+    // PTY 已死的会话（done/failed/stopped）也不算"待确认"——跟 deriveAiState 对齐：
+    // 顶栏 pill 是"AI 还在等用户某个动作"的全局计数，进程已结束的会话再无 AI 端动作可
+    // 等待，用户该 resume 就 resume、该关就关，让它停留在 pill 里只会误导。"请验收"
+    // 由 todo.status='ai_done' 单独控制，跟这里的 pending 不复用同一计数。
+    if (isClosedAiStatus(statusBySid.get(sid))) continue
     const meta = metaBySid.get(sid)
     if (!meta) continue
     if (doneTodoIds.has(meta.todoId)) continue

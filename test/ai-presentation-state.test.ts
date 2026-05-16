@@ -12,24 +12,30 @@ describe('deriveAiState', () => {
     expect(deriveAiState('running', true)).toBe('running')
   })
 
-  it('returns pending when not running but unread', () => {
+  it('returns pending when alive but unread (idle / pending_confirm / unknown)', () => {
     expect(deriveAiState('idle', true)).toBe('pending')
-    expect(deriveAiState('done', true)).toBe('pending')
-    expect(deriveAiState('failed', true)).toBe('pending')
-    expect(deriveAiState('stopped', true)).toBe('pending')
     expect(deriveAiState('pending_confirm', true)).toBe('pending')
     expect(deriveAiState(undefined, true)).toBe('pending')
     expect(deriveAiState(null, true)).toBe('pending')
+  })
+
+  it('returns idle for closed PTY states regardless of unread', () => {
+    // PTY 已死的会话（done/failed/stopped）即便本地 lastSeen 落后于 lastTurnDoneAt，也
+    // 不能让顶栏「待确认」pill 把它当成阻塞型动作项——进程已结束就该归 idle 让
+    // FocusSubbar / TodoCard 走"进程已结束"分支。
+    expect(deriveAiState('done', true)).toBe('idle')
+    expect(deriveAiState('failed', true)).toBe('idle')
+    expect(deriveAiState('stopped', true)).toBe('idle')
+    expect(deriveAiState('done', false)).toBe('idle')
+    expect(deriveAiState('failed', false)).toBe('idle')
+    expect(deriveAiState('stopped', false)).toBe('idle')
   })
 
   it('returns idle when backend status is real idle and not unread', () => {
     expect(deriveAiState('idle', false)).toBe('idle')
   })
 
-  it('returns idle when not running and not unread (terminal closed states)', () => {
-    expect(deriveAiState('done', false)).toBe('idle')
-    expect(deriveAiState('failed', false)).toBe('idle')
-    expect(deriveAiState('stopped', false)).toBe('idle')
+  it('returns idle when status missing and not unread', () => {
     expect(deriveAiState(undefined, false)).toBe('idle')
     expect(deriveAiState(null, false)).toBe('idle')
   })

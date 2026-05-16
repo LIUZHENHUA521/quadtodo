@@ -7,14 +7,21 @@ export type AiPresentationState = 'running' | 'pending' | 'idle'
 /**
  * 单一来源：把后端 AiStatus + unread + awaitingReply 推导成 3 态展示态。
  *
- * 规则（"待确认"两条入口）：
- *   1. status === 'pending_confirm'   → pending（agent 工具请求授权，阻塞型动作项，
- *                                        即使用户已读也不归 idle，要等真正按下 y/n 让
- *                                        后端把 status 翻回 running）
- *   2. unread === true                → pending（AI 完成一轮回复但用户没看过）
- *
- *   - status === 'running' 且 !awaitingReply → running
- *   - 其它（包括 idle / done / failed / stopped 已读）→ idle
+ * 规则：
+ *   1. status === 'pending_confirm'         → pending（agent 工具请求授权，阻塞型动作项，
+ *                                              即使用户已读也不归 idle，要等真正按下 y/n 让
+ *                                              后端把 status 翻回 running）
+ *   2. status ∈ {done,failed,stopped}       → idle（PTY 已死的会话不再算"待确认"。
+ *                                              即使本地 lastSeen 落后于 lastTurnDoneAt，也
+ *                                              不能让全局顶栏「待确认」pill / 板内 pending
+ *                                              筛选把进程已结束的会话当成阻塞型动作项——
+ *                                              它在 FocusSubbar / TodoCard / TranscriptView
+ *                                              都靠 isClosedAiStatus 单独走"进程已结束"分支。
+ *                                              "请验收"是工作流概念，由 todo.status='ai_done'
+ *                                              单独控制，跟这里的 pending 不复用同一计数。)
+ *   3. status === 'running' 且 !awaitingReply → running
+ *   4. unread === true                      → pending（AI 完成一轮回复但用户没看过）
+ *   5. 其它 → idle
  *
  * 后端 status === 'pending_confirm' 现在只由 hook 信号（Claude Notification +
  * permissionish / codex-prompt-detector）触发，不再走 PTY 输出正则——避免 AI 回复
@@ -26,6 +33,7 @@ export function deriveAiState(
   awaitingReply: boolean = false,
 ): AiPresentationState {
   if (status === 'pending_confirm') return 'pending'
+  if (isClosedAiStatus(status)) return 'idle'
   if (status === 'running' && !awaitingReply) return 'running'
   if (unread) return 'pending'
   return 'idle'

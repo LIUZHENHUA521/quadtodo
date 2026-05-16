@@ -58,9 +58,9 @@ export function FocusSubbar({
   )
   const markSeen = useUnreadStore((s) => s.markSeen)
   const unread = isSessionUnread(session?.lastTurnDoneAt, lastSeen)
-  // PTY 已死的会话（done/failed/stopped）在 deriveAiState 里会被吃成 'idle'——这里独立检测，
-  // 让 pill 文案显示"进程已结束"而不是误导的"空闲"。触发场景包括：用户点完成自动 stop、
-  // /stop 命令、AgentQuad 重启批量 stop 等。
+  // PTY 已死的会话（done/failed/stopped）在 deriveAiState 里就会归 'idle'，这里独立检测
+  // 一次，是为了把 pill 文案换成"进程已结束"，避免显示成误导的"空闲"。触发场景：用户点
+  // 完成自动 stop、/stop 命令、AgentQuad 重启批量 stop 等。
   const effectiveStatus = session?.effectiveStatus ?? session?.status ?? fallbackStatus
   const sessionClosed = isClosedAiStatus(effectiveStatus)
   const state = deriveAiState(effectiveStatus, unread, session?.awaitingReply ?? false)

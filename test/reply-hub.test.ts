@@ -70,7 +70,7 @@ describe('buildUnreadSessionItems', () => {
         todo({
           id: 'todo-1',
           title: 'Inbox A',
-          aiSessions: [session({ sessionId: 's-unread', lastTurnDoneAt: 5000 })],
+          aiSessions: [session({ sessionId: 's-unread', status: 'idle', lastTurnDoneAt: 5000 })],
         }),
       ],
       liveSessions: [],
@@ -111,9 +111,9 @@ describe('buildUnreadSessionItems', () => {
   it('sorts newest unread first', () => {
     const items = buildUnreadSessionItems({
       todos: [
-        todo({ id: 'todo-a', title: 'A', aiSessions: [session({ sessionId: 's-old', lastTurnDoneAt: 1000 })] }),
-        todo({ id: 'todo-b', title: 'B', aiSessions: [session({ sessionId: 's-mid', lastTurnDoneAt: 5000 })] }),
-        todo({ id: 'todo-c', title: 'C', aiSessions: [session({ sessionId: 's-new', lastTurnDoneAt: 9000 })] }),
+        todo({ id: 'todo-a', title: 'A', aiSessions: [session({ sessionId: 's-old', status: 'idle', lastTurnDoneAt: 1000 })] }),
+        todo({ id: 'todo-b', title: 'B', aiSessions: [session({ sessionId: 's-mid', status: 'idle', lastTurnDoneAt: 5000 })] }),
+        todo({ id: 'todo-c', title: 'C', aiSessions: [session({ sessionId: 's-new', status: 'idle', lastTurnDoneAt: 9000 })] }),
       ],
       liveSessions: [],
       lastSeenMap: new Map(),
@@ -253,6 +253,55 @@ describe('buildUnreadSessionItems', () => {
       lastSeenMap: new Map([['s-pc', 4000]]),
     })
 
+    expect(items).toEqual([])
+  })
+
+  it('drops closed sessions (done/failed/stopped) even when unread', () => {
+    // 复现 bug：PTY 已死的会话（"进程已结束"）不该再出现在顶栏「待确认」pill 里——
+    // 进程都终止了，没什么"动作项"可催，用户该 resume 就 resume、该关就关。
+    // 之前只过滤 status==='running'，闭合态留在列表里和 FocusSubbar 显示"进程已结束"
+    // 自相矛盾。
+    const items = buildUnreadSessionItems({
+      todos: [
+        todo({
+          id: 'todo-done',
+          title: 'Closed but unread',
+          aiSessions: [session({ sessionId: 's-done', status: 'done', lastTurnDoneAt: 5000 })],
+        }),
+        todo({
+          id: 'todo-fail',
+          title: 'Failed but unread',
+          aiSessions: [session({ sessionId: 's-fail', status: 'failed', lastTurnDoneAt: 5000 })],
+        }),
+        todo({
+          id: 'todo-stop',
+          title: 'Stopped but unread',
+          aiSessions: [session({ sessionId: 's-stop', status: 'stopped', lastTurnDoneAt: 5000 })],
+        }),
+      ],
+      liveSessions: [],
+      lastSeenMap: new Map([
+        ['s-done', 4000],
+        ['s-fail', 4000],
+        ['s-stop', 4000],
+      ]),
+    })
+
+    expect(items).toEqual([])
+  })
+
+  it('uses live closed status to override stale idle snapshot status', () => {
+    // 跟 running override 镜像：todo 快照还停留在 idle，live 已切到 done —— 应按 live 的
+    // closed 跳过，避免顶栏 pill 显示一条已经死掉的"待确认"。
+    const items = buildUnreadSessionItems({
+      todos: [todo({
+        id: 'todo-1',
+        title: 'Snapshot idle, live done',
+        aiSessions: [session({ sessionId: 's-x', status: 'idle', lastTurnDoneAt: 5000 })],
+      })],
+      liveSessions: [live({ sessionId: 's-x', todoId: 'todo-1', status: 'done', lastTurnDoneAt: 5000 })],
+      lastSeenMap: new Map([['s-x', 4000]]),
+    })
     expect(items).toEqual([])
   })
 
