@@ -119,12 +119,13 @@ const DEFAULT_TELEGRAM_CONFIG = {
 };
 
 // Agent Supervisor（守望者）—— C 方案：替主人盯着所有 todo session，自动处理待确认 + 主动推进
+// 关键：用主人本地已经买好的 claude / codex / cursor-agent CLI 做判断，不调 API（不烧 API 额度）
 // Phase 1：只接 PTY 权限弹窗 + ask_user MCP；Phase 2 才上主动推进；Phase 3 才接浏览器代驾
 const DEFAULT_AGENT_SUPERVISOR_CONFIG = {
 	enabled: false,                            // 全局开关，默认关
-	model: "claude-opus-4-7",                  // 判官模型，UI 可改成 sonnet / haiku 省钱
-	apiKey: "",                                // 留空 → 走 env ANTHROPIC_API_KEY；config 落盘时会脱敏
-	apiBaseUrl: "https://api.anthropic.com",   // 私有镜像 / 网关可改
+	tool: "claude",                            // 用哪个本地 CLI 做判断：claude / codex / cursor
+	model: "",                                 // 可选：传给 CLI 的 --model；空字符串 = 用 CLI 自己的默认
+	timeoutMs: 60_000,                         // 单次决策最长等多久；超时降级回原流程
 	threshold: 0.8,                            // 置信度 ≥ 这个才自动决策；否则降级原 IM 流程
 	allowlist: [                               // 命中以下关键词的选项才允许自动选（小写匹配）
 		"allow",
@@ -146,6 +147,8 @@ const DEFAULT_AGENT_SUPERVISOR_CONFIG = {
 		enabled: false,
 	},
 };
+
+const SUPERVISOR_TOOLS = new Set(["claude", "codex", "cursor"]);
 
 const DEFAULT_LARK_CONFIG = {
 	enabled: false,
@@ -495,6 +498,8 @@ function normalizeAgentSupervisor(raw = {}) {
 	const base = DEFAULT_AGENT_SUPERVISOR_CONFIG;
 	const input = raw && typeof raw === "object" ? raw : {};
 	const threshold = Number(input.threshold);
+	const timeoutMs = Number(input.timeoutMs);
+	const tool = typeof input.tool === "string" && SUPERVISOR_TOOLS.has(input.tool.trim()) ? input.tool.trim() : base.tool;
 	const allowlist = Array.isArray(input.allowlist)
 		? input.allowlist.map((x) => String(x).trim().toLowerCase()).filter(Boolean)
 		: [...base.allowlist];
@@ -502,9 +507,9 @@ function normalizeAgentSupervisor(raw = {}) {
 	const browserControl = input.browserControl && typeof input.browserControl === "object" ? input.browserControl : {};
 	return {
 		enabled: input.enabled === true,
-		model: typeof input.model === "string" && input.model.trim() ? input.model.trim() : base.model,
-		apiKey: typeof input.apiKey === "string" ? input.apiKey : "",
-		apiBaseUrl: typeof input.apiBaseUrl === "string" && input.apiBaseUrl.trim() ? input.apiBaseUrl.trim() : base.apiBaseUrl,
+		tool,
+		model: typeof input.model === "string" ? input.model.trim() : "",
+		timeoutMs: Number.isFinite(timeoutMs) && timeoutMs >= 5_000 && timeoutMs <= 600_000 ? Math.floor(timeoutMs) : base.timeoutMs,
 		threshold: Number.isFinite(threshold) && threshold >= 0 && threshold <= 1 ? threshold : base.threshold,
 		allowlist,
 		permissionAuto: input.permissionAuto !== false,

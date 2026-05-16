@@ -1479,6 +1479,25 @@ describe('routes/ai-terminal', () => {
     expect(ctx.ait.sessions.get(body.sessionId).status).toBe('idle')
   })
 
+  it('markPendingConfirm allowIdleFlip=true 允许从 idle 翻 pending_confirm（PTY-detector 兜底）', async () => {
+    const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({ todoId: todo.id, prompt: 'hi', tool: 'claude' })
+    const sess = ctx.ait.sessions.get(body.sessionId)
+    // 用户当前所在场景：上一轮 Stop hook 已经把 status 翻成 idle，但 auto-mode 分类器
+    // 紧接着浮出一个权限框（Notification hook 不 fire），detector 必须能把状态再翻回去。
+    sess.status = 'idle'
+    sess.awaitingReply = true
+
+    const ok = ctx.ait.markPendingConfirm(body.sessionId, {
+      source: 'claude-pty-detector',
+      promptText: 'Do you want to proceed?\n1. Yes\n2. No',
+      allowIdleFlip: true,
+    })
+    expect(ok).toBe(true)
+    expect(ctx.ait.sessions.get(body.sessionId).status).toBe('pending_confirm')
+  })
+
   it('keyword-like output does not send webhook notifications from legacy config', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true })
     try {

@@ -642,9 +642,16 @@ export function createOpenClawHookHandler(deps = {}) {
     const sess = aiTerminal?.sessions?.get(sessionId)
     if (!sess) return { ok: false, reason: 'session_gone' }
 
-    // 1) 翻状态。markPendingConfirm 内置 status 守卫（只在 running/pending_confirm 翻），
-    //    所以即便此处和真 Notification 抢跑，也只会幂等更新。
-    try { aiTerminal?.markPendingConfirm?.(sessionId, { source: 'claude-pty-detector', promptText }) } catch { /* ignore */ }
+    // 1) 翻状态。markPendingConfirm 默认只接受 running → pending_confirm，但 PTY-detector
+    //    要求 anchor + ≥2 数字选项才 emit，假阳性概率极低；显式 allowIdleFlip=true 让它
+    //    在 status=idle 时也能翻（覆盖 auto 模式权限框在 Stop hook 后才浮出的场景）。
+    try {
+      aiTerminal?.markPendingConfirm?.(sessionId, {
+        source: 'claude-pty-detector',
+        promptText,
+        allowIdleFlip: true,
+      })
+    } catch { /* ignore */ }
 
     // 2) IM 推送资格 & cooldown 跟真 Notification 共享 → 不会双推
     if (!isPermissionReminderEligible(sessionId)) {

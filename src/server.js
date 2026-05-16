@@ -607,6 +607,9 @@ export function createServer(opts = {}) {
 	// markPendingConfirm + IM 推送都靠现有逻辑跑；与真 Notification 之间用 cooldown 去重。
 	pty.on("claude-prompt", async (data) => {
 		const port = runtimeConfig?.port || 5677;
+		// 显式 info 日志：detector 失火 vs Notification hook 失火很难肉眼区分，留个面包屑
+		// 方便定位"宝子又说没生效"那类问题（grep server.log "claude-prompt"）。
+		console.log(`[claude-prompt] detector fired sid=${data.sessionId} opts=${(data.options || []).length} prompt=${(data.promptText || '').slice(0, 80).replace(/\n/g, ' ')}`);
 		try {
 			await fetch(`http://127.0.0.1:${port}/api/openclaw/hook`, {
 				method: "POST",

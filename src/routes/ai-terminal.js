@@ -193,16 +193,23 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
   // 也翻 pending_confirm，会让 session 在 AI 完成回话之后无故卡在"待确认"，前端没有任何
   // 入口能把它清掉（focus 只清 unread；markSessionRunningAfterInput 需要真实输入）。
   // 所以 idle / 其它非 running 状态下，直接拒绝翻转。
+  //
+  // 例外 allowIdleFlip=true：来自 Claude PTY-detector 兜底路径。它要求 anchor + ≥2 个数字
+  // 选项才 emit，假阳性概率极低；而 Claude 在 `permissions.defaultMode='auto'` 或用户在
+  // 终端里 Shift+Tab 切到 plan/acceptEdits 时，权限框可能在 Stop hook 之后（status=idle）
+  // 才浮出来——这种 case 真权限信号下，必须允许从 idle 翻 pending_confirm。
+  //
   // promptText 可由 caller 显式传入（Codex 的 prompt-detector 已经握有一段干净文本）；
   // 不传则从 session.recentOutput 提取尾部（Claude Notification 路径走这条）。
   // 状态已经是 pending_confirm 时也允许更新 pendingPrompt —— 同一轮等待中 PTY
   // 可能继续追加输出（如选项变化、高亮位移），让前端拿到最新文案。
-  function markPendingConfirm(sessionId, { source = null, promptText = null } = {}) {
+  function markPendingConfirm(sessionId, { source = null, promptText = null, allowIdleFlip = false } = {}) {
     const session = sessions.get(sessionId)
     if (!session) return false
     if (!LIVE_AI_STATUSES.has(session.status)) return false
     const wasPending = session.status === 'pending_confirm'
-    if (!wasPending && session.status !== 'running') return false
+    const wasIdle = session.status === 'idle'
+    if (!wasPending && session.status !== 'running' && !(wasIdle && allowIdleFlip)) return false
 
     let text = ''
     let options = []
