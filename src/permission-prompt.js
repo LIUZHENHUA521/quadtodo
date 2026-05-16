@@ -47,17 +47,23 @@ const BORDER_ONLY = /^[\s\-=_|+~]+$/
 const CLAUDE_FOOTER_RE = /Esc\s+to\s+cancel|Tab\s+to\s+amend|Tab\s+to\s+select/i
 
 // 已知的"该停下来等用户"锚点。命中后我们围绕它取窗口，避免把锚点前的 prompt
-// 文本（Bash 命令、文件路径、warning 等）切掉。多语言都列上，省得后续再扩。
+// 文本（Bash 命令、文件路径、warning 等）切掉。
+//
+// 通用化（用户回归：edit pty.js 那条没命中，因为老 whitelist 漏了一些措辞）：
+// Claude 的标准提问全部是 "Do you want to <verb> ...?" 句型——proceed / make this
+// edit / make this change / create / write / install / run / ... whitelist 永远追不
+// 上 Claude 的新词。直接放宽成 `/Do you want to/i` 这一条通用 pattern，配合
+// footer-at-bottom + ≥2 数字选项的强守卫已经够区分 AI 自由回复（AI 回复不会
+// 末尾带字面 "Esc to cancel · Tab to amend"）。
+//
+// 老的 Codex 单行 `[y/N]` / `apply patch?` 也留着；不影响 Claude 路径。
 const PERMISSION_ANCHORS = [
-  /Do you want to proceed/i,
-  /Do you want to make this edit/i,
-  /Do you want to make this change/i,
-  /Do you want to create/i,
+  /Do you want to\b/i,                            // 通用 Claude 提问
   /Allow this/i,
-  /apply patch\?/i,
-  /run this command\?/i,
+  /apply patch\?/i,                               // legacy codex
+  /run this command\?/i,                          // legacy codex
   /Approve\??/i,
-  /\?\s*\[[yYnN]\/[yYnN]\]/,
+  /\?\s*\[[yYnN]\/[yYnN]\]/,                      // legacy codex y/N
   /(允许|批准|授权).*\?/,
 ]
 

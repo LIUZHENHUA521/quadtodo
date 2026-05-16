@@ -241,6 +241,44 @@ describe('permission-prompt', () => {
       expect(text).not.toMatch(/auto mode/i)
     })
 
+    // 用户回归：edit pty.js 的提问没命中。老 PERMISSION_ANCHORS 是 whitelist
+    //   (proceed / make this edit / make this change / create / ...) 一旦 Claude 加
+    //   新措辞就漏。通用化成 `/Do you want to/i` 一条 + footer-at-bottom + ≥2 options
+    //   守卫，能盖住 Claude 全部"Do you want to <verb> ...?"句型。
+    it('Edit 提问 (Do you want to make this edit to <file>?) 命中 + 选项带 hotkey 后缀也解析', () => {
+      const raw = [
+        '⏺ Update(src/pty.js)',
+        '  ⎿  Updated 1 addition',
+        '',
+        'Do you want to make this edit to pty.js?',
+        '> 1. Yes',
+        '  2. Yes, allow all edits in src/ during this session (shift+tab)',
+        '  3. No',
+        '',
+        'Esc to cancel · Tab to amend',
+      ].join('\n')
+      const { text, options } = extractPermissionPrompt(raw)
+      expect(text).toContain('Do you want to make this edit to pty.js?')
+      expect(options.find(o => o.index === 1)?.label).toBe('Yes')
+      expect(options.find(o => o.index === 2)?.label).toContain('shift+tab')
+      expect(options.find(o => o.index === 3)?.label).toBe('No')
+    })
+
+    it('未知措辞 Do you want to <verb> ...? 也命中（whitelist → 通用 pattern 的迁移）', () => {
+      // 假设 Claude 未来加 "Do you want to install this dependency?"
+      const raw = [
+        'npm install foo',
+        '',
+        'Do you want to install this dependency?',
+        '1. Yes',
+        '2. No',
+        'Esc to cancel · Tab to amend',
+      ].join('\n')
+      const { text, options } = extractPermissionPrompt(raw)
+      expect(text).toContain('install this dependency')
+      expect(options.length).toBeGreaterThanOrEqual(2)
+    })
+
     // Bug 2 回归：AI 自由回复里如果恰好出现 anchor + 数字列表 + 老 footer 残骸，
     // 旧 detector 会误命中。新规则要求 footer 在屏幕末尾（lines 末 5 行内）才认。
     it('AI 自由回复带数字列表 + 缓冲深处的老 footer → 不应误命中', () => {
