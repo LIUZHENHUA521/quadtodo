@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createLarkBot, BUSY_REACTION_EMOJIS, pickBusyReactionEmoji } from '../src/lark-bot.js'
+import { createLarkBot, BUSY_REACTION_EMOJIS, pickBusyReactionEmoji, adaptWizardResponseToLark } from '../src/lark-bot.js'
 
 function makeApiClient(overrides = {}) {
   return {
@@ -943,7 +943,7 @@ describe('lark-bot reply when thread root is gone', () => {
 })
 
 describe('lark-bot card actions (interactive cards)', () => {
-  it('routes card.action.trigger payload to wizard.handleCallback with channel=lark', async () => {
+  it('routes card.action.trigger payload to wizard.handleCallback and returns Lark-shaped toast', async () => {
     const wizard = {
       handleInbound: vi.fn(),
       handleCallback: vi.fn().mockResolvedValue({ ok: true, action: 'permission_allow_sent', toast: '已发送 Enter' }),
@@ -960,7 +960,8 @@ describe('lark-bot card actions (interactive cards)', () => {
       },
     })
 
-    expect(r).toMatchObject({ ok: true, action: 'permission_allow_sent' })
+    // 关键：返回的 toast 必须是 Lark 期望的 {type, content} 对象，而不是裸 string
+    expect(r).toEqual({ toast: { type: 'success', content: '已发送 Enter' } })
     expect(wizard.handleCallback).toHaveBeenCalledWith({
       channel: 'lark',
       chatId: 'oc_default',
@@ -971,7 +972,7 @@ describe('lark-bot card actions (interactive cards)', () => {
     })
   })
 
-  it('drops card.action.trigger from a different chat (ignored_chat)', async () => {
+  it('drops card.action.trigger from a different chat (returns undefined → Lark no toast)', async () => {
     const wizard = { handleInbound: vi.fn(), handleCallback: vi.fn() }
     const { bot } = makeBot({ wizard })
 
@@ -983,17 +984,37 @@ describe('lark-bot card actions (interactive cards)', () => {
       },
     })
 
-    expect(r).toEqual({ ok: true, action: 'ignored_chat' })
+    expect(r).toBeUndefined()
     expect(wizard.handleCallback).not.toHaveBeenCalled()
   })
 
-  it('returns invalid_card_action when chatId or callback_data missing', async () => {
+  it('returns Lark-shaped warning toast when chatId or callback_data missing', async () => {
     const wizard = { handleInbound: vi.fn(), handleCallback: vi.fn() }
     const { bot } = makeBot({ wizard })
 
-    await expect(bot.handleCardAction({ event: { context: {}, action: { value: {} } } })).resolves.toEqual({ ok: false, reason: 'invalid_card_action' })
-    await expect(bot.handleCardAction({ event: { context: { open_chat_id: 'oc_default' }, action: { value: {} } } })).resolves.toEqual({ ok: false, reason: 'invalid_card_action' })
+    const r1 = await bot.handleCardAction({ event: { context: {}, action: { value: {} } } })
+    const r2 = await bot.handleCardAction({ event: { context: { open_chat_id: 'oc_default' }, action: { value: {} } } })
+    expect(r1).toEqual({ toast: { type: 'warning', content: '⚠️ 无效的卡片回传' } })
+    expect(r2).toEqual({ toast: { type: 'warning', content: '⚠️ 无效的卡片回传' } })
     expect(wizard.handleCallback).not.toHaveBeenCalled()
+  })
+
+  it('wraps wizard error in Lark-shaped error toast (avoids Lark 200340)', async () => {
+    const wizard = {
+      handleInbound: vi.fn(),
+      handleCallback: vi.fn().mockRejectedValue(new Error('write to PTY failed')),
+    }
+    const { bot } = makeBot({ wizard })
+
+    const r = await bot.handleCardAction({
+      event: {
+        operator: { open_id: 'ou_user' },
+        action: { value: { callback_data: 'qt:perm:abcd:allow' } },
+        context: { open_chat_id: 'oc_default', open_message_id: 'om_x' },
+      },
+    })
+
+    expect(r).toEqual({ toast: { type: 'error', content: expect.stringContaining('处理失败') } })
   })
 
   it('sendCard / replyWithCard delegate to apiClient', async () => {
@@ -1049,3 +1070,45 @@ describe('lark-bot subscription lifecycle', () => {
     expect(bot.describe().running).toBe(false)
   })
 })
+
+describe("adaptWizardResponseToLark (Lark card-callback shape adapter)", () => {
+  it("wizard `{toast:string, action:permission_allow_sent}` → success toast", () => {
+    expect(adaptWizardResponseToLark({ toast: "已发送 Enter", action: "permission_allow_sent" }))
+      .toEqual({ toast: { type: "success", content: "已发送 Enter" } })
+  })
+
+  it("wizard `{toast:string, action:permission_deny_sent}` → info toast (deny ≠ failure)", () => {
+    // 含 "sent" → success（用户主动操作成功完成）；这条用例锁现状
+    expect(adaptWizardResponseToLark({ toast: "已发送 Esc", action: "permission_deny_sent" }))
+      .toEqual({ toast: { type: "success", content: "已发送 Esc" } })
+  })
+
+  it("wizard `{toast:string, action:permission_session_stale}` → warning toast", () => {
+    expect(adaptWizardResponseToLark({ toast: "会话已结束", action: "permission_session_stale" }))
+      .toEqual({ toast: { type: "warning", content: "会话已结束" } })
+  })
+
+  it("wizard `{toast:string, action:handler_failed}` → error toast", () => {
+    expect(adaptWizardResponseToLark({ toast: "炸了", action: "handler_failed" }))
+      .toEqual({ toast: { type: "error", content: "炸了" } })
+  })
+
+  it("already-Lark `{toast:{content}}` 透传 + 默认 type=info", () => {
+    expect(adaptWizardResponseToLark({ toast: { content: "hi" } }))
+      .toEqual({ toast: { type: "info", content: "hi" } })
+  })
+
+  it("already-Lark `{toast:{type,content}}` 完全透传", () => {
+    expect(adaptWizardResponseToLark({ toast: { type: "success", content: "yo" } }))
+      .toEqual({ toast: { type: "success", content: "yo" } })
+  })
+
+  it("空/无 toast 文本 → undefined（Lark UI 不显 toast）", () => {
+    expect(adaptWizardResponseToLark(null)).toBeUndefined()
+    expect(adaptWizardResponseToLark(undefined)).toBeUndefined()
+    expect(adaptWizardResponseToLark({})).toBeUndefined()
+    expect(adaptWizardResponseToLark({ toast: "" })).toBeUndefined()
+    expect(adaptWizardResponseToLark({ toast: "   " })).toBeUndefined()
+  })
+})
+

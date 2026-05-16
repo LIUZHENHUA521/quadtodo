@@ -126,6 +126,38 @@ export function normalizeEvent(raw = {}) {
  * action.value 是按钮的 value（构卡片时塞的 JSON），约定字段：
  *   { callback_data: 'qt:perm:abcd:allow' }   // 跟 telegram 的 callback_data 同字符串格式
  */
+/**
+ * 把 wizard 风格的 callback 返回值（{toast: '字符串', chosenLabel, action, editOriginal}）
+ * 适配成 Lark 卡片回调期望的 schema（{toast: {type, content}}）。
+ *
+ * 背景：Lark SDK 的 WSClient.handleEventData 把 handler 的返回值 base64 编码后回写到
+ * WebSocket frame；Lark 服务端反序列化时按文档校验 toast 必须是 `{type, content}` 对象，
+ * wizard 直传 string 会失败 → 飞书 UI 弹「出错了，请稍后重试 code: 200340」。
+ * 文档：https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/feishu-cards/card-callback/card-callback-communication
+ *
+ * 已经是 Lark 格式的（{toast: {type, content}}）直接放过；undefined → 不显 toast。
+ */
+export function adaptWizardResponseToLark(r) {
+  if (!r || typeof r !== 'object') return undefined
+
+  // 已是 Lark 形态（{toast: {type?, content}}） → 透传，保留 caller 想自己控的 type
+  if (r.toast && typeof r.toast === 'object' && (typeof r.toast.content === 'string' || r.toast.i18n)) {
+    const out = { toast: { ...r.toast } }
+    if (!out.toast.type) out.toast.type = 'info'
+    return out
+  }
+
+  // wizard 形态（toast: string）→ 按 action 字段推断 type
+  const content = typeof r.toast === 'string' ? r.toast.trim() : ''
+  if (!content) return undefined  // 没有 toast 文本就别 emit，Lark UI 默认无提示
+  let type = 'info'
+  const action = String(r.action || '')
+  if (action.includes('allow') || action.includes('sent')) type = 'success'
+  else if (action.includes('stale') || action.includes('invalid')) type = 'warning'
+  else if (action.includes('failed') || action.includes('error') || action.includes('unavailable')) type = 'error'
+  return { toast: { type, content } }
+}
+
 export function normalizeCardAction(raw = {}) {
   const event = raw.event || raw
   const action = event.action || {}
@@ -419,19 +451,21 @@ export function createLarkBot({
   async function handleCardAction(raw) {
     const ev = normalizeCardAction(raw)
     if (!ev.chatId || !ev.callbackData) {
-      return { ok: false, reason: 'invalid_card_action' }
+      return adaptWizardResponseToLark({ toast: '⚠️ 无效的卡片回传', action: 'invalid' })
     }
     const configuredChatId = getConfig()?.lark?.chatId
     if (configuredChatId && ev.chatId !== String(configuredChatId)) {
       logger.warn?.(`[lark-bot] ignored card_action from other chat: ${ev.chatId}`)
-      return { ok: true, action: 'ignored_chat' }
+      // 跨群点的卡片：直接 undefined，让 Lark UI 不显 toast。也不报 200340，
+      // 因为我们返回的是合法的"空响应"。
+      return undefined
     }
     if (typeof wizard.handleCallback !== 'function') {
       logger.warn?.(`[lark-bot] wizard.handleCallback unavailable; dropping lark card action`)
-      return { ok: false, reason: 'no_handler' }
+      return adaptWizardResponseToLark({ toast: '⚠️ 服务未就绪', action: 'failed' })
     }
     try {
-      return await wizard.handleCallback({
+      const r = await wizard.handleCallback({
         channel: 'lark',
         chatId: ev.chatId,
         threadId: ev.threadId,
@@ -439,9 +473,10 @@ export function createLarkBot({
         callbackData: ev.callbackData,
         fromUserId: ev.fromUserId,
       })
+      return adaptWizardResponseToLark(r)
     } catch (e) {
       logger.warn?.(`[lark-bot] card action handler failed: ${e.message}`)
-      return { ok: false, reason: 'handler_failed', detail: e.message }
+      return adaptWizardResponseToLark({ toast: `⚠️ 处理失败：${e.message}`, action: 'failed' })
     }
   }
 
