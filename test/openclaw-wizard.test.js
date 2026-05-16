@@ -2034,6 +2034,40 @@ describe('openclaw-wizard inline keyboard (callback_query)', () => {
     expect(r.editOriginal).toBe(true)
   })
 
+  // 实战回归：同一 session 同时绑 telegram + lark；点 lark 按钮时 wizard 必须用
+  // channel='lark' 解 route，否则 resolveRoute(sid) 返回最后注册的（通常 telegram）
+  // → sameChat 检查失败 → 误判 "会话已结束"。
+  it('permission callback passes channel hint to resolveRoute (multi-channel session)', async () => {
+    const writes = []
+    bridge.findSessionByShortId = vi.fn(() => 'sess-multi')
+    // 模拟双路由：channel='telegram' 返 telegram，channel='lark' 返 lark
+    bridge.resolveRoute = vi.fn((sid, channel) => {
+      if (channel === 'lark') return { targetUserId: 'oc_lark_chat', threadId: 'omt_xyz', channel: 'lark', rootMessageId: 'om_root' }
+      // 不带 channel hint 或 channel='telegram' → 返 telegram（last-registered 模拟）
+      return { targetUserId: '-1003985889503', threadId: 3000, channel: 'telegram' }
+    })
+    wizard = createOpenClawWizard({
+      db, aiTerminal: ai, openclaw: bridge, pending,
+      pty: {
+        has: vi.fn((sid) => sid === 'sess-multi'),
+        write: vi.fn((sid, data) => writes.push({ sid, data })),
+      },
+      getConfig: () => ({ defaultCwd: '/tmp', port: 5677 }),
+    })
+
+    // 飞书 click 走过来：必须命中 lark 路由，写 \r
+    const r = await wizard.handleCallback({
+      channel: 'lark',
+      chatId: 'oc_lark_chat',
+      threadId: 'omt_xyz',
+      callbackData: 'qt:perm:ulti:allow',
+    })
+
+    expect(bridge.resolveRoute).toHaveBeenCalledWith('sess-multi', 'lark')
+    expect(writes).toEqual([{ sid: 'sess-multi', data: '\r' }])
+    expect(r.action).toBe('permission_allow_sent')
+  })
+
   it('permission allow callback also works for lark-routed sessions (channel=lark)', async () => {
     const writes = []
     bridge.findSessionByShortId = vi.fn(() => 'sess-lark-allow')

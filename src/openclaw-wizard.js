@@ -1855,7 +1855,7 @@ export function createOpenClawWizard({
     // ── 权限按钮路径（qt:perm:<short>:allow|deny）──────────────────
     const permCb = parsePermissionCallback(callbackData)
     if (permCb) {
-      return handlePermissionCallback(permCb, { chatId, threadId })
+      return handlePermissionCallback(permCb, { chatId, threadId, channel: args.channel || null })
     }
     if (callbackData.startsWith(`${CALLBACK_PREFIX}:${PERMISSION_CALLBACK_KIND}:`)) {
       return { toast: '无效的权限按钮', action: 'invalid', editOriginal: true }
@@ -1972,7 +1972,7 @@ export function createOpenClawWizard({
   }
 
   // ─── 权限按钮回调 ───────────────────────────────────────────────
-  async function handlePermissionCallback({ short, action } = {}, { chatId, threadId } = {}) {
+  async function handlePermissionCallback({ short, action } = {}, { chatId, threadId, channel = null } = {}) {
     const stale = () => ({
       toast: '会话已结束',
       reply: `⚠️ 会话已结束（#${short}），无法发送权限选择。`,
@@ -1982,7 +1982,10 @@ export function createOpenClawWizard({
 
     const sid = openclaw?.findSessionByShortId?.(short) || null
     if (!sid || !pty?.has?.(sid)) return stale()
-    const route = openclaw?.resolveRoute?.(sid) || null
+    // channel hint 关键：同一 session 经常同时绑 telegram + lark，resolveRoute(sid)
+    // 不带 channel 时返回最后注册的 route（通常是 telegram），导致 lark 点击的 sameChat
+    // 校验失败被误判为 stale。caller 已经知道点击来自哪个渠道，必须传过来。
+    const route = openclaw?.resolveRoute?.(sid, channel) || null
     const sameChat = route && String(route.targetUserId) === String(chatId)
     const sameThread = (route?.threadId || null) === (threadId || null)
     // 允许 telegram / lark 渠道的权限回调；老的"threadId 非空就算"留作 legacy 兜底。
