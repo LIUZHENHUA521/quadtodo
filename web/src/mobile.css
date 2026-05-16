@@ -199,10 +199,8 @@
     font-size: 13px;
   }
 
-  /* ── SessionFocus（Focus Mode）overlay：移动端无 TopbarDispatch ── */
-  .session-focus {
-    inset: 0; /* 全屏，不需要留 TopbarDispatch 的空间 */
-  }
+  /* ── SessionFocus（Focus Mode）overlay：inset:0 / 100dvh 在 SessionFocus.css 内同文件覆盖
+     （之前放在这里时被 SessionFocus.css 同特异性后加载覆盖，导致顶部漏出 sticky 筛选条） ── */
   .focus-task-id {
     display: none; /* 收缩水平空间，隐藏 ID 显示 */
   }

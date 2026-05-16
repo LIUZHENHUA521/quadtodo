@@ -8,6 +8,17 @@
   animation: focus-in var(--motion-normal) var(--ease-out);
 }
 
+/* 移动端：无 TopbarDispatch，detail 占满整个视口高度；
+   注意必须与桌面规则在同一文件中（相同特异性时后者覆盖前者），
+   否则 mobile.css 的 inset:0 会被 SessionFocus.css 加载顺序覆盖。
+   用 100dvh 同时处理 iOS Safari 地址栏伸缩。 */
+@media (max-width: 768px) {
+  .session-focus {
+    inset: 0;
+    height: 100dvh;
+  }
+}
+
 @keyframes focus-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
