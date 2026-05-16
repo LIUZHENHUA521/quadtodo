@@ -424,6 +424,7 @@ const zh = {
         connectionLost: '⚠ 连接已断开，正在自动重连...',
         noNativeSessionId: '当前没有可恢复的原生会话 ID',
         unknownError: 'unknown error',
+        restartedForMode: '已重启进程以应用新模式：{{label}}',
       },
       reconnectReason: {
         stale: '检测到连接失效',

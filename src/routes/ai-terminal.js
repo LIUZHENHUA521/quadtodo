@@ -1133,20 +1133,27 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
     session.autoMode = nextAutoMode
     broadcastToSession(session, { type: 'auto_mode', autoMode: session.autoMode || null })
 
-    if (nextAutoMode !== 'bypass' || session.tool !== 'claude') return
+    // 对称重启：claude/codex/cursor 三家 CLI 的 permission mode 都是启动参数注入，
+    // 运行时切换必须重启 PTY 才能让新 mode 真正生效。只要前后 effective mode 不同就重启；
+    // 相同 / 工具不支持 / 没有 nativeSessionId 时退路（broadcast / 软通知）。
+    const prevEffective = session.permissionMode || 'default'
+    const nextEffective = nextAutoMode || 'default'
+    if (prevEffective === nextEffective) return
+    const RESTARTABLE_TOOLS = new Set(['claude', 'codex', 'cursor'])
+    if (!RESTARTABLE_TOOLS.has(session.tool)) return
 
     if (!session.nativeSessionId) {
       sendToBrowser(ws, {
         type: 'auto_mode_notice',
-        autoMode: 'bypass',
+        autoMode: nextAutoMode,
         immediate: false,
         reason: 'native_session_missing',
-        message: '当前 Claude 会话尚未拿到原生 session id，全托管将仅对后续启动/恢复的会话生效。',
+        message: '当前会话尚未拿到原生 session id，模式切换将仅对后续启动/恢复的会话生效。',
       })
       return
     }
 
-    broadcastToSession(session, { type: 'auto_mode_switching', target: 'bypass' })
+    broadcastToSession(session, { type: 'auto_mode_switching', target: nextEffective })
     const todoSnapshot = db.getTodo(session.todoId)
     session.replacedBySessionId = '__pending__'
     let restarted
@@ -1157,8 +1164,8 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
         tool: session.tool,
         cwd: session.cwd || undefined,
         resumeNativeId: session.nativeSessionId,
-        permissionMode: 'bypass',
-        label: 'runtime:bypass',
+        permissionMode: nextEffective,
+        label: `runtime:${nextEffective}`,
         skipTelegram: true,
         ignoreExistingNativeSessionId: true,
       })
@@ -1167,10 +1174,10 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       restoreSessionAsCurrent(session, todoSnapshot)
       sendToBrowser(ws, {
         type: 'auto_mode_notice',
-        autoMode: 'bypass',
+        autoMode: nextAutoMode,
         immediate: false,
         reason: 'restart_failed',
-        message: `切换全托管失败：${e.message}`,
+        message: `切换托管模式失败：${e.message}`,
       })
       return
     }
@@ -1179,7 +1186,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
       type: 'session_restarted',
       oldSessionId: sessionId,
       newSessionId: restarted.sessionId,
-      autoMode: 'bypass',
+      autoMode: nextEffective,
     })
     if (restarted.sessionId !== sessionId) {
       session.replacedBySessionId = restarted.sessionId

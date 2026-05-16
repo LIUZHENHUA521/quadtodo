@@ -427,6 +427,7 @@ const en = {
         connectionLost: '⚠ Connection lost, reconnecting...',
         noNativeSessionId: 'No native session ID available to recover',
         unknownError: 'unknown error',
+        restartedForMode: 'Restarted process to apply new mode: {{label}}',
       },
       reconnectReason: {
         stale: 'Connection appears stale',

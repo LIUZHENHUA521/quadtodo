@@ -837,6 +837,15 @@ export default function AiTerminalMini({ sessionId, todoId, status, cwd, resumeT
                   // 会再次置 false。
 
                   message.info(msg.message || t('session:terminal.message.switchedToManaged'))
+                  // 终端里红字提示一行，让用户在 xterm 上下文里也能看到「为什么进程重启了」
+                  const modeLabelKey = msg.autoMode === 'bypass'
+                    ? 'session:terminal.toolbar.autoMode.tagBypass'
+                    : msg.autoMode === 'acceptEdits'
+                      ? 'session:terminal.toolbar.autoMode.tagAcceptEdits'
+                      : 'session:terminal.toolbar.autoMode.tagDefault'
+                  termRef.current?.writeln(
+                    `\r\n\x1b[31m=== ${t('session:terminal.writeln.restartedForMode', { label: t(modeLabelKey) })} ===\x1b[0m\r`,
+                  )
                   stopReconnectRef.current = true  // 旧 WS 关闭后不再自动重连
                   setSwitchingMode(false)
                   onSessionSwitchRef.current?.(msg.newSessionId)
