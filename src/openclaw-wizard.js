@@ -1973,24 +1973,31 @@ export function createOpenClawWizard({
 
   // ─── 权限按钮回调 ───────────────────────────────────────────────
   async function handlePermissionCallback({ short, action } = {}, { chatId, threadId, channel = null } = {}) {
-    const stale = () => ({
-      toast: '会话已结束',
-      reply: `⚠️ 会话已结束（#${short}），无法发送权限选择。`,
-      action: 'permission_session_stale',
-      editOriginal: true,
-    })
+    const stale = (why) => {
+      logger.warn?.(`[wizard/perm] stale short=${short} action=${action} channel=${channel || 'null'} chatId=${chatId || 'null'} threadId=${threadId || 'null'} reason=${why}`)
+      return {
+        toast: '会话已结束',
+        reply: `⚠️ 会话已结束（#${short}），无法发送权限选择。`,
+        action: 'permission_session_stale',
+        editOriginal: true,
+      }
+    }
 
     const sid = openclaw?.findSessionByShortId?.(short) || null
-    if (!sid || !pty?.has?.(sid)) return stale()
+    if (!sid) return stale('no_sid_for_short')
+    if (!pty?.has?.(sid)) return stale(`pty_no_session sid=${sid}`)
     // channel hint 关键：同一 session 经常同时绑 telegram + lark，resolveRoute(sid)
     // 不带 channel 时返回最后注册的 route（通常是 telegram），导致 lark 点击的 sameChat
     // 校验失败被误判为 stale。caller 已经知道点击来自哪个渠道，必须传过来。
     const route = openclaw?.resolveRoute?.(sid, channel) || null
-    const sameChat = route && String(route.targetUserId) === String(chatId)
-    const sameThread = (route?.threadId || null) === (threadId || null)
+    if (!route) return stale(`no_route sid=${sid} channel=${channel || 'null'}`)
+    const sameChat = String(route.targetUserId) === String(chatId)
+    const sameThread = (route.threadId || null) === (threadId || null)
     // 允许 telegram / lark 渠道的权限回调；老的"threadId 非空就算"留作 legacy 兜底。
-    const isRoutedChannel = route?.channel === 'telegram' || route?.channel === 'lark' || route?.threadId != null
-    if (!sameChat || !sameThread || !isRoutedChannel) return stale()
+    const isRoutedChannel = route.channel === 'telegram' || route.channel === 'lark' || route.threadId != null
+    if (!sameChat || !sameThread || !isRoutedChannel) {
+      return stale(`route_mismatch sid=${sid} route=${JSON.stringify({channel: route.channel, targetUserId: route.targetUserId, threadId: route.threadId})} sameChat=${sameChat} sameThread=${sameThread} isRoutedChannel=${isRoutedChannel}`)
+    }
 
     if (action === PERMISSION_ACTION_ALLOW) {
       try {
