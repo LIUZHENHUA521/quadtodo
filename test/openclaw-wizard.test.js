@@ -113,7 +113,7 @@ describe('openclaw-wizard state machine', () => {
     const r = await w2.handleInbound({
       chatId: '-1001234567890',
       threadId: null,
-      text: '帮我做 写个 demo, 目录 /tmp, 象限 2, Bug 修复 模板',
+      text: '帮我做 写个 demo, 目录 /tmp, 象限 2, Bug 侦探 模板',
     })
     expect(r.action).toBe('wizard_done')
     expect(r.threadId).toBe(999)   // 重试后成功
@@ -123,7 +123,7 @@ describe('openclaw-wizard state machine', () => {
   it('new task with image attachments: prompt prepends @path1 @path2', async () => {
     const r = await wizard.handleInbound({
       peer: 'u1',
-      text: '帮我做 看图实现, 目录 /tmp/foo, 象限 1, Bug 修复 模板',
+      text: '帮我做 看图实现, 目录 /tmp/foo, 象限 1, Bug 侦探 模板',
       imagePaths: ['/tmp/img1.jpg', '/tmp/img2.png'],
     })
     expect(r.action).toBe('wizard_done')
@@ -148,11 +148,11 @@ describe('openclaw-wizard state machine', () => {
   it('one-shot create skips all wizard steps', async () => {
     const r = await wizard.handleInbound({
       peer: 'u1',
-      text: '帮我做 修复 login，目录 /tmp/foo, 用 Bug 修复 agent',
+      text: '帮我做 修复 login，目录 /tmp/foo, 用 Bug 侦探 agent',
     })
     expect(r.action).toBe('wizard_done')
     expect(r.reply).toContain('/tmp/foo')
-    expect(r.reply).toContain('Bug 修复')
+    expect(r.reply).toContain('Bug 侦探')
     expect(ai.sessions).toHaveLength(1)
     expect(ai.sessions[0].permissionMode).toBe('bypass')
     expect(ai.sessions[0].extraEnv.QUADTODO_TARGET_USER).toBe('u1')
@@ -165,7 +165,7 @@ describe('openclaw-wizard state machine', () => {
     })
     const r = await w2.handleInbound({
       peer: 'u1',
-      text: '帮我做 修复 login，目录 /tmp/foo, 象限 1, Bug 修复 模板',
+      text: '帮我做 修复 login，目录 /tmp/foo, 象限 1, Bug 侦探 模板',
     })
     expect(r.action).toBe('wizard_done')
     expect(ai.sessions).toHaveLength(1)
@@ -179,7 +179,7 @@ describe('openclaw-wizard state machine', () => {
     })
     const r = await w2.handleInbound({
       peer: 'u1',
-      text: '帮我做 修复 login，目录 /tmp/foo, 象限 1, Bug 修复 模板',
+      text: '帮我做 修复 login，目录 /tmp/foo, 象限 1, Bug 侦探 模板',
     })
     expect(r.action).toBe('wizard_done')
     expect(ai.sessions).toHaveLength(1)
@@ -425,7 +425,7 @@ describe('openclaw-wizard state machine', () => {
     const r = await w2.handleInbound({
       chatId: '-1003985889503',
       threadId: null,
-      text: '帮我做 路由持久化测试，目录 /tmp/foo, 象限 2, Bug 修复 模板',
+      text: '帮我做 路由持久化测试，目录 /tmp/foo, 象限 2, Bug 侦探 模板',
     })
     expect(r.action).toBe('wizard_done')
     const todo = db.getTodo(r.todoId)
@@ -457,7 +457,7 @@ describe('openclaw-wizard state machine', () => {
     const r = await w2.handleInbound({
       chatId: '-100',
       threadId: null,   // General topic
-      text: '帮我做 修复 X，目录 /tmp/foo, 象限 1, Bug 修复 模板',
+      text: '帮我做 修复 X，目录 /tmp/foo, 象限 1, Bug 侦探 模板',
     })
     expect(r.action).toBe('wizard_done')
     expect(r.threadId).toBe(777)
@@ -504,7 +504,7 @@ describe('openclaw-wizard state machine', () => {
       chatId: 'oc_1',
       threadId: null,
       messageId: 'om_main',
-      text: '帮我做 飞书路由测试，目录 /tmp/foo, 象限 2, Bug 修复 模板',
+      text: '帮我做 飞书路由测试，目录 /tmp/foo, 象限 2, Bug 侦探 模板',
     })
     expect(r.action).toBe('wizard_done')
     expect(fakeLarkBot.sendMessage).toHaveBeenCalledTimes(1)
@@ -562,7 +562,7 @@ describe('openclaw-wizard state machine', () => {
       chatId: 'oc_1',
       threadId: 'omt_user_topic',
       messageId: 'om_user_first',
-      text: '帮我做 复用话题，目录 /tmp/foo, 象限 2, Bug 修复 模板',
+      text: '帮我做 复用话题，目录 /tmp/foo, 象限 2, Bug 侦探 模板',
     })
 
     expect(r.action).toBe('wizard_done')
@@ -636,7 +636,7 @@ describe('openclaw-wizard state machine', () => {
       chatId: 'oc_1',
       threadId: 'omt_user',
       messageId: 'om_user_first',
-      text: '帮我做 routing 回归，目录 /tmp/foo, 象限 2, Bug 修复 模板',
+      text: '帮我做 routing 回归，目录 /tmp/foo, 象限 2, Bug 侦探 模板',
     })
 
     // 第 2 步：用户在同一 thread 里发"hello"。事件 ev.root_id = om_thread_root（飞书
@@ -685,7 +685,7 @@ describe('openclaw-wizard state machine', () => {
       chatId: 'oc_1',
       threadId: 'omt_user_topic',
       messageId: 'om_user_first',
-      text: '帮我做 reply失败兜底，目录 /tmp/foo, 象限 2, Bug 修复 模板',
+      text: '帮我做 reply失败兜底，目录 /tmp/foo, 象限 2, Bug 侦探 模板',
     })
 
     expect(r.action).toBe('wizard_done')
@@ -726,7 +726,7 @@ describe('openclaw-wizard state machine', () => {
       chatId: 'oc_1',
       threadId: null,
       messageId: 'om_main',
-      text: '帮我做 飞书根消息失败路由测试，目录 /tmp/foo, 象限 2, Bug 修复 模板',
+      text: '帮我做 飞书根消息失败路由测试，目录 /tmp/foo, 象限 2, Bug 侦探 模板',
     })
 
     expect(r.action).toBe('wizard_done')

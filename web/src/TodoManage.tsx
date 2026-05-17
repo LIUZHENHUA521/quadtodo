@@ -340,8 +340,8 @@ export default function TodoManage() {
       const valid = configured.filter(id => templates.some(t => t.id === id))
       if (valid.length) return valid
     }
-    // 2. 老用户没配过：沿用历史行为，默认勾选 Brainstorm。
-    const brainstorm = templates.find(t => t.builtin && t.name === 'Brainstorm（脑爆）')
+    // 2. 老用户没配过：沿用历史行为，默认勾选方案顾问（原 Brainstorm）。
+    const brainstorm = templates.find(t => t.builtin && t.name === '方案顾问（脑爆）')
     return brainstorm ? [brainstorm.id] : []
   }, [templates])
 

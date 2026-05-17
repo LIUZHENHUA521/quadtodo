@@ -1116,49 +1116,72 @@ export function openDb(file = ':memory:') {
   // for existing users on next restart.
   const BUILTIN_TEMPLATE_SEEDS = [
     {
-      name: 'Brainstorm（脑爆）',
+      name: '方案顾问（脑爆）',
       description: '先脑爆方向，不急着动手',
       content: '请先不要直接动手实现。先针对下面的任务 brainstorm：\n- 列出 2-3 种可选方案，说明优缺点\n- 指出风险点与需要用户拍板的关键决策\n- 明确验收标准\n\n在我确认方案后再进入实现。',
     },
     {
-      name: '自动驾驶（Autopilot）',
+      name: '全自动工程师（自动驾驶）',
       description: '内心脑爆 → 自选最优 → 跑完 → 最后报告',
       content: '按"自动驾驶"模式处理下面的任务，不要停下来问我。\n\n1. 先在心里 brainstorm 2-3 种实现思路，挑出最合理的一种，但不需要列出来征求我的同意。\n2. 直接执行：理解 → 实现 → 自测（跑相关测试 / 编译 / lint） → 提交。\n3. 遇到不可避免必须我决策的歧义点（例：要不要删数据、要不要对外发版），才停下来问；普通选型不要问。\n4. 跑完后输出一份三段式报告：\n   - 变更摘要：改了什么、为什么这么改\n   - 验证结果：跑了哪些自测、是否通过、有没有遗留\n   - 仍需我确认的事项：列出来 / 没有就写"无"\n5. 我考虑过哪些方案、为什么选这个，请在"变更摘要"里用一两句说明。',
     },
     {
-      name: '稳定优先（Stability First）',
+      name: '守稳派开发（稳定优先）',
       description: '改动面最小、不引新依赖、不动公共 API',
       content: '本任务执行时请优先保证"稳定"，含义：\n- 改动面尽量小，不顺手重构、不删看似无用的代码\n- 不引入新依赖、不升级现有依赖\n- 不改公共 API / 接口签名 / 数据库 schema（除非任务本身就是改这个）\n- 优先补测试覆盖现有行为；改动 hot path 时尽量保留旧路径作为兜底\n- 选型偏保守：用已经在项目里用过的库 / 写法\n如果"稳定"和任务目标冲突，告诉我，让我决定。',
     },
     {
-      name: '未来发展优先（Future First）',
+      name: '前瞻派架构师（未来发展优先）',
       description: '允许重构 / 引入抽象 / 留扩展点',
       content: '本任务执行时请优先考虑"长期可扩展性"，含义：\n- 允许并鼓励顺手重构邻近代码，让结构更清晰\n- 可以引入新抽象 / 接口，为可预见的下一步需求留扩展点\n- 公共 API / 类型 / 数据结构允许调整，但要在报告里列出影响面（调用方 / 测试 / 文档）\n- 选型可以挑当前社区主流而非项目已有的旧写法，但要说明替换原因\n- 不要为完全假想的需求过度设计 —— 只服务"已经看到苗头"的下一步\n完成后在报告里说明：哪些是为长期留的扩展点，分别服务什么场景。',
     },
     {
-      name: 'Bug 修复',
+      name: 'Bug 侦探',
       description: '复现 → 定位 → 最小用例 → 修复 → 回归',
       content: '按 bug 修复流程处理下面的问题：\n1. 先复现（给出复现步骤和实际 vs 预期）\n2. 定位根因（不要过早修改代码）\n3. 写一个能复现该 bug 的最小用例（如果有测试框架）\n4. 修复根因，不是修现象\n5. 回归：跑相关测试；考虑同类 bug 是否还存在',
     },
     {
-      name: '重构',
+      name: '重构师',
       description: '先读懂 → 列出影响面 → 小步重构',
       content: '按照小步重构原则处理下面的任务：\n1. 先通读相关代码，复述你的理解\n2. 列出此次重构的影响面（调用方 / 测试 / 类型）\n3. 每一步只改一件事，保持可运行\n4. 每步后跑一次测试（如果有）\n5. 不要顺手加功能、不要引入新抽象，除非当前任务要求',
     },
     {
-      name: '写测试',
+      name: '测试工程师',
       description: 'TDD：红 → 绿 → 重构',
       content: '用 TDD 的方式处理下面的任务：\n1. 先列出测试矩阵（输入 × 场景）\n2. 先写一个最简失败用例（红）\n3. 用最小改动让它通过（绿）\n4. 重构（保持绿）\n5. 重复 2-4 直到覆盖矩阵\n不 mock 真实依赖（除非跨网络/支付等）。',
     },
     {
-      name: '代码评审',
+      name: '代码评审员',
       description: '只评审，不改代码',
       content: '请只做代码评审，不要修改代码。按下面的维度给出具体反馈：\n- 可读性：命名、结构、注释\n- 正确性：边界、错误处理、并发\n- 安全性：注入、鉴权、敏感数据\n- 性能：明显的 N+1 / 无谓复制\n- 简洁性：是否有过度设计 / 可删除的冗余\n每条反馈给出文件:行号 + 建议。',
     },
   ]
+  // 把老用户库里旧名字的 builtin 行就地改名成新名字，避免新种子重复插入。
+  // 仅在新名尚未占位时改名；用户复制版（builtin=0）不动。
+  const BUILTIN_RENAMES = [
+    ['Brainstorm（脑爆）',           '方案顾问（脑爆）'],
+    ['自动驾驶（Autopilot）',         '全自动工程师（自动驾驶）'],
+    ['稳定优先（Stability First）',   '守稳派开发（稳定优先）'],
+    ['未来发展优先（Future First）',  '前瞻派架构师（未来发展优先）'],
+    ['Bug 修复',                     'Bug 侦探'],
+    ['重构',                         '重构师'],
+    ['写测试',                       '测试工程师'],
+    ['代码评审',                     '代码评审员'],
+  ]
   const findBuiltinByName = db.prepare(
     `SELECT id FROM prompt_templates WHERE builtin = 1 AND name = ? LIMIT 1`,
   )
+  const renameBuiltin = db.prepare(
+    `UPDATE prompt_templates SET name = ?, updated_at = ? WHERE builtin = 1 AND name = ?`,
+  )
+  function migrateBuiltinNames() {
+    const now = Date.now()
+    for (const [oldName, newName] of BUILTIN_RENAMES) {
+      if (findBuiltinByName.get(newName)) continue   // 新名已存在则跳过
+      if (!findBuiltinByName.get(oldName)) continue  // 旧名也不在就没事
+      renameBuiltin.run(newName, now, oldName)
+    }
+  }
   function ensureBuiltinTemplates() {
     const now = Date.now()
     BUILTIN_TEMPLATE_SEEDS.forEach((s, i) => {
@@ -1175,6 +1198,7 @@ export function openDb(file = ':memory:') {
       })
     })
   }
+  migrateBuiltinNames()
   ensureBuiltinTemplates()
 
   const wikiStmts = {
