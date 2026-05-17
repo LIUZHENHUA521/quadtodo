@@ -155,7 +155,10 @@ export default function TranscriptSearchDrawer({ open, onClose, preselectTodoId,
   }, [open, initialQuery, initialCwd])
 
   useEffect(() => {
-    if (open) doSearch()
+    if (!open) return
+    // 短查询 (<3 字) 走 LIKE 全表扫，单字符在大库上能跑到 5s+；不 debounce 的话每次敲键都发请求，请求堆积 → UI 卡。
+    const id = setTimeout(doSearch, 250)
+    return () => clearTimeout(id)
   }, [open, q, tool, cwd, unboundOnly])
 
   useEffect(() => {
