@@ -101,12 +101,20 @@ export function SessionCard({
         <span className="parent-title">{parent.title}</span>
       </div>
 
-      {agentLabel && (
-        <div className="session-card-agent" title={agentLabel}>
-          <Bot size={11} aria-hidden />
-          <span className="session-card-agent-name">{agentLabel}</span>
-        </div>
-      )}
+      {agentLabel && (() => {
+        // 内置模板名形如 "全自动工程师（自动驾驶）" —— 主名 + 全角括号备注。
+        // 主名加粗显示、备注弱化，避免在卡片里抢戏。
+        const m = agentLabel.match(/^(.+?)（(.+?)）\s*$/)
+        const mainName = m ? m[1] : agentLabel
+        const subName = m ? m[2] : null
+        return (
+          <div className="session-card-agent" title={agentLabel}>
+            <Bot size={11} aria-hidden />
+            <span className="session-card-agent-name">{mainName}</span>
+            {subName && <span className="session-card-agent-sub">{subName}</span>}
+          </div>
+        )
+      })()}
 
       <div className="session-card-meta-row" style={{ ['--status-color' as any]: statusColor }}>
         <span

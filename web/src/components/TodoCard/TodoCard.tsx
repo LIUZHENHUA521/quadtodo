@@ -353,10 +353,15 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                           const name = session.agentName
                             || (fallbackId ? agents.find(a => a.id === fallbackId)?.name : null)
                           if (!name) return null
+                          // 内置模板名形如 "全自动工程师（自动驾驶）" —— 主名 + 全角括号备注。
+                          const m = name.match(/^(.+?)（(.+?)）\s*$/)
+                          const mainName = m ? m[1] : name
+                          const subName = m ? m[2] : null
                           return (
                             <span className="todo-history-agent" title={name}>
                               <Bot size={11} aria-hidden />
-                              <span className="todo-history-agent-name">{name}</span>
+                              <span className="todo-history-agent-name">{mainName}</span>
+                              {subName && <span className="todo-history-agent-sub">{subName}</span>}
                             </span>
                           )
                         })()}
