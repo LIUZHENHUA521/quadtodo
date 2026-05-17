@@ -28,7 +28,8 @@ export default function TemplateDrawer({ open, onClose, onChanged }: Props) {
     title: t('settings:template.example.title'),
     description: t('settings:template.example.description'),
     workDir: '/Users/demo/project',
-    quadrant: t('settings:template.example.quadrant'),
+    // quadrant 已退役：不再作为可用变量；老 agent prompt 里残留的 {{quadrant}}
+    // 会渲染成空串（prompt-render 端兼容处理）。
     dueDate: '2026-04-20',
   }
 
@@ -36,7 +37,6 @@ export default function TemplateDrawer({ open, onClose, onChanged }: Props) {
     { key: 'title', label: t('settings:template.variable.title') },
     { key: 'description', label: t('settings:template.variable.description') },
     { key: 'workDir', label: t('settings:template.variable.workDir') },
-    { key: 'quadrant', label: t('settings:template.variable.quadrant') },
     { key: 'dueDate', label: t('settings:template.variable.dueDate') },
   ]
   const [list, setList] = useState<PromptTemplate[]>([])
@@ -206,7 +206,7 @@ export default function TemplateDrawer({ open, onClose, onChanged }: Props) {
             </Space>
           </Form.Item>
           <Form.Item name="content" label={t('settings:template.contentLabel')} rules={[{ required: true, message: t('settings:template.contentRequired') }]}>
-            <TextArea rows={8} placeholder={t('settings:template.contentPlaceholder', { t: '{{title}}', d: '{{description}}', w: '{{workDir}}', q: '{{quadrant}}', u: '{{dueDate}}' })} />
+            <TextArea rows={8} placeholder={t('settings:template.contentPlaceholder', { t: '{{title}}', d: '{{description}}', w: '{{workDir}}', u: '{{dueDate}}' })} />
           </Form.Item>
           <Form.Item label={<Space><EyeOutlined />{t('settings:template.previewLabel')}</Space>}>
             <div style={{
