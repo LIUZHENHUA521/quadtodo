@@ -661,6 +661,16 @@ body {
   margin-left: auto;
 }
 
+/* 「第二列」: session 状态徽章在移动端独立占一列，桌面端隐藏。
+   默认 display:none，由 @media (max-width: 768px) 块在底部打开。
+   margin-left: auto 让它推到右侧、跟 .todo-history-actions 并排。 */
+.todo-history-state-col {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  margin-left: auto;
+}
+
 .todo-history-link,
 .todo-history-delete {
   border: 0;

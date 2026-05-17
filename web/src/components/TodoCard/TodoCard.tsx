@@ -362,6 +362,18 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                         )}
                       </div>
                     </div>
+                    {/* 移动端「第二列」: session 状态徽章独立列、放大显示。
+                        桌面端通过 CSS `display:none` 隐藏；headline 里的内联徽章则
+                        在移动端被隐藏，避免同状态重复显示。 */}
+                    {!sessionClosed && (sessionState !== 'idle' || liveSession) && (
+                      <div className="todo-history-state-col" aria-hidden="true">
+                        <span className={`todo-ai-state todo-ai-state-${sessionState}`}>
+                          {AI_STATE_ICON[sessionState]()}
+                          {' '}
+                          {t(AI_STATE_LABEL_KEY[sessionState])}
+                        </span>
+                      </div>
+                    )}
                     <div
                       className="todo-history-actions"
                       onClick={(e) => e.stopPropagation()}

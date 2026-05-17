@@ -387,6 +387,37 @@
   }
 }
 
+/* ─── 待办卡内 session 状态：移动端独占第二列、字号放大 ─────────────
+   桌面端 session 状态徽章是 headline 里的一颗小 chip；移动端 backlog 单列布局下
+   它太容易被淹没在「label · tool · time · LiveInfoBadge」这一长串里。
+   这里把它从 headline 里"拎出来"显示在 .todo-history-state-col：
+     - 隐藏 headline 内的内联徽章（避免同状态出现两次）
+     - 显示新的第二列徽章，并放大字号 / 增加 padding，让状态一眼可见
+   TodoCard.tsx 里同时渲染两份徽章；CSS 控制两端各显示一份。 */
+@media (max-width: 768px) {
+  .todo-history-headline .todo-ai-state-running,
+  .todo-history-headline .todo-ai-state-pending,
+  .todo-history-headline .todo-ai-state-idle {
+    display: none;
+  }
+  .todo-history-state-col {
+    display: inline-flex;
+  }
+  .todo-history-state-col .todo-ai-state {
+    font-size: 13px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor 14%, transparent);
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  /* 给 actions 让出空间：第二列已经在右边吃宽度 */
+  .todo-history-actions {
+    margin-left: 8px;
+  }
+}
+
 /* ─── Todo detail drawer · mobile ───────────────────────────── */
 @media (max-width: 480px) {
   .todo-detail-description__images {
