@@ -71,9 +71,8 @@ export function SessionCard({
   ].filter(Boolean).join(' ')
 
   const handleCardClick = (e: React.MouseEvent) => {
-    // 按钮区点击不进 focus
+    // 按钮区点击不进 focus；其余位置（含 parent title 那一行）都打开 AI 看板（reopen 语义）
     if ((e.target as HTMLElement).closest('.session-card-actions')) return
-    if ((e.target as HTMLElement).closest('.session-card-parent')) return
     onOpen?.(session, parent)
   }
 
@@ -83,11 +82,8 @@ export function SessionCard({
       onClick={handleCardClick}
       ref={(el) => flipRegister?.(session.sessionId, el)}
     >
-      <div
-        className="session-card-parent"
-        onClick={(e) => { e.stopPropagation(); onOpenParent?.(parent) }}
-        title={parent.title}
-      >
+      {/* Parent 链接：点击不再拦截，让事件冒泡到 article 走 reopen 逻辑 */}
+      <div className="session-card-parent" title={parent.title}>
         <span className="parent-title">{parent.title}</span>
       </div>
 
@@ -131,15 +127,11 @@ export function SessionCard({
           </>
         )}
         {columnStatus === 'idle' && (
-          <>
-            <Button size="small" onClick={(e) => { e.stopPropagation(); onClose?.(session, parent) }}>
-              × Close
-            </Button>
-            <Button size="small" type="primary" onClick={(e) => { e.stopPropagation(); onReopen?.(session, parent) }}>
-              Re-open
-            </Button>
-          </>
+          <Button size="small" onClick={(e) => { e.stopPropagation(); onClose?.(session, parent) }}>
+            × Close
+          </Button>
         )}
+        {/* Re-open 按钮已删除 —— 直接点卡片任意位置即可回到 AI 看板（reopen 语义）*/}
       </div>
     </article>
   )
