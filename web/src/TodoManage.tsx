@@ -606,22 +606,22 @@ export default function TodoManage() {
     }
     // Sort each quadrant according to the active filter:
     //   'done'  → most recently completed first (completedAt DESC, with updatedAt fallback for legacy rows)
-    //   'todo'  → manual sortOrder ASC
-    //   ''(all) → undone block (sortOrder ASC) on top, then done block (completedAt DESC)
+    //   'todo'  → manual sortOrder DESC（最新创建 / 手动置顶在最上）
+    //   ''(all) → undone block (sortOrder DESC) on top, then done block (completedAt DESC)
     const doneRank = (t: Todo) => t.completedAt || t.updatedAt || 0
     for (const q of Object.keys(groups)) {
       const arr = groups[Number(q)]
       if (filterStatus === 'done') {
         arr.sort((a, b) => doneRank(b) - doneRank(a))
       } else if (filterStatus === 'todo') {
-        arr.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+        arr.sort((a, b) => (b.sortOrder || 0) - (a.sortOrder || 0))
       } else {
         arr.sort((a, b) => {
           const aDone = a.status === 'done' ? 1 : 0
           const bDone = b.status === 'done' ? 1 : 0
           if (aDone !== bDone) return aDone - bDone
           if (aDone === 1) return doneRank(b) - doneRank(a)
-          return (a.sortOrder || 0) - (b.sortOrder || 0)
+          return (b.sortOrder || 0) - (a.sortOrder || 0)
         })
       }
     }
@@ -1027,20 +1027,37 @@ export default function TodoManage() {
     }
 
     if (!overParsed) return
-    const qTodos = todos.filter(t => t.quadrant === targetQuadrant && !t.parentId).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    // Display is DESC by sortOrder (newest on top), so qTodos must mirror that:
+    // index 0 is the highest sortOrder, indices grow downward.
+    const qTodos = todos.filter(t => t.quadrant === targetQuadrant && !t.parentId).sort((a, b) => (b.sortOrder || 0) - (a.sortOrder || 0))
     const oldIdx = qTodos.findIndex(t => t.id === draggedTodo.id)
     const newIdx = qTodos.findIndex(t => t.id === overParsed.todoId)
     if (oldIdx === -1 || newIdx === -1 || oldIdx === newIdx) return
 
     const reordered = arrayMove(qTodos, oldIdx, newIdx)
-    const prev = newIdx > 0 ? (reordered[newIdx - 1].sortOrder || 0) : 0
-    const next = newIdx < reordered.length - 1 ? (reordered[newIdx + 1].sortOrder || 0) : prev + 2048
-    const newSort = Math.round((prev + next) / 2)
+    // In a DESC list, the neighbor above (newIdx-1) has a HIGHER sortOrder,
+    // the neighbor below (newIdx+1) has a LOWER sortOrder. The midpoint math
+    // is direction-agnostic: it just needs prev != next.
+    const aboveSort = newIdx > 0 ? (reordered[newIdx - 1].sortOrder || 0) : 0
+    const belowSort = newIdx < reordered.length - 1 ? (reordered[newIdx + 1].sortOrder || 0) : 0
+    // Top slot: place above the current max (max + 1024).
+    // Bottom slot: place below the current min (min - 1024, but never below 1).
+    let newSort: number
+    if (newIdx === 0) {
+      newSort = (reordered[1]?.sortOrder || 0) + 1024
+    } else if (newIdx === reordered.length - 1) {
+      newSort = Math.max(1, (reordered[newIdx - 1]?.sortOrder || 0) - 1024)
+    } else {
+      newSort = Math.round((aboveSort + belowSort) / 2)
+    }
+    const prev = aboveSort
+    const next = belowSort
 
     if (newSort === prev || newSort === next) {
       const updates: { id: string; sortOrder: number }[] = []
+      // DESC display: top item (i=0) must get the HIGHEST sortOrder.
       reordered.forEach((t, i) => {
-        updates.push({ id: t.id, sortOrder: (i + 1) * 1024 })
+        updates.push({ id: t.id, sortOrder: (reordered.length - i) * 1024 })
       })
       setTodos(prevTodos => {
         const soMap = new Map(updates.map(u => [u.id, u.sortOrder]))
@@ -1242,16 +1259,16 @@ export default function TodoManage() {
             //   In Progress / Needs Input / Idle（SessionCard）—— 按 session.status 派生
             const showDone = filterStatus === 'done' || filterStatus === ''
             const backlogAll = filterBacklogTodos(todos, showDone)
-            // Backlog 列内按 sortOrder（'todo' filter）或 completedAt desc（'done' filter）排序
+            // Backlog 列内按 sortOrder（'todo' filter，新→旧）或 completedAt desc（'done' filter）排序
             const doneRank = (x: Todo) => x.completedAt || x.updatedAt || 0
             const backlogSorted = [...backlogAll].sort((a, b) => {
               if (filterStatus === 'done') return doneRank(b) - doneRank(a)
-              if (filterStatus === 'todo') return (a.sortOrder || 0) - (b.sortOrder || 0)
+              if (filterStatus === 'todo') return (b.sortOrder || 0) - (a.sortOrder || 0)
               const aDone = a.status === 'done' ? 1 : 0
               const bDone = b.status === 'done' ? 1 : 0
               if (aDone !== bDone) return aDone - bDone
               if (aDone === 1) return doneRank(b) - doneRank(a)
-              return (a.sortOrder || 0) - (b.sortOrder || 0)
+              return (b.sortOrder || 0) - (a.sortOrder || 0)
             })
             const dndIds = backlogSorted.map((x) => todoDndId(x))
 
