@@ -117,15 +117,11 @@ export function SessionCard({
           </Popconfirm>
         )}
         {columnStatus === 'pending_confirm' && (
-          <>
-            <Button size="small" onClick={(e) => { e.stopPropagation(); onCancel?.(session, parent) }} danger>
-              Cancel
-            </Button>
-            <Button size="small" type="primary" onClick={(e) => { e.stopPropagation(); onConfirm?.(session, parent) }}>
-              Open
-            </Button>
-          </>
+          <Button size="small" onClick={(e) => { e.stopPropagation(); onCancel?.(session, parent) }} danger>
+            Cancel
+          </Button>
         )}
+        {/* "Open" 按钮已删除 —— 跟 idle / running 列对齐，点卡片本身就进 AI 看板 */}
         {columnStatus === 'idle' && (
           <Button size="small" onClick={(e) => { e.stopPropagation(); onClose?.(session, parent) }}>
             × Close
