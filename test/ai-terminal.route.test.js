@@ -273,6 +273,60 @@ describe('routes/ai-terminal', () => {
     expect(updated.aiSessions[0].nativeSessionId).toBe('old-native')
   })
 
+  // 实战回归：resume / mode-switch 用同一个 nativeSessionId 但 sessionId 是新的，
+  // mergeTodoAiSessions 会把旧条目按 (tool, nativeSessionId) 删掉。如果不显式继承
+  // 上一条的 telegramRoute / larkRoute，新 sessionId 的 aiSession 就没了 IM 路由
+  // → openclaw-hook 的 isPermissionReminderEligible 拒推 → 用户看到前端"AI 等待
+  // 授权"卡片但飞书/Telegram 一片寂静。
+  it('POST /exec with resumeNativeId preserves telegramRoute / larkRoute from prior session', async () => {
+    const todo = ctx.db.createTodo({
+      title: 'T',
+      quadrant: 1,
+      aiSessions: [{
+        sessionId: 'old-session',
+        tool: 'claude',
+        nativeSessionId: 'old-native',
+        status: 'idle',
+        startedAt: 1,
+        completedAt: null,
+        prompt: 'old',
+        telegramRoute: {
+          channel: 'telegram',
+          targetUserId: '-1001',
+          threadId: 9999,
+          topicName: '#tabc',
+        },
+        larkRoute: {
+          channel: 'lark',
+          targetUserId: 'oc_xyz',
+          rootMessageId: 'om_root_xyz',
+        },
+      }],
+    })
+    const { body } = await request(ctx.app).post('/api/ai-terminal/exec')
+      .send({
+        todoId: todo.id,
+        prompt: 'resume',
+        tool: 'claude',
+        resumeNativeId: 'old-native',
+      })
+    expect(body.ok).toBe(true)
+    const updated = ctx.db.getTodo(todo.id)
+    expect(updated.aiSessions).toHaveLength(1)
+    expect(updated.aiSessions[0].sessionId).toBe(body.sessionId)
+    expect(updated.aiSessions[0].telegramRoute).toEqual({
+      channel: 'telegram',
+      targetUserId: '-1001',
+      threadId: 9999,
+      topicName: '#tabc',
+    })
+    expect(updated.aiSessions[0].larkRoute).toEqual({
+      channel: 'lark',
+      targetUserId: 'oc_xyz',
+      rootMessageId: 'om_root_xyz',
+    })
+  })
+
   it('POST /exec with same native session reuses existing in-memory session', async () => {
     const todo = ctx.db.createTodo({ title: 'T', quadrant: 1 })
     const first = await request(ctx.app).post('/api/ai-terminal/exec')

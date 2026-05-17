@@ -621,6 +621,11 @@ export function createOpenClawHookHandler(deps = {}) {
     if (!sessionId) return { ok: false, reason: 'no_sessionId' }
     const sess = aiTerminal?.sessions?.get(sessionId)
     if (!sess) return { ok: false, reason: 'session_gone' }
+    // bridge in-memory route 缺失但 DB 有 → 先恢复，否则 postCard 一样发不出去。
+    // handleClaudeDetector 同源处理，保持两条 detector 路径行为一致。
+    if (openclaw?.hasExplicitRoute && !openclaw.hasExplicitRoute(sessionId)) {
+      restorePersistedRoute(sessionId, sess.todoId)
+    }
     // 把 session.status 翻成 pending_confirm —— 前端 deriveAiState 据此显示"待确认"。
     // 信号源是 codex-prompt-detector（已经过 AI self-quoted 过滤），比旧的 PTY 正则路径准。
     try { aiTerminal?.markPendingConfirm?.(sessionId, { source: 'codex-detector', promptText }) } catch { /* ignore */ }
@@ -657,6 +662,14 @@ export function createOpenClawHookHandler(deps = {}) {
     if (!sessionId) return { ok: false, reason: 'no_sessionId' }
     const sess = aiTerminal?.sessions?.get(sessionId)
     if (!sess) return { ok: false, reason: 'session_gone' }
+
+    // 0) bridge in-memory route 缺失但 DB 有 → 先恢复。否则 isPermissionReminderEligible
+    //    会立即 short-circuit 返回 false，IM 永远收不到权限卡片。
+    //    handleClaude 在自己开头做了同样的事；detector 路径之前漏了这一步，导致
+    //    resume / mode-switch（spawnSession skipTelegram=true）后第一条权限弹窗被吞。
+    if (openclaw?.hasExplicitRoute && !openclaw.hasExplicitRoute(sessionId)) {
+      restorePersistedRoute(sessionId, sess.todoId)
+    }
 
     // 1) 翻状态。markPendingConfirm 默认只接受 running → pending_confirm，但 PTY-detector
     //    要求 anchor + ≥2 数字选项才 emit，假阳性概率极低；显式 allowIdleFlip=true 让它

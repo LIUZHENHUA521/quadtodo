@@ -1059,6 +1059,67 @@ describe('openclaw-hook handler', () => {
     expect(bridge.broadcastText).toHaveBeenCalledTimes(1)
   })
 
+  // 实战回归：用户在 telegram-绑定的任务里把权限模式从 bypass 切到 default
+  // → spawnSession(skipTelegram=true) 让 wizard 不重新建 topic
+  // → bridge in-memory 路由对新 sessionId 是空的
+  // → 但 DB 里的 aiSessions[0].telegramRoute 已经被 spawnSession 的 route-preserve 继承过来
+  // detector 进来时如果不先 restorePersistedRoute，就会立刻被 isPermissionReminderEligible 拒掉
+  // → IM 永远收不到权限卡片（前端仍能看见 "AI 等待授权"）。
+  it('source=claude,path=detector: bridge 无 route 但 DB 有 → 先 restorePersistedRoute 再推 IM', async () => {
+    const sessionId = 'ai-claude-resume-restore'
+    // bridge 启动时无任何 route；后续 registerSessionRoute 会从 DB 拿
+    bridge = makeFakeBridge()
+    const todo = db.createTodo({ title: 'resume', quadrant: 1 })
+    const todoId = todo.id
+    db.updateTodo(todoId, {
+      aiSessions: [{
+        sessionId,
+        tool: 'claude',
+        nativeSessionId: 'native-resume',
+        status: 'running',
+        startedAt: 1,
+        completedAt: null,
+        prompt: 'p',
+        telegramRoute: {
+          channel: 'telegram',
+          targetUserId: '-1001',
+          threadId: 1234,
+          topicName: '#t1',
+        },
+      }],
+    })
+    const markPendingConfirm = vi.fn()
+    handler = createOpenClawHookHandler({
+      db, openclaw: bridge,
+      getConfig: () => ({ telegram: { suppressNotificationEvents: true, notificationCooldownMs: 0 } }),
+      aiTerminal: {
+        sessions: new Map([[sessionId, {
+          todoId,
+          permissionMode: 'default',
+          recentOutput: '',
+          outputHistory: [],
+        }]]),
+        markPendingConfirm,
+      },
+    })
+
+    const r = await handler.handle({
+      source: 'claude',
+      path: 'detector',
+      event: 'Notification',
+      sessionId,
+      promptText: 'Do you want to proceed?\n1. Yes\n2. No',
+    })
+
+    expect(bridge.registerSessionRoute).toHaveBeenCalledWith(sessionId, expect.objectContaining({
+      channel: 'telegram',
+      threadId: 1234,
+    }))
+    expect(r.ok).toBe(true)
+    expect(r.action).toBe('sent')
+    expect(bridge.broadcastText).toHaveBeenCalled()
+  })
+
   it('source=claude,path=detector: session_gone 安全返回（不崩、不调 bridge）', async () => {
     bridge = makeFakeBridge()
     handler = createOpenClawHookHandler({

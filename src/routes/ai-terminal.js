@@ -681,6 +681,20 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
           }
         } catch { /* 模板查不到就当无 agent */ }
       }
+      // Resume / mode-switch 路径：上一条 aiSession 即将被 mergeTodoAiSessions 按
+      // (tool, nativeSessionId) 过滤掉（同一个 Claude/Codex 后端只是换了 AgentQuad
+      // sessionId）。它身上挂的 larkRoute / telegramRoute 是 IM 推送的唯一来源，
+      // 如果不显式继承，新 sessionId 进 DB 时 route 字段就空了 → 后续 detector /
+      // Stop hook 调 isPermissionReminderEligible 返回 false → IM 静默丢推送
+      // （前端仍能看见 "AI 等待授权"，因为它走 markPendingConfirm，不依赖 route）。
+      const preservedRoutes = {}
+      if (resumeNativeId) {
+        const priorAi = (todo.aiSessions || []).find(
+          (item) => item?.tool === tool && item?.nativeSessionId === resumeNativeId,
+        )
+        if (priorAi?.larkRoute) preservedRoutes.larkRoute = priorAi.larkRoute
+        if (priorAi?.telegramRoute) preservedRoutes.telegramRoute = priorAi.telegramRoute
+      }
       // 3. 一次性把 nativeSessionId 写进 DB（搬进 try 内：失败时不留脏 DB）。
       db.updateTodo(todoId, {
         status: 'ai_running',
@@ -694,6 +708,7 @@ export function createAiTerminal({ db, pty, logDir, defaultCwd, getDefaultCwd, o
           completedAt: null,
           prompt,
           permissionMode: effectivePermissionMode,
+          ...preservedRoutes,
           ...(agentTemplateId ? { agentTemplateId, agentName } : {}),
           ...(label ? { label } : {}),
         }),
