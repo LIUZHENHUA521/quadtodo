@@ -229,7 +229,7 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
   return (
     <div className="topbar-dispatch">
       <div className="topbar-logo">
-        <img src={new URL('../../assets/logo.svg', import.meta.url).href} alt="AgentQuad" className="topbar-logo-img" />
+        <img src={new URL('../../assets/logo.png', import.meta.url).href} alt="AgentQuad" className="topbar-logo-img" />
         <span>AgentQuad</span>
       </div>
 
