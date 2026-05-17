@@ -6,7 +6,7 @@ import { useTheme } from '../../design/ThemeProvider'
 import { useAiSessionStore } from '../../store/aiSessionStore'
 import { listTodos, updateTodo, type Todo } from '../../api'
 import { useAppMessages } from '../../design/useAppMessages'
-import { BarChart3, BookOpen, Settings, BarChartBig, FileText, Send, Moon } from 'lucide-react'
+import { BarChart3, BookOpen, Settings, BarChartBig, Bot, Send, Moon } from 'lucide-react'
 import './CommandPalette.css'
 
 interface TodoEntry {
@@ -212,7 +212,7 @@ export function CommandPalette() {
               <span>{t('palette:actions.openStats')}</span>
             </Command.Item>
             <Command.Item onSelect={() => { openDrawer('template'); closePalette() }}>
-              <span className="cmdk-icon"><FileText size={14} /></span>
+              <span className="cmdk-icon"><Bot size={14} /></span>
               <span>{t('palette:actions.insertFromTemplate')}</span>
             </Command.Item>
             <Command.Item onSelect={() => { useDispatchStore.getState().signal('telegramSync'); closePalette() }}>

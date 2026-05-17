@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { Popover, Tooltip, message } from 'antd'
 import { CloseOutlined } from '@ant-design/icons'
-import { Plus, Search, BarChart3, BookOpen, FileText, Settings, Zap, Pause, MessageCircleWarning } from 'lucide-react'
+import { Plus, Search, BarChart3, BookOpen, Bot, Settings, Zap, Pause, MessageCircleWarning } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { StatPill } from '../StatPill'
 import { BoardFilterPill } from '../BoardFilterPill'
@@ -267,7 +267,7 @@ export function TopbarDispatch({ unreadItems, onJump, onFocusSession, onStopSess
           aria-label={t('topbar:aria.templates')}
           data-testid="topbar-template-btn"
         >
-          <FileText size={16} />
+          <Bot size={16} />
         </button>
       </Tooltip>
       <Tooltip title={t('topbar:tooltip.transcriptRescue')}>
