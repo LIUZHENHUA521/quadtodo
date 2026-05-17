@@ -181,23 +181,16 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
           </div>
 
           <div className="todo-card-toolbar" onClick={(e) => e.stopPropagation()}>
-          <Dropdown
-            menu={{
-              items: [
-                { key: 'trae-cn', label: 'Trae CN' },
-                { key: 'trae', label: 'Trae' },
-                { key: 'cursor', label: 'Cursor' },
-              ],
-              onClick: ({ key }) => onOpenTrae(todo, key as 'trae-cn' | 'trae' | 'cursor'),
-            }}
-            trigger={['click']}
-          >
-            <Tooltip title={t('todo:card.openEditorTooltip')}>
-              <Button size="small" icon={<Code size={13} />} className="todo-primary-action">
-                {t('todo:card.openEditorLabel')}
-              </Button>
-            </Tooltip>
-          </Dropdown>
+          <Tooltip title={t('todo:card.openEditorTooltip')}>
+            <Button
+              size="small"
+              icon={<Code size={13} />}
+              className="todo-primary-action"
+              onClick={() => onOpenTrae(todo)}
+            >
+              {t('todo:card.openEditorLabel')}
+            </Button>
+          </Tooltip>
           <Dropdown
             menu={{
               items: aiMenuItems,

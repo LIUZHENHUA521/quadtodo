@@ -72,8 +72,12 @@ export function FocusSubbar({
   }
 
   const editorCwd = session?.cwd ?? fallbackCwd ?? ''
-  const handleOpenEditor = async (editor: EditorKind) => {
-    try { localStorage.setItem('quadtodo.editor', editor) } catch {}
+  const handleOpenEditor = async () => {
+    let editor: EditorKind = 'trae-cn'
+    try {
+      const saved = localStorage.getItem('quadtodo.editor')
+      if (saved === 'trae' || saved === 'trae-cn' || saved === 'cursor') editor = saved
+    } catch {}
     const label = editor === 'trae-cn' ? 'Trae CN' : editor === 'trae' ? 'Trae' : 'Cursor'
     try {
       await openTraeCN(editorCwd, editor)
@@ -162,23 +166,16 @@ export function FocusSubbar({
         <span className="focus-task-id">#{sessionShortId}</span>
       </div>
       <div className="focus-actions">
-        <Dropdown
-          menu={{
-            items: [
-              { key: 'trae-cn', label: 'Trae CN' },
-              { key: 'trae', label: 'Trae' },
-              { key: 'cursor', label: 'Cursor' },
-            ],
-            onClick: ({ key }) => handleOpenEditor(key as EditorKind),
-          }}
-          trigger={['click']}
-        >
-          <Tooltip title={t('todo:card.openEditorTooltip')}>
-            <Button size="small" icon={<Code size={13} />} style={{ height: 28 }}>
-              {t('todo:card.openEditorLabel')}
-            </Button>
-          </Tooltip>
-        </Dropdown>
+        <Tooltip title={t('todo:card.openEditorTooltip')}>
+          <Button
+            size="small"
+            icon={<Code size={13} />}
+            style={{ height: 28 }}
+            onClick={handleOpenEditor}
+          >
+            {t('todo:card.openEditorLabel')}
+          </Button>
+        </Tooltip>
         {autoModeController?.available && (
           <Dropdown
             menu={{

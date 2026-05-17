@@ -182,7 +182,7 @@ const en = {
       brainstorm: 'Brainstorm',
       workDirLabel: 'Dir · {{name}}',
       sessionCount: '{{count}} sessions',
-      openEditorTooltip: 'Open in editor',
+      openEditorTooltip: 'Open with editor from Settings (change it under Settings → Editor for terminal links)',
       openEditorLabel: 'Open editor',
       // Dispatch: replaces the old "AI Terminal" + tool dropdown — tool comes from
       // Settings → Default AI tool, the menu now picks an agent.

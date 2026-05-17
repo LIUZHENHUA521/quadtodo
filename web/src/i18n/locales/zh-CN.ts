@@ -180,7 +180,7 @@ const zh = {
       brainstorm: '脑爆',
       workDirLabel: '目录 · {{name}}',
       sessionCount: '会话 {{count}}',
-      openEditorTooltip: '选择编辑器打开',
+      openEditorTooltip: '用设置中选定的编辑器打开（在「设置 → 终端链接打开编辑器」切换）',
       openEditorLabel: '编辑器打开',
       // 派活：旧的"AI 终端"按钮 + tool 多选下拉已退役 —— 工具走 settings 默认，点击只问 agent
       dispatch: '派活',
