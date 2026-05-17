@@ -59,7 +59,7 @@ import {
   type UnreadSessionItem,
 } from './replyHub'
 import { getTranscriptStats } from './api'
-import { useUnreadStore } from './store/unreadStore'
+import { useUnreadStore, isSessionUnread } from './store/unreadStore'
 import { useDrawerStackStore } from './store/drawerStackStore'
 import { useDrawerStack } from './hooks/useDrawerStack'
 import { useDispatchStore } from './store/dispatchStore'
@@ -1254,8 +1254,12 @@ export default function TodoManage() {
             })
             const dndIds = backlogSorted.map((x) => todoDndId(x))
 
-            // 右 3 列：从（已经按 agent 过滤过的）todos 拍平 sessions
-            const sessionsCol = sessionsByColumn(flattenSessions(sessionSourceTodos))
+            // 右 3 列：从（已经按 agent 过滤过的）todos 拍平 sessions。
+            // 注入 unread 判定：idle + 用户还没看过 = 进"需确认"列；idle + 已读 = 进"已空闲"列。
+            // unreadStore 用 lastTurnDoneAt（服务端） vs lastSeenAt（本地）比较。
+            const isUnreadPred = (s: import('./api').AiSession) =>
+              isSessionUnread(s.lastTurnDoneAt, lastSeenMap.get(s.sessionId))
+            const sessionsCol = sessionsByColumn(flattenSessions(sessionSourceTodos), isUnreadPred)
 
             const renderBacklogTodo = (todo: Todo) => (
               <SortableTodoCard

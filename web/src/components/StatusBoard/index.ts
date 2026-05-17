@@ -5,6 +5,7 @@ export {
   backlogTodos,
   flattenSessions,
   sessionsByColumn,
+  deriveColumnFor,
   activeSessionCount,
   isTerminalSession,
 } from './statusConfig'
