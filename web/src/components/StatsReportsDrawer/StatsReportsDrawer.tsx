@@ -97,7 +97,7 @@ export function StatsReportsDrawer() {
       onClose={handleClose}
       width="min(720px, 100vw)"
       title={title}
-      styles={{ body: { overflowX: 'hidden' } }}
+      styles={{ body: { overflowX: 'hidden', paddingTop: 8 } }}
     >
       {body}
     </Drawer>

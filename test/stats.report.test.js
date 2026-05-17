@@ -114,4 +114,19 @@ describe('buildReport', () => {
 
 		// byQuadrant 已退役：报告不再按象限聚合
 	})
+
+	// Regression: backend dropped byQuadrant + topTodos.quadrant on 2026-05-16
+	// (commit 520be50). The frontend used to destructure `byQuadrant` and crash
+	// the StatsPanel with "Cannot read properties of undefined (reading 'map')"
+	// the moment sessionCount > 0. Lock the shape so the UI side stays aligned.
+	it('report shape: no byQuadrant; topTodos rows have no quadrant', () => {
+		db.createTodo({ title: 'A', quadrant: 1 })
+		const a = db.listTodos()[0]
+		seed(db, [
+			{ id: 's1', startedAt: 1000, endedAt: 2000, active: 600_000, input: 100_000, output: 20_000, model: 'claude-sonnet-4-6', todoId: a.id },
+		])
+		const r = buildReport(db, { since: 0, until: 9000, pricing: DEFAULT_PRICING })
+		expect(r).not.toHaveProperty('byQuadrant')
+		expect(r.topTodos[0]).not.toHaveProperty('quadrant')
+	})
 })
