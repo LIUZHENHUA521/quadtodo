@@ -497,19 +497,22 @@ body {
   white-space: nowrap;
 }
 
+/* 卡片底部分两行：上面是 meta pills（目录 / 会话计数 / 截止…），
+   下面是 toolbar（编辑器 / 派活 / 删除）单独占一行，宽松点不挤 */
 .todo-card-footer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
 }
 
 .todo-card-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  justify-content: flex-end;
+  justify-content: flex-start;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .todo-history-box {
