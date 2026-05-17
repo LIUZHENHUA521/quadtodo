@@ -282,6 +282,23 @@
   flex: 1;
   font-size: 12px;
   letter-spacing: 0.02em;
+  border-radius: 0;
+}
+.session-card-actions .ant-btn-dangerous {
+  color: var(--ant-color-text-secondary);
+  border-color: var(--ant-color-border);
+  background: transparent;
+}
+.session-card-actions .ant-btn-dangerous:hover,
+.session-card-actions .ant-btn-dangerous:focus-visible {
+  color: var(--ant-color-error);
+  border-color: var(--ant-color-error);
+  background: transparent;
+}
+.session-card-actions .ant-btn-dangerous:active {
+  color: var(--ant-color-error-active);
+  border-color: var(--ant-color-error-active);
+  background: transparent;
 }
 
 /* ====== Backlog TodoCard 增强 ====== */
