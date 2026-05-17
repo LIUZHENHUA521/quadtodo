@@ -352,18 +352,13 @@ export default function TodoManage() {
     setEditingTodo(null)
     setParentForCreate(parent)
     form.resetFields()
+    // 单选 agentId 初值：settings 里"默认套用模板"取第一个；老用户没配过则不预选。
     const defaultIds = resolveDefaultAppliedTemplateIds()
-    const defaultAutoStart = useAppConfigStore.getState().defaultAutoStartAi
+    const defaultAgentId = defaultIds[0] || null
     form.setFieldsValue({
-      // quadrant 已退役；不再写入 form 初值
+      // quadrant / recurring / autoStartAi 已退役
       workDir: parent?.workDir || undefined,
-      recurring: false,
-      recurringFrequency: 'daily',
-      recurringWeekdays: [1, 2, 3, 4, 5],
-      recurringMonthDays: [1],
-      useTemplates: defaultIds.length > 0,
-      appliedTemplateIds: defaultIds,
-      autoStartAi: defaultAutoStart,
+      agentId: defaultAgentId,
     })
     setDrawerOpen(true)
   }, [resolveDefaultAppliedTemplateIds, form])
@@ -628,8 +623,8 @@ export default function TodoManage() {
       dueDate: todo.dueDate ? dayjs(todo.dueDate) : null,
       workDir: todo.workDir || undefined,
       brainstorm: !!todo.brainstorm,
-      useTemplates: (todo.appliedTemplateIds || []).length > 0,
-      appliedTemplateIds: todo.appliedTemplateIds || [],
+      // 旧数据可能含多个 templateIds：编辑时只展示第一个，保存时也只保留这一个
+      agentId: (todo.appliedTemplateIds || [])[0] || null,
     })
     setDrawerOpen(true)
   }
@@ -645,13 +640,15 @@ export default function TodoManage() {
   const handleSave = async () => {
     try {
       const values = await form.validateFields()
+      // 单选 agentId（可空）。选了 = 立即派活（autoStart 隐式 true）；不选 = 只建 todo。
+      const agentId: string | null = values.agentId || null
       const data = {
         title: values.title,
         description: values.description || '',
         dueDate: values.dueDate ? values.dueDate.valueOf() : null,
         workDir: values.workDir || null,
         brainstorm: !!values.brainstorm,
-        appliedTemplateIds: values.useTemplates ? (values.appliedTemplateIds || []) : [],
+        appliedTemplateIds: agentId ? [agentId] : [],
         parentId: parentForCreate?.id ?? undefined,
       }
 
@@ -662,43 +659,15 @@ export default function TodoManage() {
         setEditingTodo(null)
         setParentForCreate(null)
         fetchTodos()
-      } else if (values.recurring && !parentForCreate) {
-        const frequency = values.recurringFrequency as RecurringFrequency
-        if (frequency === 'weekly' && !(values.recurringWeekdays || []).length) {
-          message.error(t('errors:needWeekday'))
-          return
-        }
-        if (frequency === 'monthly' && !(values.recurringMonthDays || []).length) {
-          message.error(t('errors:needMonthDay'))
-          return
-        }
-        await createRecurringRule({
-          title: data.title,
-          description: data.description,
-          // quadrant 已退役：让后端用默认值
-          workDir: data.workDir,
-          brainstorm: data.brainstorm,
-          appliedTemplateIds: data.appliedTemplateIds,
-          frequency,
-          weekdays: frequency === 'weekly' ? values.recurringWeekdays : undefined,
-          monthDays: frequency === 'monthly' ? values.recurringMonthDays : undefined,
-          subtodos: [],
-        })
-        message.success(t('todo:message.ruleCreated'))
-        setDrawerOpen(false)
-        setEditingTodo(null)
-        setParentForCreate(null)
-        fetchTodos()
       } else {
         const newTodo = await createTodo(data)
         message.success(parentForCreate ? t('todo:message.subtodoCreated') : t('todo:message.created'))
         setDrawerOpen(false)
         setEditingTodo(null)
         setParentForCreate(null)
-        if (values.autoStartAi) {
+        if (agentId) {
+          // 指派了 agent → 立即用 settings 配的默认工具启动会话。
           const tool = (useAppConfigStore.getState().defaultAiTool || 'claude') as AiTool
-          // handleAiExec 内部已处理 tool_missing 弹窗 / 错误提示 / fetchTodos —
-          // 若启动失败，todo 已创建并会被列表刷新带出来，用户可手动重启。
           await handleAiExec(newTodo, tool)
         } else {
           fetchTodos()
@@ -1364,34 +1333,21 @@ export default function TodoManage() {
               }}
             />
           </Form.Item>
-          {!editingTodo && (
-            <Form.Item noStyle shouldUpdate={(p, n) => p.recurring !== n.recurring}>
-              {({ getFieldValue }) => getFieldValue('recurring') ? null : (
-                <Form.Item
-                  name="autoStartAi"
-                  label={t('todo:form.autoStartAiLabel')}
-                  valuePropName="checked"
-                  extra={t('todo:form.autoStartAiExtra')}
-                >
-                  <Switch />
-                </Form.Item>
-              )}
-            </Form.Item>
-          )}
-          <Form.Item name="useTemplates" label={t('todo:form.useTemplatesLabel')} valuePropName="checked" extra={t('todo:form.useTemplatesExtra')}>
-            <Switch />
-          </Form.Item>
-          <Form.Item noStyle shouldUpdate={(p, n) => p.useTemplates !== n.useTemplates}>
-            {({ getFieldValue }) => getFieldValue('useTemplates') ? (
-              <Form.Item name="appliedTemplateIds" label={t('todo:form.appliedTemplatesLabel')}>
-                <Select
-                  mode="multiple"
-                  placeholder={templates.length ? t('todo:form.appliedTemplatesPlaceholder') : t('todo:form.appliedTemplatesEmpty')}
-                  options={templates.map(tpl => ({ value: tpl.id, label: tpl.builtin ? t('todo:form.templateBuiltinLabel', { name: tpl.name }) : tpl.name }))}
-                  optionFilterProp="label"
-                />
-              </Form.Item>
-            ) : null}
+          {/* 指派 Agent — 单选，可选；选了即代表"创建后立即派他干活"（autoStart=true）。
+              不选 = 仅创建 todo，等用户手动 Start。所以原先的"创建后自动启动 AI" 开关
+              和"启用模板"开关一并退役。 */}
+          <Form.Item
+            name="agentId"
+            label={t('todo:form.agentLabel')}
+            extra={t('todo:form.agentExtra')}
+          >
+            <Select
+              allowClear
+              placeholder={templates.length ? t('todo:form.agentPlaceholder') : t('todo:form.appliedTemplatesEmpty')}
+              options={templates.map(tpl => ({ value: tpl.id, label: tpl.builtin ? t('todo:form.templateBuiltinLabel', { name: tpl.name }) : tpl.name }))}
+              optionFilterProp="label"
+              showSearch
+            />
           </Form.Item>
           <Form.Item
             label={t('todo:form.workDirLabel')}
@@ -1416,64 +1372,8 @@ export default function TodoManage() {
               />
             </div>
           </Form.Item>
-          {/* 象限选项已退役：UI 不再展示，新建走 db 默认值 */}
-          {!editingTodo && !parentForCreate && (
-            <>
-              <Form.Item
-                name="recurring"
-                label={t('todo:form.recurringLabel')}
-                valuePropName="checked"
-                extra={t('todo:form.recurringExtra')}
-              >
-                <Switch />
-              </Form.Item>
-              <Form.Item noStyle shouldUpdate={(p, n) => p.recurring !== n.recurring || p.recurringFrequency !== n.recurringFrequency}>
-                {({ getFieldValue }) => {
-                  if (!getFieldValue('recurring')) return null
-                  const freq = getFieldValue('recurringFrequency') as RecurringFrequency
-                  return (
-                    <>
-                      <Form.Item name="recurringFrequency" label={t('todo:form.frequencyLabel')}>
-                        <Segmented
-                          options={[
-                            { label: t('todo:form.frequencyDaily'), value: 'daily' },
-                            { label: t('todo:form.frequencyWeekly'), value: 'weekly' },
-                            { label: t('todo:form.frequencyMonthly'), value: 'monthly' },
-                          ]}
-                        />
-                      </Form.Item>
-                      {freq === 'weekly' && (
-                        <Form.Item name="recurringWeekdays" label={t('todo:form.weekdaysLabel')}>
-                          <Select
-                            mode="multiple"
-                            placeholder={t('todo:form.weekdaysPlaceholder')}
-                            options={[
-                              { value: 1, label: t('todo:form.weekday.mon') },
-                              { value: 2, label: t('todo:form.weekday.tue') },
-                              { value: 3, label: t('todo:form.weekday.wed') },
-                              { value: 4, label: t('todo:form.weekday.thu') },
-                              { value: 5, label: t('todo:form.weekday.fri') },
-                              { value: 6, label: t('todo:form.weekday.sat') },
-                              { value: 0, label: t('todo:form.weekday.sun') },
-                            ]}
-                          />
-                        </Form.Item>
-                      )}
-                      {freq === 'monthly' && (
-                        <Form.Item name="recurringMonthDays" label={t('todo:form.monthDaysLabel')}>
-                          <Select
-                            mode="multiple"
-                            placeholder={t('todo:form.monthDaysPlaceholder')}
-                            options={Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: String(i + 1) }))}
-                          />
-                        </Form.Item>
-                      )}
-                    </>
-                  )
-                }}
-              </Form.Item>
-            </>
-          )}
+          {/* 重复待办：UI 已退役（与基础新建场景重复）；DB / 后端 recurring-rules 路由仍保留，
+              老规则照常出 instance。需要重新建议规则时，从 CommandPalette / MCP 创建。 */}
           <Form.Item name="dueDate" label={t('todo:form.dueDateLabel')}>
             <DatePicker showTime style={{ width: '100%' }} />
           </Form.Item>
