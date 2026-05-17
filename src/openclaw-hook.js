@@ -336,6 +336,22 @@ export function createOpenClawHookHandler(deps = {}) {
     return getSessionPermissionMode(sessionId) !== 'bypass'
   }
 
+  // detector 路径专用：bypass guard 让位。理由是 detector 三层守卫（anchor +
+  // ≥2 数字选项 + Esc/Tab footer）证明 Claude TUI 实际**正在**渲染权限框 ——
+  // 不管 AgentQuad 记的是不是 bypass。
+  // 真实场景：主人启动 session 时选了 bypass，之后在 TUI 内用 /permission-mode
+  // 切到 default。AgentQuad 没法感知 TUI 内部模式改动（hook / jsonl 都不 echo
+  // 这条信息），session.permissionMode 永远停在 'bypass'。如果继续按 bypass guard
+  // 拒推，前端能看见 "AI 等待授权" 卡片但 IM 永远收不到 —— 跟原始 bug 同症状。
+  // handleClaude (Notification hook) 仍走老 isPermissionReminderEligible，因为
+  // 那条路径在真 bypass 下 fire 多半是 idle 通知噪声，吞掉是对的。
+  function isDetectorPushEligible(sessionId) {
+    if (!sessionId) return false
+    if (!resolveExplicitInteractiveRoute(sessionId)) return false
+    if (suppressPermissionNotifications()) return false
+    return true
+  }
+
   function permissionShortId(sessionId) {
     return String(sessionId || '').slice(-4)
   }
@@ -682,8 +698,9 @@ export function createOpenClawHookHandler(deps = {}) {
       })
     } catch { /* ignore */ }
 
-    // 2) IM 推送资格 & cooldown 跟真 Notification 共享 → 不会双推
-    if (!isPermissionReminderEligible(sessionId)) {
+    // 2) IM 推送资格 & cooldown 跟真 Notification 共享 → 不会双推。
+    //    detector 路径用 isDetectorPushEligible（不查 bypass mode），原因见函数注释。
+    if (!isDetectorPushEligible(sessionId)) {
       return { ok: true, action: 'skipped', reason: 'im_push_not_eligible' }
     }
     const cd = notificationCooldownMs()

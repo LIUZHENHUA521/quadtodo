@@ -991,7 +991,12 @@ describe('openclaw-hook handler', () => {
     expect(sent.replyMarkup).toBeTruthy()   // Enter/Esc 按钮
   })
 
-  it('source=claude,path=detector: bypass session 不推 IM（仍翻 pending_confirm 由 markPendingConfirm 自己决定）', async () => {
+  // 实战回归：主人启 session 时选 bypass，然后在 Claude TUI 内用 /permission-mode
+  // 切到 default。AgentQuad 没法感知 TUI 内部模式改动，session.permissionMode
+  // 仍然记 'bypass'。但 detector 实际 fire → 证明 Claude TUI 在弹真权限框
+  // → IM 必须推（detector 三层守卫已经证伪了"假阳性"），否则主人在 UI 看见
+  // 卡片但飞书/Telegram 一片寂静（用户报回归）。
+  it('source=claude,path=detector: bypass session 也照样推 IM（detector 实际 fire 已是铁证）', async () => {
     const sessionId = 'ai-claude-pty-bypass'
     bridge = makeFakeBridge({ route: { channel: 'telegram', threadId: 9 } })
     const markPendingConfirm = vi.fn()
@@ -1014,10 +1019,47 @@ describe('openclaw-hook handler', () => {
       path: 'detector',
       event: 'Notification',
       sessionId,
-      promptText: 'Do you want to proceed?',
+      promptText: 'Do you want to proceed?\n1. Yes\n2. No',
     })
 
     expect(markPendingConfirm).toHaveBeenCalled()
+    expect(r.action).toBe('sent')
+    expect(bridge.broadcastText).toHaveBeenCalled()
+    const sent = bridge.broadcastText.mock.calls[0][0]
+    expect(sent.replyMarkup).toBeTruthy()
+  })
+
+  it('source=claude,path=detector: suppressPermissionNotifications=true 时仍然不推（主人显式关掉了）', async () => {
+    const sessionId = 'ai-claude-pty-suppressed'
+    bridge = makeFakeBridge({ route: { channel: 'telegram', threadId: 9 } })
+    handler = createOpenClawHookHandler({
+      db, openclaw: bridge,
+      getConfig: () => ({
+        telegram: {
+          suppressNotificationEvents: true,
+          suppressPermissionNotifications: true,
+          notificationCooldownMs: 0,
+        },
+      }),
+      aiTerminal: {
+        sessions: new Map([[sessionId, {
+          todoId: 't1',
+          permissionMode: 'default',
+          recentOutput: '',
+          outputHistory: [],
+        }]]),
+        markPendingConfirm: vi.fn(),
+      },
+    })
+
+    const r = await handler.handle({
+      source: 'claude',
+      path: 'detector',
+      event: 'Notification',
+      sessionId,
+      promptText: 'Do you want to proceed?',
+    })
+
     expect(r.action).toBe('skipped')
     expect(r.reason).toBe('im_push_not_eligible')
     expect(bridge.broadcastText).not.toHaveBeenCalled()
