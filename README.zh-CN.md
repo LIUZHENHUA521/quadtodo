@@ -2,9 +2,9 @@
 
 # 🎯 AgentQuad
 
-**四象限待办看板，每条 todo 都能起一个本地 Claude / Codex 会话。**
+**4 列状态看板，每条 todo 都能起一个本地 Claude / Codex / Cursor 会话。**
 
-全本地存储 · 原生支持 MCP · Telegram 远程驱动
+全本地存储 · 原生支持 MCP · Telegram / 飞书 / 微信远程驱动
 
 [![npm version](https://img.shields.io/npm/v/agentquad.svg?style=flat-square)](https://www.npmjs.com/package/agentquad)
 [![npm downloads](https://img.shields.io/npm/dm/agentquad.svg?style=flat-square)](https://www.npmjs.com/package/agentquad)
@@ -14,7 +14,7 @@
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
-<img src="./assets/screenshots/board.png" alt="AgentQuad 四象限看板" width="900" />
+<img src="./assets/screenshots/board.png" alt="AgentQuad 状态看板" width="900" />
 
 </div>
 
@@ -22,7 +22,9 @@
 
 ## AgentQuad 是什么？
 
-AgentQuad 是一个**全本地的任务调度器**，按艾森豪威尔矩阵把待办分到四个象限。每张 todo 卡片都能起一个内嵌的 **Claude Code** 或 **Codex** 终端会话，让"做事"和"AI 助手"待在一起，而不是分散在两个工具里。
+AgentQuad 是一个**全本地的 AI 任务调度器**。一个 4 列状态看板（**待办 · 运行中 · 需确认 · 已空闲**），每条 todo 都可以分派给一个 **Agent**（也就是一段保存好的 system prompt），并在内嵌的 **Claude Code / Codex / Cursor** 终端里跑起来。"Quad"现在指 4 列，不再是艾森豪威尔的 4 象限——还是同一个 4 格调度器的脑回路，只是换了一根坐标轴。让"做事"和"AI 助手"待在一起，而不是分散在两个工具里。
+
+你可以从任何地方驱动它——Web UI、Telegram、飞书、微信（通过 OpenClaw），所有会话和决策都流回同一个本地看板。
 
 - ❌ **不是 Linear / Todoist** —— 它们没法在卡片里直接跑 AI 终端
 - ❌ **不是 Cursor / Aider** —— 它们没有任务管理和跨项目调度
@@ -34,7 +36,7 @@ AgentQuad 是一个**全本地的任务调度器**，按艾森豪威尔矩阵把
 
 <table>
   <tr>
-    <td align="center"><img src="./assets/screenshots/board.png" width="400" /><br/><sub>四象限看板</sub></td>
+    <td align="center"><img src="./assets/screenshots/board.png" width="400" /><br/><sub>状态看板</sub></td>
     <td align="center"><img src="./assets/screenshots/ai-terminal.png" width="400" /><br/><sub>内嵌 AI 会话</sub></td>
   </tr>
   <tr>
@@ -52,16 +54,18 @@ npm install -g agentquad
 agentquad                            # 打开 http://127.0.0.1:5677
 ```
 
-首次启动会引导你装 `claude` / `codex`。跳过首跑向导：`agentquad --no-wizard` 或 `AGENTQUAD_SKIP_WIZARD=1`。
+首次启动会引导你装 `claude` / `codex` / `cursor-agent`。跳过首跑向导：`agentquad --no-wizard` 或 `AGENTQUAD_SKIP_WIZARD=1`。
 
 **环境要求：** Node 20+，npm 10+，macOS 或 Linux（Windows 计划中）。
 
-如果 `claude` 或 `codex` 没装：
+如果 `claude` / `codex` / `cursor-agent` 没装：
 
 ```bash
-agentquad install-tools --all
+agentquad install-tools --all                # 一键装 claude + codex + cursor-agent
+agentquad install-tools --claude --cursor    # 只装其中几个
 # 或手动:
 npm i -g @anthropic-ai/claude-code @openai/codex
+curl https://cursor.com/install -fsSL | bash
 ```
 
 随时自检：
@@ -74,12 +78,16 @@ agentquad doctor
 
 ## 功能特性
 
-- **艾森豪威尔四象限看板**，支持跨象限拖拽
-- **每条 todo 一个 Claude / Codex 终端**，会话持久化、可恢复
-- **会话日志本地落盘**（JSONL 格式），支持搜索；不上云
-- **周报 / 月报统计**，含 token 成本估算（模型单价可配置）
-- **全本地** —— SQLite + 文件系统，数据从不离开你的电脑
+- **状态驱动的 4 列看板** —— 待办 / 运行中 / 需确认 / 已空闲，会话自己在列之间流转
+- **命名 Agent（员工档案）** —— 把可复用的 system prompt 存下来（程序员、Reviewer、研究员…），分派给任意 todo；内置 8 个角色化模板开箱即用
+- **每个会话独立终端** —— Claude / Codex / Cursor 任选，会话持久化可恢复；一条 todo 可以同时跑多个会话
+- **Auto-decider 监督器** —— 可选的自动循环，用本地 Claude / Codex CLI 帮你回答权限弹窗和 `ask_user`，让 AI 在你睡觉时也能继续跑
+- **会话 transcript 全文检索** —— JSONL 本地落盘，支持关键词搜索、命中高亮、任意时间点 fork & resume
+- **Wiki / 项目记忆** —— Markdown 笔记可绑到具体 todo 或工作目录，作为上下文喂给 AI agent
+- **复发规则（Recurring）** —— 自动创建每日 / 每周 / cron 风格的 todo
+- **周报 / 月报统计**，含 token 成本估算（每个模型单价可配置）
 - **⌘K 命令面板**，快速导航 + 批量操作
+- **全本地** —— SQLite + 文件系统，所有数据都在 `~/.agentquad/`，从不离开你的电脑
 - **跨平台**：macOS 和 Linux
 
 ---
@@ -91,8 +99,16 @@ agentquad doctor
 AgentQuad 内置一个 MCP Streamable HTTP 服务（`POST /mcp`）。外部 Claude Code 会话挂上之后，可以用自然语言"帮我清理重复 todo"、"最近一周我在忙啥"、"合并这三条关于登录的 todo"。
 
 ```bash
-agentquad mcp install     # 写入 ~/.claude/settings.json
+agentquad mcp install     # 在 Claude Code（~/.claude/settings.json）里挂上 AgentQuad MCP
 agentquad mcp status      # 健康检查
+```
+
+想一次把 MCP **+ AgentQuad skill** 一并装进 Claude Code / Codex / Cursor（这样嵌套子 agent 也能创建子 todo）：
+
+```bash
+agentquad agents install              # 默认三家都装
+agentquad agents install --target cursor   # 只装一家
+agentquad agents status               # 查看版本 / drift
 ```
 
 完整工具清单 + preview/confirm 安全模型 + ⌘K 集成 → **[docs/MCP.md](./docs/MCP.md)**。
@@ -142,8 +158,9 @@ agentquad start                       # 或：agentquad start --expose
   "defaultTool": "claude",
   "defaultCwd": "~",
   "tools": {
-    "claude": { "command": "claude", "bin": "claude", "args": [] },
-    "codex":  { "command": "codex",  "bin": "codex",  "args": [] }
+    "claude": { "command": "claude",       "bin": "claude",       "args": [] },
+    "codex":  { "command": "codex",        "bin": "codex",        "args": [] },
+    "cursor": { "command": "cursor-agent", "bin": "cursor-agent", "args": [] }
   }
 }
 ```
@@ -170,11 +187,12 @@ agentquad config set tools.codex.command codex-w        # 公司内自定义 wra
 | `agentquad stop` | 停止服务（SIGTERM 3 秒后 SIGKILL） |
 | `agentquad status` | 查看运行状态 + 活跃会话数 |
 | `agentquad doctor` | 环境自检 |
+| `agentquad install-tools [--claude] [--codex] [--cursor] [--all]` | 一键装缺失的 AI CLI |
 | `agentquad config get/set/list` | 读/写配置 |
-| `agentquad mcp install/status/uninstall` | 管理 MCP 集成 |
-| `agentquad hook status/install/uninstall/bootstrap` | 管理 Claude Code hook |
-| `agentquad telegram:setup-menu` | 刷新 Telegram bot 命令菜单 |
-| `agentquad openclaw bootstrap` | 重装 OpenClaw 钩子 |
+| `agentquad mcp install/status/uninstall` | 管理 Claude Code 里的 MCP 集成 |
+| `agentquad agents install/status/uninstall [--target claude\|codex\|cursor]` | 把 AgentQuad MCP + skill 装进 Claude / Codex / Cursor（子 agent 能力） |
+| `agentquad hook install/uninstall/status/bootstrap [--claude] [--codex] [--cursor]` | 管理各 CLI 的 hook 脚本 |
+| `agentquad openclaw install-hook/uninstall-hook/bootstrap/hook-status` | 管理 OpenClaw 桥接钩子 |
 
 ---
 
@@ -212,7 +230,7 @@ agentquad/
     ├── package.json  # 前端独立: vite + react + antd + dnd-kit + xterm
     └── src/
         ├── main.tsx
-        ├── TodoManage.tsx        # 四象限看板
+        ├── TodoManage.tsx        # 4 列状态看板
         ├── AiTerminalMini.tsx
         ├── SettingsDrawer.tsx
         └── api.ts

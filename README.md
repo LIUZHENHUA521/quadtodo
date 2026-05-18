@@ -14,7 +14,7 @@ Local-first · MCP-ready · Telegram-friendly
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
-<img src="./assets/screenshots/board.png" alt="AgentQuad quadrant board" width="900" />
+<img src="./assets/screenshots/board.png" alt="AgentQuad status board" width="900" />
 
 </div>
 
@@ -157,8 +157,9 @@ Config file: `~/.agentquad/config.json`
   "defaultTool": "claude",
   "defaultCwd": "~",
   "tools": {
-    "claude": { "command": "claude", "bin": "claude", "args": [] },
-    "codex":  { "command": "codex",  "bin": "codex",  "args": [] }
+    "claude": { "command": "claude",       "bin": "claude",       "args": [] },
+    "codex":  { "command": "codex",        "bin": "codex",        "args": [] },
+    "cursor": { "command": "cursor-agent", "bin": "cursor-agent", "args": [] }
   }
 }
 ```
@@ -228,7 +229,7 @@ agentquad/
     ├── package.json  # frontend: vite + react + antd + dnd-kit + xterm
     └── src/
         ├── main.tsx
-        ├── TodoManage.tsx        # quadrant board
+        ├── TodoManage.tsx        # 4-lane status board
         ├── AiTerminalMini.tsx
         ├── SettingsDrawer.tsx
         └── api.ts
