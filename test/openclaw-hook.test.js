@@ -8,7 +8,15 @@ import { createOpenClawHookHandler, __test__ } from '../src/openclaw-hook.js'
 import { createOpenClawHookRouter } from '../src/routes/openclaw-hook.js'
 import { DEFAULT_PRICING } from '../src/pricing.js'
 
-function makeFakeBridge({ sendOk = true, sendReason = null, route = null, explicitRoute = route != null } = {}) {
+// 默认带一个 fake non-interactive route（channel='openclaw-weixin' 让
+// resolveExplicitInteractiveRoute 返回 null，保留 permission-reminder 路径的原行为）。
+// 想测"完全没绑 IM"的快路径，显式传 `{ route: null }`。
+function makeFakeBridge({
+  sendOk = true,
+  sendReason = null,
+  route = { channel: 'openclaw-weixin', targetUserId: 'wx-default' },
+  explicitRoute = route != null,
+} = {}) {
   const sent = []
   const routes = new Map()
   return {
@@ -202,7 +210,11 @@ describe('openclaw-hook handler', () => {
 
   beforeEach(() => {
     db = openDb(':memory:')
-    bridge = makeFakeBridge()
+    // 默认 bridge 带一个 fake non-interactive route，模拟 session 已绑 IM —— 这是这个
+    // describe 块下大多数测试的隐含前提；想测"无 IM"快路径的用例显式 override。
+    // 用 openclaw-weixin（非 telegram 且无 threadId）避免 resolveExplicitInteractiveRoute
+    // 误判为 permission-eligible，影响 notification suppress 测试。
+    bridge = makeFakeBridge({ route: { channel: 'openclaw-weixin', targetUserId: 'wx-default' } })
     handler = createOpenClawHookHandler({ db, openclaw: bridge, cooldownMs: 30000 })
   })
 
@@ -861,7 +873,8 @@ describe('openclaw-hook handler', () => {
     expect(r.action).toBe('failed')
     expect(r.reason).toBe('no_thread_id_route_missing')
     expect(bridge.sent).toHaveLength(1)
-    expect(bridge.sent[0].route).toBeNull()
+    // sent[0].route 来自 fixture default fake route（fallback target），不是 persisted route
+    expect(bridge.sent[0].route).toEqual({ channel: 'openclaw-weixin', targetUserId: 'wx-default' })
   })
 
   it('rejects a persisted Telegram route with a conflicting channel', async () => {
@@ -897,7 +910,8 @@ describe('openclaw-hook handler', () => {
     expect(r.action).toBe('failed')
     expect(r.reason).toBe('no_thread_id_route_missing')
     expect(bridge.sent).toHaveLength(1)
-    expect(bridge.sent[0].route).toBeNull()
+    // sent[0].route 来自 fixture default fake route（fallback target），不是 persisted route
+    expect(bridge.sent[0].route).toEqual({ channel: 'openclaw-weixin', targetUserId: 'wx-default' })
   })
 
   it('returns failed when bridge returns not ok', async () => {
@@ -1109,8 +1123,8 @@ describe('openclaw-hook handler', () => {
   // → IM 永远收不到权限卡片（前端仍能看见 "AI 等待授权"）。
   it('source=claude,path=detector: bridge 无 route 但 DB 有 → 先 restorePersistedRoute 再推 IM', async () => {
     const sessionId = 'ai-claude-resume-restore'
-    // bridge 启动时无任何 route；后续 registerSessionRoute 会从 DB 拿
-    bridge = makeFakeBridge()
+    // bridge 启动时无任何 route（显式 disable fixture default）；后续 registerSessionRoute 会从 DB 拿
+    bridge = makeFakeBridge({ route: null })
     const todo = db.createTodo({ title: 'resume', quadrant: 1 })
     const todoId = todo.id
     db.updateTodo(todoId, {
@@ -1186,7 +1200,8 @@ describe('openclaw-hook router', () => {
 
   beforeEach(() => {
     db = openDb(':memory:')
-    bridge = makeFakeBridge()
+    // 同 handler describe：默认带一个 non-interactive route 让主路径继续跑
+    bridge = makeFakeBridge({ route: { channel: 'openclaw-weixin', targetUserId: 'wx-default' } })
     handler = createOpenClawHookHandler({ db, openclaw: bridge })
     app = express()
     app.use(express.json())
@@ -1285,7 +1300,8 @@ describe('openclaw-hook usage footer integration', () => {
     tmp = mkdtempSync(join(tmpdir(), 'qt-hook-usage-'))
     jsonlPath = join(tmp, 'native-uuid-1.jsonl')
     db = openDb(':memory:')
-    bridge = makeFakeBridge()
+    // 同 handler describe：默认带一个 non-interactive route 让主路径继续跑
+    bridge = makeFakeBridge({ route: { channel: 'openclaw-weixin', targetUserId: 'wx-default' } })
   })
 
   afterEach(() => {

@@ -652,7 +652,9 @@ export function createOpenClawBridge({
       // session 没有任何 in-memory 路由 → 退回单 postText（用 config 默认 target）。
       // 行为对齐改造前的 postText({sessionId, message}) 老语义。
       const r = await postText({ sessionId, message, replyMarkup, attachment })
-      return { ok: !!r?.ok, byChannel: { default: r }, fanout: false }
+      return r?.ok
+        ? { ok: true, byChannel: { default: r }, fanout: false }
+        : { ok: false, byChannel: { default: r }, fanout: false, reason: r?.reason || 'no_route', detail: r?.detail }
     }
     const byChannel = {}
     let anyOk = false
@@ -672,7 +674,11 @@ export function createOpenClawBridge({
       byChannel[route.channel] = r
       if (r?.ok) anyOk = true
     }
-    return { ok: anyOk, byChannel, fanout: true }
+    if (anyOk) return { ok: true, byChannel, fanout: true }
+    // 全部失败：从第一个失败 channel 抽 reason 透传到顶层，避免 hook handler 拿到
+    // undefined 而退到 'unknown'。
+    const firstFail = Object.values(byChannel).find((r) => r && r.ok === false) || null
+    return { ok: false, byChannel, fanout: true, reason: firstFail?.reason || 'all_channels_failed', detail: firstFail?.detail }
   }
 
   function setTelegramBot(bot) { telegramBot = bot }

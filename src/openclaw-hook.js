@@ -797,6 +797,85 @@ export function createOpenClawHookHandler(deps = {}) {
 
     const permissionReminderEligible = evt === 'notification' && isPermissionReminderEligible(sessionId)
 
+    // 1c) "无 IM 推送目标"快路径：session 既没绑 explicit route，config 也没默认 target。
+    //     主路径会跑 readLatestAssistantTurnFresh 等 jsonl flush 重试（实测 ~1.3s），
+    //     最终也只是为了拼 IM 消息——没 IM 时这 1.3s 是纯浪费。
+    //     这里跳过 jsonl flush 重试 / buildMessage / broadcastText / SessionEnd 后处理
+    //     （close topic、clearReactions 等），但保留 web/dispatcher 状态机所有副作用，
+    //     保证 web UI 行为与有 IM 时一致。
+    //     stop_reason 仍读（用 non-fresh），保留 sub-agent 假翻 idle 的防御门。
+    if ((evt === 'stop' || evt === 'session-end' || evt === 'notification')
+        && openclaw?.hasExplicitRoute
+        && !openclaw.hasExplicitRoute(sessionId)
+        && !openclaw?.resolveRoute?.(sessionId)) {
+      if (evt === 'notification') {
+        if (sessionId) {
+          try { aiTerminal?.markPendingConfirm?.(sessionId, { source: 'claude-notification' }) } catch { /* ignore */ }
+        }
+        if (notificationSuppressed() && !permissionReminderEligible) {
+          return { ok: true, action: 'skipped', reason: 'notification_suppressed' }
+        }
+        return { ok: true, action: 'skipped', reason: 'no_route_bound' }
+      }
+
+      // stop / session-end：non-fresh 读 stop_reason，校验 turnEndedNormally
+      let stopReason = null
+      try {
+        let _nativeId = null
+        if (sessionId && aiTerminal?.sessions) {
+          _nativeId = aiTerminal.sessions.get(sessionId)?.nativeSessionId || null
+        }
+        if (!_nativeId && hookPayload && typeof hookPayload === 'object') {
+          _nativeId = hookPayload.session_id || hookPayload.sessionId || null
+        }
+        const _rawPath = hookPayload && typeof hookPayload === 'object' && typeof hookPayload.transcript_path === 'string'
+          ? hookPayload.transcript_path
+          : null
+        const _transcriptPath = hookTranscriptMatchesSession(_rawPath, _nativeId) ? _rawPath : null
+        if (_transcriptPath || (_nativeId && pty?.findClaudeSession)) {
+          const loc = _transcriptPath ? { filePath: _transcriptPath } : pty.findClaudeSession(_nativeId)
+          if (loc?.filePath) {
+            const turn = readLatestAssistantTurn(loc.filePath)
+            stopReason = turn?.raw?.message?.stop_reason ?? null
+          }
+        }
+      } catch (e) {
+        logger.warn?.(`[openclaw-hook] fast-path read stop_reason failed: ${e.message}`)
+      }
+      // 兜底：读不到 jsonl → 视为正常结束（与主路径 turnEndedNormally 兜底 true 一致）
+      const turnEndedNormally = evt === 'session-end' || stopReason === null || stopReason === 'end_turn'
+
+      if (evt === 'stop' && turnEndedNormally) {
+        notifyWebTurnDone(sessionId, todoTitle)
+        if (sessionId && aiTerminal?.markSessionAwaitingReply) {
+          try {
+            const ok = aiTerminal.markSessionAwaitingReply(sessionId, true)
+            if (!ok) {
+              const sess = aiTerminal?.sessions?.get?.(sessionId)
+              logger.warn?.(`[openclaw-hook] markSessionAwaitingReply(true) NO-OP sid=${sessionId} sessionExists=${!!sess} status=${sess?.status || 'null'} awaitingReply=${sess?.awaitingReply}`)
+            }
+          } catch (e) { logger.warn?.(`[openclaw-hook] markSessionAwaitingReply failed: ${e.message}`) }
+        }
+        if (sessionId && sessionInputDispatcher?.onSessionIdle) {
+          Promise.resolve(sessionInputDispatcher.onSessionIdle(sessionId))
+            .catch((e) => logger.warn?.(`[openclaw-hook] dispatcher.onSessionIdle failed: ${e.message}`))
+        }
+      } else if (evt === 'stop' && !turnEndedNormally) {
+        logger.warn?.(`[openclaw-hook] Stop hook deferred (fast-path): stopReason=${stopReason || 'null'} sid=${sessionId} — waiting for jsonl watcher to fire on real end_turn`)
+      }
+
+      if (evt === 'session-end') {
+        openclaw.clearLastPushForSession?.(sessionId)
+        openclaw.clearSessionRoute?.(sessionId, 'session-end')
+        if (sessionInputDispatcher?.onSessionEnd) {
+          Promise.resolve(sessionInputDispatcher.onSessionEnd(sessionId))
+            .catch((e) => logger.warn?.(`[openclaw-hook] dispatcher.onSessionEnd failed: ${e.message}`))
+        }
+      }
+
+      return { ok: true, action: 'skipped', reason: 'no_route_bound' }
+    }
+
     // 注：原来这里会立即 notifyWebTurnDone。已经挪到 ③ 读完 JSONL 之后，
     // 由 turnEndedNormally 把校验门串起来——只有 stop_reason === 'end_turn' 才翻 idle。
 

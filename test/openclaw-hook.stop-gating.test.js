@@ -27,6 +27,10 @@ function makeFakeBridge() {
       sent.push({ sessionId, message })
       return { ok: true }
     }),
+    broadcastText: vi.fn(async ({ sessionId, message }) => {
+      sent.push({ sessionId, message })
+      return { ok: true }
+    }),
   }
 }
 
