@@ -445,11 +445,17 @@ export default function TodoManage() {
   }, [todos, handleOpenTerminalInDock])
 
   const handleStopSession = useCallback(async (sessionId: string) => {
-    await stopAiExec(sessionId)
-    // 顶栏 × 后立即刷新 todos：否则卡片角标要等 3s poll 才感知 stopped，
-    // 中间窗口里 deriveAiState 仍展示 idle，用户以为可发消息。
+    // 乐观更新：先把 live store 翻 'stopped'，看板的 mergeLiveSession + deriveColumnFor
+    // 立刻把卡片移出"运行中/待确认"列；不等后端 stop 往返 + 3s poll，避免点完 Cancel
+    // 卡片还杵在原地的延迟感。失败时后端真状态会通过 3s poll 兜底回来。
+    try {
+      useAiSessionStore.getState().updateSessionStatus(sessionId, 'stopped', Date.now())
+    } catch { /* live store 没这条记录无所谓，后端 stopped 事件会兜底 */ }
+    stopAiExec(sessionId).catch((e: any) => {
+      message.warning(`停止失败：${e?.message || 'unknown'}`)
+    })
     useDispatchStore.getState().signal('refreshTodos')
-  }, [])
+  }, [message])
 
   /**
    * "× Close" idle session：
