@@ -22,7 +22,9 @@ Local-first · MCP-ready · Telegram-friendly
 
 ## What is AgentQuad?
 
-AgentQuad is a **local-first AI task scheduler**. A 4-lane status board (Backlog · In Progress · Needs Input · Idle) where every todo can be dispatched to an **agent** — a saved system prompt — and run inside an embedded **Claude Code**, **Codex**, or **Cursor** terminal session. The "Quad" is four columns now, not four Eisenhower quadrants — same idea of a 4-cell scheduler, different axis. Work and AI live side-by-side instead of in two different tools.
+AgentQuad is a **local-first AI task scheduler**. A 4-lane status board (**Backlog · In Progress · Needs Input · Idle**) where every todo can be dispatched to an **agent** — a saved system prompt — and run inside an embedded **Claude Code**, **Codex**, or **Cursor** terminal session. The "Quad" is four columns now, not four Eisenhower quadrants — same idea of a 4-cell scheduler, different axis. Work and AI live side-by-side instead of in two different tools.
+
+Drive it from anywhere — Web UI, Telegram, 飞书 (Lark), or WeChat (via OpenClaw). All conversations and decisions stream back to the same local board.
 
 - ❌ **Not Linear / Todoist** — they can't host AI terminals inside cards.
 - ❌ **Not Cursor / Aider** — they don't manage tasks or schedule work across projects.
@@ -56,12 +58,14 @@ The first run walks you through installing `claude` / `codex` if you don't have 
 
 **Requirements:** Node 20+, npm 10+, macOS or Linux (Windows planned).
 
-If `claude` or `codex` is missing:
+If `claude`, `codex`, or `cursor-agent` is missing:
 
 ```bash
-agentquad install-tools --all
+agentquad install-tools --all                # installs claude + codex + cursor-agent
+agentquad install-tools --claude --cursor    # pick specific ones
 # or manually:
 npm i -g @anthropic-ai/claude-code @openai/codex
+curl https://cursor.com/install -fsSL | bash
 ```
 
 Check your environment any time:
@@ -75,12 +79,15 @@ agentquad doctor
 ## Features
 
 - **Status-driven 4-column board** — Backlog / In Progress / Needs Input / Idle, sessions auto-flow between lanes
-- **Named Agents** — save reusable system prompts (Coder, Reviewer, Researcher…) and dispatch them to any todo
+- **Named Agents (员工档案)** — save reusable system prompts (Coder, Reviewer, Researcher…) and dispatch them to any todo; 8 role-style built-ins out of the box
 - **One terminal per session** — Claude / Codex / Cursor, persistent and resumable; multiple concurrent sessions per todo OK
-- **Searchable session logs** stored locally as JSONL; no cloud upload
-- **Weekly / monthly stats** with token cost estimation (model prices configurable)
-- **Local-first** — SQLite + filesystem, your data never leaves your laptop
+- **Auto-decider supervisor** — optional loop that uses a local Claude / Codex CLI to answer permission prompts and `ask_user` calls for you while you sleep
+- **Searchable session transcripts** stored locally as JSONL — keyword search, match highlighting, fork & resume any point in the past
+- **Wiki / project memory** — markdown notes pinned to specific todos or workdirs; surfaced to AI agents as context
+- **Recurring rules** — auto-create daily / weekly / cron-style todos
+- **Weekly & monthly reports** with token cost estimation (per-model prices configurable)
 - **⌘K command palette** for fast navigation and batch operations
+- **Local-first** — SQLite + filesystem under `~/.agentquad/`, your data never leaves your laptop
 - **Cross-platform**: macOS and Linux
 
 ---
@@ -92,8 +99,16 @@ agentquad doctor
 AgentQuad ships a built-in MCP Streamable HTTP server at `POST /mcp`. External Claude Code sessions can do things like *"clean up duplicate todos"*, *"what did I work on last week"*, or *"merge these three login-related todos"* in natural language.
 
 ```bash
-agentquad mcp install     # adds AgentQuad to ~/.claude/settings.json
+agentquad mcp install     # add AgentQuad MCP to ~/.claude/settings.json
 agentquad mcp status      # health check
+```
+
+Want to install MCP **plus** the AgentQuad skill into Claude Code, Codex, **and** Cursor in one shot (so nested sub-agents can create child todos)? Use:
+
+```bash
+agentquad agents install              # installs to all three by default
+agentquad agents install --target cursor   # only one
+agentquad agents status               # drift / version check
 ```
 
 Full tool list, preview/confirm safety model, and ⌘K integration → **[docs/MCP.md](./docs/MCP.md)**.
@@ -103,6 +118,12 @@ Full tool list, preview/confirm safety model, and ⌘K integration → **[docs/M
 Run a Telegram bot that creates a **Forum Topic** per task — conversations physically isolated, content streamed directly from Claude's JSONL logs (no spinner / ANSI noise). Topic auto-closes and renames with ✅ when the task is done.
 
 → **[docs/TELEGRAM.md](./docs/TELEGRAM.md)**
+
+### 🪶 飞书 / Lark (thread-per-task in a topic group)
+
+Same idea as the Telegram bridge but for 飞书/Lark — one thread per task inside a topic group, permission-prompt cards and `ask_user` decisions bounce back as Lark interactive cards. Uses Lark's long-connection event stream, **no public callback URL required**.
+
+→ **[docs/LARK.md](./docs/LARK.md)** — full self-built app setup walkthrough.
 
 ### 🐱 OpenClaw (WeChat bridge)
 
@@ -164,11 +185,12 @@ agentquad config set tools.codex.command codex-w        # custom wrapper
 | `agentquad stop` | Stop the server (SIGTERM, then SIGKILL after 3s) |
 | `agentquad status` | Running state + active session count |
 | `agentquad doctor` | Environment check |
+| `agentquad install-tools [--claude] [--codex] [--cursor] [--all]` | Install missing AI CLIs |
 | `agentquad config get/set/list` | Read/write config |
-| `agentquad mcp install/status/uninstall` | Manage MCP integration |
-| `agentquad hook status/install/uninstall/bootstrap` | Manage Claude Code hook |
-| `agentquad telegram:setup-menu` | Refresh Telegram bot command menu |
-| `agentquad openclaw bootstrap` | Re-install OpenClaw hooks |
+| `agentquad mcp install/status/uninstall` | Manage MCP integration in Claude Code |
+| `agentquad agents install/status/uninstall [--target claude\|codex\|cursor]` | Install AgentQuad MCP + skill into Claude / Codex / Cursor (sub-agent capability) |
+| `agentquad hook install/uninstall/status/bootstrap [--claude] [--codex] [--cursor]` | Manage the per-tool hook scripts |
+| `agentquad openclaw install-hook/uninstall-hook/bootstrap/hook-status` | Manage OpenClaw bridge hooks |
 
 ---
 
