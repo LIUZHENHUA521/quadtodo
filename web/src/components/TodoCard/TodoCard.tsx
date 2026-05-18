@@ -362,14 +362,16 @@ export function SortableTodoCard({ todo, children = [], childHitIds, isSubtodo =
                       {nativeSessionId && (
                         <button
                           type="button"
-                          className="todo-history-link"
+                          className="todo-history-resume-icon"
                           onClick={(e) => {
                             e.stopPropagation()
                             onOpenNativeResume(todo, session)
                           }}
-                          title={t('todo:card.localResumeTooltip')}
+                          title={`${t('todo:card.localResume')} — ${t('todo:card.localResumeTooltip')}`}
+                          aria-label={t('todo:card.localResume')}
+                          style={{ display: 'inline-flex', alignItems: 'center' }}
                         >
-                          {t('todo:card.localResume')}
+                          <CornerDownLeft size={11} />
                         </button>
                       )}
                       <Popconfirm

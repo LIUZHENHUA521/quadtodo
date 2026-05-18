@@ -243,7 +243,7 @@
   }
 
   /* ── 历史会话卡片：触摸目标尺寸（布局已由 TodoManage.css 的 @container 处理） ── */
-  .todo-history-link,
+  .todo-history-resume-icon,
   .todo-history-delete {
     min-height: 32px;
     display: inline-flex;

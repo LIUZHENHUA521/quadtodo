@@ -707,7 +707,7 @@ body {
   margin-left: auto;
 }
 
-.todo-history-link,
+.todo-history-resume-icon,
 .todo-history-delete {
   border: 0;
   background: transparent;
@@ -721,12 +721,14 @@ body {
   color: var(--text-tertiary);
 }
 
-.todo-history-link {
+/* 本地继续：从原先 .todo-history-link 主 CTA 蓝色文字按钮，降级为三级灰的图标按钮，
+   与 .todo-history-delete 视觉对齐 —— 避免抢走"整卡可点"的暗示，导致用户误点本地继续。 */
+.todo-history-resume-icon {
   flex-shrink: 0;
-  color: var(--accent-electric);
+  color: var(--text-tertiary);
   font-size: 12px;
-  font-weight: 600;
   cursor: pointer;
+  transition: color 0.15s;
 }
 
 /* Live info badge — running / pending / idle 三态在 headline 中显示活动信号、
@@ -785,10 +787,10 @@ body {
   50%      { box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 0%,  transparent); }
 }
 
-/* Token 用量 tag 已抽到共享组件 ../components/TokenChip/TokenChip.css，
-   这里只保留 link hover：跟 token tag 的旧位置毫无关系，不要一起删。 */
-.todo-history-link:hover {
-  color: color-mix(in srgb, var(--accent-electric) 80%, var(--text-primary));
+.todo-history-resume-icon:hover,
+.todo-history-resume-icon:focus,
+.todo-card:focus-within .todo-history-resume-icon {
+  color: var(--accent-electric);
 }
 
 .todo-history-delete {
