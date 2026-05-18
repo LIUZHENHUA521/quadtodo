@@ -28,3 +28,8 @@
   font-style: italic;
   opacity: 0.65;
 }
+
+.token-chip-icon {
+  font-size: 11px;
+  margin-right: 3px;
+}

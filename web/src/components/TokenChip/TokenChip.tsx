@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { ContainerOutlined } from '@ant-design/icons'
 import type { AiTool, SessionUsage } from '../../api'
 import './TokenChip.css'
 
@@ -35,7 +36,8 @@ export function TokenChip({ tool, usage }: TokenChipProps) {
   const title = `input ${usage.input.toLocaleString()} · cache ${(usage.cacheRead + usage.cacheCreation).toLocaleString()} · output ${usage.output.toLocaleString()}${usage.model ? ` · ${usage.model}` : ''} · ${Math.round(pct)}% of ${window / 1000}k window`
   return (
     <span className={pct >= 80 ? 'token-chip token-chip-tag is-warn' : 'token-chip token-chip-tag'} title={title}>
-      ↓ {formatTokens(contextTokens)}
+      <ContainerOutlined className="token-chip-icon" />
+      {formatTokens(contextTokens)}
     </span>
   )
 }
